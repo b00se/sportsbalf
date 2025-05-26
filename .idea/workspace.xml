@@ -4,19 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a2919253-9fd5-4d3b-8af9-0ad9600245ff" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/cli/debug_team_merge.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/cli/generate_pitcher_dataset.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/cli/get_top_starters.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/features/dynamic_opponent.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/features/enrichments.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/features/mlb_features.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/features/park_factors.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/features/rolling.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/features/team_abbr_map.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/notebooks/2023_pitcher_k_model.ipynb" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/notebooks/mlb_pitcher_k_features.ipynb" afterDir="false" />
+    <list default="true" id="a2919253-9fd5-4d3b-8af9-0ad9600245ff" name="Changes" comment="ingest and clean testing data for Pitcher K's">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cli/generate_pitcher_dataset.py" beforeDir="false" afterPath="$PROJECT_DIR$/cli/generate_pitcher_dataset.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cli/get_top_starters.py" beforeDir="false" afterPath="$PROJECT_DIR$/cli/get_top_starters.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/features/dynamic_opponent.py" beforeDir="false" afterPath="$PROJECT_DIR$/features/dynamic_opponent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/notebooks/2023_pitcher_k_model.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/notebooks/2023_pitcher_k_model.ipynb" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -34,6 +27,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "b00se"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "git@github.com:b00se/sportsbalf.git",
+    "accountId": "a61f2724-3d44-44eb-8f18-fb5fc70a0b34"
+  }
+}]]></component>
   <component name="ProjectColorInfo"><![CDATA[{
   "associatedIndex": 4
 }]]></component>
@@ -73,12 +78,25 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1748145235973</updated>
-      <workItem from="1748145236962" duration="25444000" />
+      <workItem from="1748145236962" duration="28333000" />
     </task>
+    <task id="LOCAL-00001" summary="ingest and clean testing data for Pitcher K's">
+      <option name="closed" value="true" />
+      <created>1748237450476</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1748237450476</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="ingest and clean testing data for Pitcher K's" />
+    <option name="LAST_COMMIT_MESSAGE" value="ingest and clean testing data for Pitcher K's" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/sportsbalf$debug_team_merge.coverage" NAME="debug_team_merge Coverage Results" MODIFIED="1748232015128" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/cli" />

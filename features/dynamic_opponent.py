@@ -8,7 +8,6 @@ def compute_opponent_k_pct_dynamic(start_date: str, end_date: str, default_k_pct
         ['game_date', 'Team', 'K_pct_so_far']
     where K_pct_so_far is the team's strikeout % over all prior dates.
     """
-    cache.enable()
     pbp = statcast(start_date, end_date)
 
     pbp['pa'] = pbp['events'].notna()

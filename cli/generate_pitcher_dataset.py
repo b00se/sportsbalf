@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-
+import argparse
 import time
 
 import pandas as pd
-from pybaseball import statcast_pitcher, team_batting, playerid_reverse_lookup
+from pybaseball import statcast_pitcher, team_batting, playerid_reverse_lookup, cache
 
 from features.enrichments import add_opponent_k_pct, add_park_factor
 from features.dynamic_opponent import compute_opponent_k_pct_dynamic
@@ -57,7 +57,14 @@ def process_pitchers(name, mlbam_id, season, opponent_k_df, park_df):
 
 
 def main():
-    season = 2023
+    cache.enable()
+    p = argparse.ArgumentParser()
+    p.add_argument('--season', type=int, required=True, help='Year to build')
+    p.add_argument('--mode', choices=['historical', 'live'], default='historical')
+    args = p.parse_args()
+
+    season = args.season
+
     war_csv_path = f"data/raw/top_starters_{season}.csv"
     park_csv_path = f"data/raw/fangraphs_park_factors_{season}.csv"
     output_path = f"data/processed/pitcher_game_data_{season}.parquet"
