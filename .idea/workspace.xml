@@ -4,11 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a2919253-9fd5-4d3b-8af9-0ad9600245ff" name="Changes" comment="ingest and clean testing data for Pitcher K's">
+    <list default="true" id="a2919253-9fd5-4d3b-8af9-0ad9600245ff" name="Changes" comment="parameterized my cli scripts for MLB pitcher data generation">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cli/generate_pitcher_dataset.py" beforeDir="false" afterPath="$PROJECT_DIR$/cli/generate_pitcher_dataset.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cli/get_top_starters.py" beforeDir="false" afterPath="$PROJECT_DIR$/cli/get_top_starters.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/features/dynamic_opponent.py" beforeDir="false" afterPath="$PROJECT_DIR$/features/dynamic_opponent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/features/park_factors.py" beforeDir="false" afterPath="$PROJECT_DIR$/features/park_factors.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/notebooks/2023_pitcher_k_model.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/notebooks/2023_pitcher_k_model.ipynb" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -78,7 +76,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1748145235973</updated>
-      <workItem from="1748145236962" duration="28333000" />
+      <workItem from="1748145236962" duration="37117000" />
     </task>
     <task id="LOCAL-00001" summary="ingest and clean testing data for Pitcher K's">
       <option name="closed" value="true" />
@@ -88,7 +86,15 @@
       <option name="project" value="LOCAL" />
       <updated>1748237450476</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="parameterized my cli scripts for MLB pitcher data generation">
+      <option name="closed" value="true" />
+      <created>1748291051049</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1748291051049</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -96,7 +102,8 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="ingest and clean testing data for Pitcher K's" />
-    <option name="LAST_COMMIT_MESSAGE" value="ingest and clean testing data for Pitcher K's" />
+    <MESSAGE value="parameterized my cli scripts for MLB pitcher data generation" />
+    <option name="LAST_COMMIT_MESSAGE" value="parameterized my cli scripts for MLB pitcher data generation" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/sportsbalf$debug_team_merge.coverage" NAME="debug_team_merge Coverage Results" MODIFIED="1748232015128" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/cli" />
