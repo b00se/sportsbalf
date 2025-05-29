@@ -10,7 +10,7 @@ from pybaseball import pitching_stats
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--season', required=True, type=int, help="Year to fetch")
-    p.add_argument('--top', type=int, default=30, help="How many SPs")
+    p.add_argument('--top', type=int, default=999, help="How many SPs")
     args = p.parse_args()
 
     season = args.season
@@ -20,7 +20,7 @@ def main():
     print(f"📊 Fetching pitching stats for {season}...")
     df = pitching_stats(season, qual=0)
 
-    starters = df[df['GS'] >= 10].copy()
+    starters = df[df['IP'] >= 15].copy()
     starters = starters.sort_values('WAR', ascending=False)
 
     keep = ['Name', 'Team', 'IP', 'GS', 'WAR', 'ERA', 'K/9', 'IDfg']

@@ -20,7 +20,7 @@ def load_historic_park_factors(csv_path: str) -> pd.DataFrame:
         'White Sox': 'CHW',
         'Reds': 'CIN',
         'Cleveland': 'CLE',
-        'Indians': 'CLE',
+        'Guardians': 'CLE',
         'Rockies': 'COL',
         'Tigers': 'DET',
         'Astros': 'HOU',
@@ -32,7 +32,7 @@ def load_historic_park_factors(csv_path: str) -> pd.DataFrame:
         'Twins': 'MIN',
         'Mets': 'NYM',
         'Yankees': 'NYY',
-        'Athletics': 'OAK',
+        'Athletics': 'ATH',
         'Phillies': 'PHI',
         'Pirates': 'PIT',
         'Padres': 'SD',
@@ -47,3 +47,7 @@ def load_historic_park_factors(csv_path: str) -> pd.DataFrame:
 
     df['Team_abbr'] = df['Team'].map(team_map)
     return df[["Team_abbr", "K_park_factor"]]
+
+def load_live_park_factors(csv_path: str) -> pd.DataFrame:
+    df = pd.read_csv(csv_path)
+    return df[['Team_abbr', 'K_park_factor']]

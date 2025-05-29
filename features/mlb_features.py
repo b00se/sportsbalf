@@ -1,4 +1,5 @@
 import pandas as pd
+
 from features.team_abbr_map import team_fix_map
 
 def aggregate_pitcher_games(df: pd.DataFrame) -> pd.DataFrame:
@@ -33,5 +34,19 @@ def aggregate_pitcher_games(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in ['pitcher_team', 'opponent_team', 'home_team', 'away_team']:
         games[col] = games[col].replace(team_fix_map)
+
+    whiff_count = df.groupby('game_date')['description'].apply(lambda x: (x == 'swinging_strike').sum())
+    called_count = df.groupby('game_date')['description'].apply(lambda x: (x == 'called_strike').sum())
+
+    games['whiff_rate'] = (whiff_count.shift(1).fillna(0) / games['pitch_count']).fillna(0)
+    games['csw_pct'] = (((whiff_count + called_count).shift(1).fillna(0)) / games['pitch_count']).fillna(0)
+
+    games['cum_whiffs'] = whiff_count.cumsum().shift(1).fillna(0)
+    games['cum_called'] = called_count.cumsum().shift(1).fillna(0)
+    games['cum_pitches'] = games['pitch_count'].cumsum().shift(1).fillna(0)
+    games['whiff_rate_expanding'] = (games['cum_whiffs'] / games['cum_pitches']).fillna(0)
+    games['csw_pct_expanding'] = ((games['cum_whiffs'] + games['cum_called']) / games['cum_pitches']).fillna(0)
+
+    games.drop(columns=['cum_whiffs', 'cum_called', 'cum_pitches'], inplace=True)
 
     return games

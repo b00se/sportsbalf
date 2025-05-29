@@ -6,5 +6,6 @@ team_fix_map = {
     'CWS': 'CHW',
     'TBR': 'TB',
     'FLA': 'MIA',
-    'WSN': 'WSH'
+    'WSN': 'WSH',
+    'OAK': 'ATH'
 }
