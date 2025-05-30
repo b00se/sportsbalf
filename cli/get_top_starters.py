@@ -20,7 +20,7 @@ def main():
     print(f"📊 Fetching pitching stats for {season}...")
     df = pitching_stats(season, qual=0)
 
-    starters = df[df['IP'] >= 15].copy()
+    starters = df[(df['IP'] >= 15) & (df['GS'] > 0)].copy()
     starters = starters.sort_values('WAR', ascending=False)
 
     keep = ['Name', 'Team', 'IP', 'GS', 'WAR', 'ERA', 'K/9', 'IDfg']
