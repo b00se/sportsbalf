@@ -1,7 +1,21 @@
+import datetime
 import json
 import sys
+import requests
 from pathlib import Path
 import pandas as pd
+
+def get_ud_strikeouts_json():
+    algolia_object_id = "PickemStat_311b6775-4d03-4466-8ab9-776442468b27"
+    url = "https://api.underdogfantasy.com/v2/pickem_search/search_results"
+
+    params = {
+        "sport_id": "HOME",
+        "algolia_object_id": algolia_object_id
+    }
+    response = requests.get(url=url, params=params)
+    response.raise_for_status()
+    return response.json()
 
 def load_json(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -53,7 +67,8 @@ def parse_strikeout_lines(data: dict) -> list[dict]:
         })
 
     df = pd.DataFrame(results)
-    df.to_csv("../data/lines/strikeouts.csv", index=False, encoding='utf-8')
+    date = datetime.date.today().isoformat()
+    df.to_csv(f"../data/lines/strikeouts_{date}.csv", index=False, encoding='utf-8')
 
     return results
 
@@ -62,8 +77,8 @@ def main():
         print(f"Usage: {sys.argv[0]} <path-to-json-file>")
         sys.exit(1)
 
-    data = load_json(sys.argv[1])
-    lines = parse_strikeout_lines(data)
+    raw_json = get_ud_strikeouts_json()
+    lines = parse_strikeout_lines(raw_json)
 
     print(f"{'Player':20} {'K':>4}     {'Over (A/D xM)':20}    {'Under (A/D xM)'}")
     print("-"*70)
