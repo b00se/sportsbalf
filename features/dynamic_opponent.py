@@ -1,14 +1,21 @@
 import pandas as pd
-from pybaseball import statcast, cache
 from features.team_abbr_map import team_fix_map
 
-def compute_opponent_k_pct_dynamic(start_date: str, end_date: str, default_k_pct = 0.055) -> pd.DataFrame:
+def compute_opponent_k_pct_dynamic(start_date: str, end_date: str, default_k_pct = 0.055, source_df=None) -> pd.DataFrame:
     """
     Returns a DataFrame with one row per team & date, containing:
         ['game_date', 'Team', 'K_pct_so_far']
     where K_pct_so_far is the team's strikeout % over all prior dates.
     """
-    pbp = statcast(start_date, end_date)
+    if source_df is None:
+        from pybaseball import statcast
+        print("⚠️ No source_df provided — fetching from Statcast live.")
+        pbp = statcast(start_date, end_date)
+    else:
+        pbp = source_df[
+            (source_df['game_date'] >= start_date) &
+            (source_df['game_date'] <= end_date)
+        ].copy()
 
     pbp['pa'] = pbp['events'].notna()
     pbp['Team'] = pbp.apply(
@@ -20,7 +27,7 @@ def compute_opponent_k_pct_dynamic(start_date: str, end_date: str, default_k_pct
     # Game-level team aggregation
     daily = (
         pbp.groupby(['game_date', 'Team'])
-        .agg(so=('events', lambda x: (x=='strikeout').sum()),
+        .agg(so=('events', lambda x: x.eq('strikeout').sum()),
              pa=('pa', 'sum'))
         .reset_index()
     )
