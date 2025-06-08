@@ -68,14 +68,14 @@ def parse_strikeout_lines(data: dict) -> list[dict]:
 
     df = pd.DataFrame(results)
     date = datetime.date.today().isoformat()
-    df.to_csv(f"../data/lines/strikeouts_{date}.csv", index=False, encoding='utf-8')
+    df.to_csv(f"data/lines/strikeouts_{date}.csv", index=False, encoding='utf-8')
 
     return results
 
 def main():
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <path-to-json-file>")
-        sys.exit(1)
+    # if len(sys.argv) != 2:
+    #     print(f"Usage: {sys.argv[0]} <path-to-json-file>")
+    #     sys.exit(1)
 
     raw_json = get_ud_strikeouts_json()
     lines = parse_strikeout_lines(raw_json)

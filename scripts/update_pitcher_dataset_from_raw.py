@@ -69,6 +69,15 @@ def update_pitcher_dataset(season):
         player_df = new_df[new_df['pitcher'] == mlbam_id]
         if player_df.empty:
             continue
+
+        if 'description' not in player_df.columns:
+            print(f"⚠️ No 'description' column found for {name}")
+            continue
+
+        if player_df['description'].notna().sum() == 0:
+            print(f"⚠️ All descriptions missing for {name} — {mlbam_id}")
+            continue
+
         games = aggregate_pitcher_games(player_df)
         games['game_date'] = pd.to_datetime(player_df['game_date'])
 
