@@ -1,0 +1,4 @@
+game_date,pitcher,home_team,opponent_team,strikeouts,pitch_count,rolling_K_avg_3,rolling_pitch_count_5
+2024-01-01,John Doe,NYM,ATL,6,90,5.5,85
+2024-01-05,John Doe,NYM,PHI,7,95,6.0,86
+2024-01-10,John Doe,NYM,BOS,5,80,6.3,87

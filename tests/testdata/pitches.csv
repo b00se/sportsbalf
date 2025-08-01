@@ -1,0 +1,7 @@
+pitcher,game_date,description,events,inning,pitch_type,home_team,away_team,pitcher_days_since_prev_game,inning_topbot
+123,2024-01-01,swinging_strike,strikeout,1,FF,NYM,ATL,5,Top
+123,2024-01-01,called_strike,strikeout,2,SL,NYM,ATL,5,Top
+123,2024-01-01,hit_into_play,,3,CH,NYM,ATL,5,Top
+123,2024-01-05,swinging_strike,strikeout,1,FF,NYM,PHI,3,Top
+123,2024-01-05,called_strike,strikeout,2,SL,NYM,PHI,3,Top
+123,2024-01-05,ball,none,3,CH,NYM,PHI,3,Top
