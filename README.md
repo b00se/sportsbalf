@@ -26,6 +26,23 @@ The pipeline aggregates pitch-level data using utilities from
 `features/mlb_features.py` and adds rolling and park factor features before
 training a demo model.
 
+## Updating historical pitcher datasets
+
+To rebuild the enriched pitcher game logs from raw Statcast data, use the
+existing scripts in the `scripts/` directory. For a single season run:
+
+```bash
+PYTHONPATH=. python scripts/generate_pitcher_dataset_from_raw.py --season 2023
+```
+
+This will fetch the cached raw Statcast file for the season, aggregate it with
+the functions in `features/mlb_features.py`, merge opponent strikeout and park
+factor context, and write the processed parquet file under `data/processed/`.
+
+To regenerate multiple seasons in sequence, the helper script
+`scripts/bootstrap_all_years.sh` automates fetching starters, caching the raw
+pitch-level data, and producing enriched game logs for each year in the range.
+
 ## Testing
 
 Run the unit tests with `pytest`:

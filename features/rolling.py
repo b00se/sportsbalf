@@ -1,23 +1,50 @@
 
-def add_rolling_features(games, default_k=5, default_pitch_count=85):
-    games = games.sort_values("game_date").copy()
+import pandas as pd
 
-    games['rolling_K_avg_3'] = (
-        games['strikeouts'].rolling(3).mean().shift(1).fillna(default_k)
+
+def _grouped_shifted_rolling(
+    games: pd.DataFrame, column: str, window: int, default: float
+) -> pd.Series:
+    grouped = (
+        games.groupby("pitcher")[column]
+        .rolling(window=window, min_periods=1)
+        .mean()
     )
-    games['rolling_K_avg_5'] = (
-        games['strikeouts'].rolling(5).mean().shift(1).fillna(default_k)
+    shifted = grouped.groupby(level=0).shift(1)
+    return shifted.droplevel(0).fillna(default)
+
+
+def add_rolling_features(
+    games: pd.DataFrame, default_k: float = 5, default_pitch_count: float = 85
+) -> pd.DataFrame:
+    """Append rolling strikeout and pitch count aggregates per pitcher."""
+
+    games = games.sort_values(["pitcher", "game_date"]).reset_index(drop=True)
+
+    games["rolling_K_avg_3"] = _grouped_shifted_rolling(
+        games, "strikeouts", window=3, default=default_k
     )
-    games['rolling_pitch_count_5'] = (
-        games['pitch_count'].rolling(5).mean().shift(1).fillna(default_pitch_count)
+    games["rolling_K_avg_5"] = _grouped_shifted_rolling(
+        games, "strikeouts", window=5, default=default_k
+    )
+    games["rolling_pitch_count_5"] = _grouped_shifted_rolling(
+        games, "pitch_count", window=5, default=default_pitch_count
     )
 
-    rolling_k_sum = games['strikeouts'].rolling(3).sum().shift(1)
-    rolling_pitch_sum = games['pitch_count'].rolling(5).sum().shift(1)
-    games['rolling_K_rate'] = (
-        (rolling_k_sum / rolling_pitch_sum)
-        .replace([float('inf'), -float('inf')], None)
-        .fillna(0.055)
+    rolling_k_sum = (
+        games.groupby("pitcher")["strikeouts"].rolling(window=3, min_periods=1).sum()
+        .groupby(level=0)
+        .shift(1)
+    )
+    rolling_pitch_sum = (
+        games.groupby("pitcher")["pitch_count"].rolling(window=5, min_periods=1).sum()
+        .groupby(level=0)
+        .shift(1)
+    )
+
+    rate = (rolling_k_sum / rolling_pitch_sum).droplevel(0)
+    games["rolling_K_rate"] = (
+        rate.replace([float("inf"), -float("inf")], pd.NA).fillna(0.055)
     )
 
     return games
