@@ -95,3 +95,46 @@ def test_enrich_pitcher_games_merges_context():
     enriched = enrich_pitcher_games(player_df, "Test", 1, opponent_k_df, park_df)
     assert {"opponent_k_pct", "park_factor_K"} <= set(enriched.columns)
     assert (enriched["pitcher_name"] == "Test").all()
+
+
+def test_enrich_pitcher_games_coerces_types(monkeypatch):
+    player_df = make_player_df()
+    games = aggregate_pitcher_games(player_df)
+
+    stringified = games.copy()
+    numeric_columns = [
+        "pitch_count",
+        "strikeouts",
+        "max_inning",
+        "num_pitch_types",
+        "whiff_rate",
+        "csw_pct",
+        "whiff_rate_expanding",
+        "csw_pct_expanding",
+        "rest_days",
+    ]
+    for column in numeric_columns:
+        stringified[column] = stringified[column].astype(str)
+    stringified["game_date"] = stringified["game_date"].astype(str)
+
+    monkeypatch.setattr(
+        "features.pitcher_enrichment.aggregate_pitcher_games",
+        lambda _: stringified.copy(),
+    )
+
+    opponent_k_df = pd.DataFrame(
+        {
+            "game_date": ["2023-04-01", "2023-04-02", "2023-04-08", "2023-04-10"],
+            "Team": ["ATL", "NYY", "PHI", "NYY"],
+            "K_pct_so_far": ["0.26", "0.24", "0.27", "0.23"],
+        }
+    )
+    park_df = pd.DataFrame(
+        {"Team_abbr": ["NYM", "BOS"], "K_park_factor": ["1.02", "0.98"]}
+    )
+
+    enriched = enrich_pitcher_games(player_df, "Test", 1, opponent_k_df, park_df)
+
+    assert pd.api.types.is_datetime64_any_dtype(enriched["game_date"])
+    for column in numeric_columns + ["opponent_k_pct", "park_factor_K"]:
+        assert pd.api.types.is_numeric_dtype(enriched[column])
