@@ -1,5 +1,6 @@
 import pandas as pd
-from features.team_abbr_map import team_fix_map
+
+from .team_abbr_map import team_fix_map
 
 def compute_opponent_k_pct_dynamic(start_date: str, end_date: str, default_k_pct = 0.055, source_df=None) -> pd.DataFrame:
     """

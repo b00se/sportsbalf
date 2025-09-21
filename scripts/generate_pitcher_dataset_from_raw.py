@@ -3,9 +3,9 @@ import os
 import pandas as pd
 from pybaseball import playerid_reverse_lookup
 
-from features.dynamic_opponent import compute_opponent_k_pct_dynamic
-from features.park_factors import compute_k_park_factors
-from features.pitcher_enrichment import enrich_pitcher_games
+from src.mlb.features.dynamic_opponent import compute_opponent_k_pct_dynamic
+from src.mlb.features.park_factors import compute_k_park_factors
+from src.mlb.features.pitcher_enrichment import enrich_pitcher_games
 
 RAW_PATH = "data/raw/statcast"
 OUTPUT_PATH = "data/processed"

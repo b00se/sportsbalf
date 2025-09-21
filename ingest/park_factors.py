@@ -1,7 +1,7 @@
 from pybaseball import statcast, cache
 from datetime import date, timedelta
 
-from features.team_abbr_map import team_fix_map
+from src.mlb.features.team_abbr_map import team_fix_map
 
 
 def compute_k_park_factors(start, end=None):

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from features.mlb_features import aggregate_pitcher_games
+from src.mlb.features.mlb_features import aggregate_pitcher_games
 
 
 def main():
