@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-from features.team_abbr_map import team_fix_map
+from .team_abbr_map import team_fix_map
+
+
+REQUIRED_PITCH_COLUMNS = {"description", "events", "inning", "pitch_type"}
 
 
 WHIFF_EVENTS = {"swinging_strike", "swinging_strike_blocked"}
@@ -69,6 +72,22 @@ def _count_events(df: pd.DataFrame) -> pd.DataFrame:
 
 def aggregate_pitcher_games(df: pd.DataFrame) -> pd.DataFrame:
     """Aggregate Statcast pitch-level records into pitcher game summaries."""
+
+    if not REQUIRED_PITCH_COLUMNS.issubset(df.columns):
+        # Dataset already appears to be aggregated to the game level.
+        cleanup_cols = [
+            "rolling_K_avg_3",
+            "rolling_K_avg_5",
+            "rolling_pitch_count_5",
+            "rolling_K_rate",
+            "park_factor_K",
+            "opponent_k_rate",
+            "Unnamed: 0",
+        ]
+        existing = [col for col in cleanup_cols if col in df.columns]
+        if existing:
+            df = df.drop(columns=existing)
+        return df.reset_index(drop=True)
 
     grouped = df.groupby(["pitcher", "game_date"])
     games = (

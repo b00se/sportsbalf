@@ -1,4 +1,0 @@
-lines_path: tests/testdata/lines.csv
-game_logs_path: tests/testdata/game_logs.csv
-park_factors_path: tests/testdata/park.csv
-pitch_data_path: tests/testdata/pitches.csv

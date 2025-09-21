@@ -12,4 +12,4 @@ def add_opponent_k_rate(games: pd.DataFrame) -> pd.DataFrame:
     games["opponent_k_rate"] = games["opponent_k_rate"].fillna(
         games["opponent_k_rate"].mean()
     )
-    return games
+    return games.reset_index(drop=True)

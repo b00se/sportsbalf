@@ -1,8 +1,8 @@
 import pandas as pd
 
-from features.mlb_features import aggregate_pitcher_games
-from features.pitcher_enrichment import enrich_pitcher_games
-from features.rolling import add_rolling_features
+from src.mlb.features.mlb_features import aggregate_pitcher_games
+from src.mlb.features.pitcher_enrichment import enrich_pitcher_games
+from src.mlb.features.rolling import add_rolling_features
 
 
 def make_player_df():
