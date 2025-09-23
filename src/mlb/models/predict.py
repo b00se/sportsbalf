@@ -83,4 +83,6 @@ def residual_std(actual: Iterable[float], predicted: Iterable[float]) -> float:
 
 def save_model(model: XGBRegressor, path: str | Path) -> None:
     """Persist the trained model to disk."""
-    joblib.dump(model, Path(path))
+    path_obj = Path(path)
+    path_obj.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, path_obj)
