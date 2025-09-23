@@ -1,13 +1,15 @@
 [tool.black]
 line-length = 88
 target-version = ["py311"]
-include = "\.(py|pyi)$"
-exclude = [
-  "^\.venv/",
-  "^data/",
-  "^models/",
-  "^notebooks/",
-]
+include = '\\.(py|pyi)$'
+extend-exclude = '''
+(
+  ^/data/
+| ^/models/
+| ^/notebooks/
+| ^/.venv/
+)
+'''
 
 [tool.ruff]
 target-version = "py311"
@@ -36,4 +38,3 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
-
