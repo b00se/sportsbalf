@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 import re
 import time
 import unicodedata
@@ -25,6 +26,10 @@ from src.mlb.features import (
     add_rolling_features,
     aggregate_pitcher_games,
 )
+from src.mlb.features.park_factors import (
+    compute_k_park_factors,
+    derive_park_factors_from_games,
+)
 from src.mlb.models.distributions import ResidualBootstrapper
 from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
 from src.mlb.models.predict import (
@@ -36,6 +41,9 @@ from src.mlb.models.predict import (
     train_model,
     save_model,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_name(name: str) -> str:
@@ -154,6 +162,71 @@ def _park_lookup(park_df: pd.DataFrame) -> dict:
     )
 
 
+def _build_park_factors_from_pitch_data(pitch_df: pd.DataFrame) -> pd.DataFrame:
+    """Construct park factors from either aggregated or pitch-level data."""
+
+    if {"home_team", "park_factor_K"}.issubset(pitch_df.columns):
+        park_df = derive_park_factors_from_games(pitch_df)
+        if not park_df.empty:
+            return park_df
+
+    pitch_level_cols = {"pitch_type", "events", "home_team", "batter"}
+    if pitch_level_cols.issubset(pitch_df.columns):
+        frame = pitch_df.copy()
+        if "game_date" in frame.columns:
+            frame["game_date"] = pd.to_datetime(frame["game_date"], errors="coerce")
+            start = frame["game_date"].min()
+            end = frame["game_date"].max()
+            if pd.notna(start) and pd.notna(end):
+                return compute_k_park_factors(
+                    start.strftime("%Y-%m-%d"),
+                    end.strftime("%Y-%m-%d"),
+                    source_df=frame,
+                )
+
+    return pd.DataFrame(columns=["Team_abbr", "K_park_factor"])
+
+
+def _load_or_create_park_factors(
+    pitch_df: pd.DataFrame, park_path: str, retrain: bool
+) -> pd.DataFrame:
+    """Load park factors from disk, regenerating if missing or retraining."""
+
+    park_file = Path(park_path)
+
+    if park_file.exists() and not retrain:
+        return read_csv(str(park_file))
+
+    park_df = _build_park_factors_from_pitch_data(pitch_df)
+
+    if park_df.empty:
+        teams_series = (
+            pitch_df["home_team"].dropna()
+            if "home_team" in pitch_df.columns
+            else pd.Series(dtype="object")
+        )
+        unique_teams = sorted(teams_series.astype(str).unique().tolist())
+
+        if not unique_teams:
+            raise FileNotFoundError(
+                "Unable to derive park factors from pitch data and no cached file present."
+            )
+
+        logger.warning(
+            "Using neutral park factors because no park factor data could be derived."
+        )
+        park_df = pd.DataFrame(
+            {
+                "Team_abbr": unique_teams,
+                "K_park_factor": 1.0,
+            }
+        )
+
+    park_file.parent.mkdir(parents=True, exist_ok=True)
+    park_df.to_csv(park_file, index=False)
+    return park_df
+
+
 def _build_prediction_rows(
     lines: pd.DataFrame,
     latest_games: pd.DataFrame,
@@ -226,7 +299,9 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
     lines = lines.copy()
     lines["name_key"] = lines["player"].map(_normalize_name)
     pitch_df = read_csv(config["pitch_data_path"])
-    park_df = read_csv(config["park_factors_path"])
+    park_df = _load_or_create_park_factors(
+        pitch_df, config["park_factors_path"], retrain
+    )
 
     games = aggregate_pitcher_games(pitch_df)
     games = add_rolling_features(games)
