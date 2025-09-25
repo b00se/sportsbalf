@@ -19,11 +19,27 @@ class SlipBuilderConfig:
     fullsend_max_size: int = 6
     max_shared_legs: int = 3
     min_leg_ev: float = 0.0
-    payout_table: Dict[int, float] = None
+    base_multiplier_table: Dict[int, float] | None = None
+    payout_table: Dict[int, float] | None = None  # Deprecated alias for base_multiplier_table
 
     def __post_init__(self) -> None:
-        if self.payout_table is None:
-            self.payout_table = {2: 3, 3: 6, 4: 10, 5: 20, 6: 35, 7: 65, 8: 120}
+        if self.base_multiplier_table is None:
+            if self.payout_table is not None:
+                self.base_multiplier_table = dict(self.payout_table)
+            else:
+                # Default to insurance-style 2-pick slips and power payouts for larger entries.
+                self.base_multiplier_table = {
+                    2: 2.0,
+                    3: 6.0,
+                    4: 10.0,
+                    5: 20.0,
+                    6: 35.0,
+                    7: 65.0,
+                    8: 120.0,
+                }
+        elif self.payout_table is None:
+            # Keep legacy field in sync when callers still expect it.
+            self.payout_table = dict(self.base_multiplier_table)
 
 
 def prepare_long_df(results: pd.DataFrame, *, top_n: int | None = None, min_ev: float = 0.0) -> pd.DataFrame:
@@ -41,6 +57,8 @@ def prepare_long_df(results: pd.DataFrame, *, top_n: int | None = None, min_ev: 
         "ev_under",
         "over_decimal_price",
         "under_decimal_price",
+        "over_payout_multiplier",
+        "under_payout_multiplier",
     }
     missing = required_cols - set(df.columns)
     if missing:
@@ -63,6 +81,7 @@ def prepare_long_df(results: pd.DataFrame, *, top_n: int | None = None, min_ev: 
         prob=df["prob_over"],
         ev=df["ev_over"],
         payout=df["over_decimal_price"],
+        payout_multiplier=df["over_payout_multiplier"],
     )
 
     under = df.copy()
@@ -71,6 +90,7 @@ def prepare_long_df(results: pd.DataFrame, *, top_n: int | None = None, min_ev: 
         prob=df["prob_under"],
         ev=df["ev_under"],
         payout=df["under_decimal_price"],
+        payout_multiplier=df["under_payout_multiplier"],
     )
 
     combined = pd.concat([over, under], ignore_index=True)
@@ -78,7 +98,7 @@ def prepare_long_df(results: pd.DataFrame, *, top_n: int | None = None, min_ev: 
     combined = combined.sort_values("ev", ascending=False)
     combined = combined.reset_index(drop=True)
 
-    columns = base_cols + ["play", "prob", "ev", "payout"]
+    columns = base_cols + ["play", "prob", "ev", "payout", "payout_multiplier"]
     combined = combined[columns]
     combined.rename(columns={"player": "pitcher_name"}, inplace=True)
 
@@ -102,12 +122,18 @@ def _clean_value(value):
     return value
 
 
-def generate_slips(df: pd.DataFrame, slip_size: int, payout_table: Dict[int, float]) -> List[dict]:
+def generate_slips(
+    df: pd.DataFrame,
+    slip_size: int,
+    *,
+    base_multipliers: Dict[int, float],
+) -> List[dict]:
     """Generate slip combinations of a given size from candidate legs."""
 
     slips: List[dict] = []
-    payout = payout_table.get(slip_size)
-    if not payout:
+
+    base_multiplier = base_multipliers.get(slip_size)
+    if not base_multiplier:
         return slips
 
     for combo in combinations(df.itertuples(index=False), slip_size):
@@ -120,6 +146,23 @@ def generate_slips(df: pd.DataFrame, slip_size: int, payout_table: Dict[int, flo
             continue
 
         p_win = float(np.prod(probs))
+        leg_multipliers = []
+        invalid = False
+        for x in combo:
+            try:
+                multiplier = float(x.payout_multiplier)
+            except (TypeError, ValueError):
+                invalid = True
+                break
+            if not np.isfinite(multiplier) or multiplier <= 0:
+                invalid = True
+                break
+            leg_multipliers.append(multiplier)
+        if invalid or not leg_multipliers:
+            continue
+
+        total_multiplier = float(np.prod(leg_multipliers))
+        payout = base_multiplier * total_multiplier
         total_ev = p_win * payout - 1
 
         legs = []
@@ -135,6 +178,7 @@ def generate_slips(df: pd.DataFrame, slip_size: int, payout_table: Dict[int, flo
                 "prob": float(x.prob),
                 "ev": float(x.ev),
                 "payout": float(x.payout),
+                "payout_multiplier": float(x.payout_multiplier),
                 "k_line": float(x.k_line),
             }
             legs.append(leg)
@@ -146,7 +190,7 @@ def generate_slips(df: pd.DataFrame, slip_size: int, payout_table: Dict[int, flo
                 "total_ev": total_ev,
                 "slip_size": slip_size,
                 "p_win": float(p_win),
-                "payout": float(payout),
+                "payout": payout,
             }
         )
 
@@ -185,7 +229,9 @@ def build_slip_sets(
     )
 
     conservative_candidates = generate_slips(
-        long_df, slip_size=2, payout_table=cfg.payout_table
+        long_df,
+        slip_size=2,
+        base_multipliers=cfg.base_multiplier_table,
     )
     conservative_ranked = sorted(
         conservative_candidates, key=lambda x: x["total_ev"], reverse=True
@@ -200,7 +246,11 @@ def build_slip_sets(
     for size in range(cfg.fullsend_min_size, cfg.fullsend_max_size + 1):
         if len(long_df) >= size:
             fullsend_candidates.extend(
-                generate_slips(long_df, slip_size=size, payout_table=cfg.payout_table)
+                generate_slips(
+                    long_df,
+                    slip_size=size,
+                    base_multipliers=cfg.base_multiplier_table,
+                )
             )
     fullsend_ranked = sorted(
         fullsend_candidates, key=lambda x: x["total_ev"], reverse=True
