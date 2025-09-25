@@ -7,3 +7,4 @@ data/
 .idea/
 /betslips/
 /models/
+!src/nfl/data/
