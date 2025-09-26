@@ -1,0 +1,40 @@
+dataset_path: data/qb_attempts_dataset.parquet
+model_path: models/xgb_qb_attempts.joblib
+rebuild_dataset: false
+start_year: 2015
+end_year: 2024
+dataset_years:
+  - 2015
+  - 2016
+  - 2017
+  - 2018
+  - 2019
+  - 2020
+  - 2021
+  - 2022
+  - 2023
+training_years:
+  - 2015
+  - 2016
+  - 2017
+  - 2018
+  - 2019
+  - 2020
+  - 2021
+  - 2022
+validation_years:
+  - 2023
+inference_years:
+  - 2023
+ud_algolia_id: PickemStat_de868934-c920-405c-b827-693c15aa47a1
+monte_carlo_simulations: 10000
+monte_carlo_seed: 42
+fallback_std: 1.0
+min_sigma: 1.5
+model_params:
+  learning_rate: 0.08
+  max_depth: 4
+  n_estimators: 400
+  subsample: 0.9
+  colsample_bytree: 0.9
+  reg_lambda: 1.25

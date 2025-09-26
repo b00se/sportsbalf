@@ -66,6 +66,10 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
         if not player_name:
             continue
 
+        options = line.get("options", [])
+        higher_option = next((opt for opt in options if opt.get("choice") == "higher"), None)
+        lower_option = next((opt for opt in options if opt.get("choice") == "lower"), None)
+
         game = games.get(appearance.get("match_id"))
         rows.append(
             {
@@ -78,6 +82,12 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
                 "book": "Underdog",
                 "scheduled_at": (game or {}).get("scheduled_at"),
                 "season_type": (game or {}).get("season_type"),
+                "over_decimal_price": (higher_option or {}).get("decimal_price"),
+                "over_payout_multiplier": (higher_option or {}).get("payout_multiplier"),
+                "over_american_price": (higher_option or {}).get("american_price"),
+                "under_decimal_price": (lower_option or {}).get("decimal_price"),
+                "under_payout_multiplier": (lower_option or {}).get("payout_multiplier"),
+                "under_american_price": (lower_option or {}).get("american_price"),
             }
         )
 
@@ -85,7 +95,17 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
     if frame.empty:
         return frame
 
-    frame["line"] = pd.to_numeric(frame["line"], errors="coerce")
+
+    numeric_cols = [
+        "line",
+        "over_decimal_price",
+        "over_payout_multiplier",
+        "under_decimal_price",
+        "under_payout_multiplier",
+    ]
+    for col in numeric_cols:
+        if col in frame.columns:
+            frame[col] = pd.to_numeric(frame[col], errors="coerce")
     frame["game_id"] = frame["game_id"].astype(str)
     return frame
 

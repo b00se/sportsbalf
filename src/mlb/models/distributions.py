@@ -56,6 +56,9 @@ class ResidualBootstrapper:
             min_sigma=min_sigma,
         )
 
+    def can_bootstrap(self, pitcher_id: Optional[float]) -> bool:
+        return True
+
     def _residual_pool(self, pitcher_id: Optional[float]) -> np.ndarray:
         if pitcher_id is not None and not np.isnan(pitcher_id):
             key = int(pitcher_id)
@@ -95,3 +98,4 @@ class ResidualBootstrapper:
         samples = mean + draws
         samples = np.clip(np.rint(samples), 0, None)
         return samples
+

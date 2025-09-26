@@ -1,8 +1,17 @@
 # sportsbalf
 
-This project provides a small demo pipeline for predicting MLB pitcher strikeouts.
-The original workflows lived in Jupyter notebooks; the code has been refactored
-into a set of reusable modules under `src/` with a simple pipeline entry point.
+Sportsbalf is a demo analytics stack for prop betting. It now ships two
+end-to-end pipelines:
+
+- **MLB pitcher strikeouts** (original workflow) – cleans Statcast data, trains an
+  XGBoost model, and Monte Carlo simulates strikeout totals.
+- **NFL quarterback pass attempts** – assembles Underdog lines with weekly team
+  context, trains an XGBoost model, and simulates pass-attempt results with a
+  residual bootstrap.
+
+The code lives under `src/` with CLI entry points in `scripts/`. Both pipelines
+share a common Monte Carlo module and follow the same pattern: build dataset ?
+train (or load) model ? run inference ? simulate probabilities/EVs.
 
 ## Setup
 
@@ -12,58 +21,72 @@ Create a Python environment and install dependencies:
 pip install -r requirements.txt
 ```
 
-## Running the pipeline
+## MLB strikeout pipeline
 
-The configuration file `config/mlb.yaml` specifies paths for input data, the
-pretrained strikeout model, **historical training datasets**, and Monte Carlo settings. To execute the MLB
-pipeline and print probabilistic predictions:
-
-```bash
-python -m pipeline.main
-```
-
-The pipeline aggregates pitch-level data using the helpers in
-`src/mlb/features/`, enriches games with rolling and park context, loads the
-pretrained XGBoost model (retraining on demand), and bootstraps historical
-residuals to produce a discrete strikeout distribution. Ahead of scoring it
-fetches each teamâ€™s upcoming opponent from Baseball Reference (via
-`pybaseball.schedule_and_record`), recomputes rest days, applies the correct
-park factor, and normalizes player names to handle accents. The Monte Carlo
-step then adds win probabilities, medians, and expected values for each side of
-the bet.
-
-Model training and the residual bootstrap now pull from every parquet listed in
-`training_data_paths`, so earlier seasons (2021â€“2024) are folded in alongside
-the current year. If you add more processed seasons, just append the parquet
-paths in the config.
-
-To refresh the tuned XGBoost model before scoring, pass the `--retrain` flag:
+The configuration file `config/mlb.yaml` specifies input data, pretrained model
+artifacts, and Monte Carlo settings. To execute the MLB pipeline and print
+probabilistic predictions:
 
 ```bash
-python -m pipeline.main --retrain
+python -m pipeline.main [--retrain]
 ```
 
-Fetching upcoming opponents requires network access (Baseball Reference). If the
-call fails, the pipeline gracefully falls back to the previous opponent context
-and still produces output.
+The pipeline aggregates pitch-level data (`src/mlb/features/`), enriches games
+with rolling and park context, loads the pretrained XGBoost model (retraining on
+demand), and bootstraps historical residuals to produce a discrete strikeout
+distribution. Ahead of scoring it fetches each team’s upcoming opponent via
+`pybaseball.schedule_and_record`, recomputes rest days, applies park factors, and
+normalizes player names to handle accents. The Monte Carlo step adds win
+probabilities, medians, and expected values for each side of the bet.
 
-## Updating historical pitcher datasets
+To rebuild enriched pitcher game logs from raw Statcast data, use the helpers in
+`scripts/` (e.g. `python scripts/generate_pitcher_dataset_from_raw.py --season 2023`).
 
-To rebuild the enriched pitcher game logs from raw Statcast data, use the
-existing scripts in the `scripts/` directory. For a single season run:
+## NFL pass-attempt pipeline
 
-```bash
-PYTHONPATH=. python scripts/generate_pitcher_dataset_from_raw.py --season 2023
+The NFL pipeline mirrors the MLB flow, using Underdog lines plus nflverse data.
+Key entry points:
+
+- **Build / refresh the dataset**
+  ```bash
+  python scripts/build_qb_attempts_dataset.py --start 2015 --end 2024 [--provider nflreadpy]
+  ```
+  This pulls weekly QB stats, schedules, play-by-play, Next Gen passing metrics,
+  and Underdog lines, then writes `data/qb_attempts_dataset.parquet`.
+
+- **Generate predictions**
+  ```bash
+  python scripts/predict_qb_attempts.py [--retrain] [--config config/nfl.yaml]
+  ```
+  The script loads the dataset, trains or reloads an XGBoost model, then runs the
+  Monte Carlo simulation to produce per-line probabilities, edges, and EVs.
+
+- **Build bet slips**
+  ```bash
+  python scripts/build_betslips.py --sports nfl [--combine] [--retrain]
+  ```
+  This wraps the NFL pipeline output in the shared slip builder, emitting
+  conservative and “full send” JSON payloads under `betslips/`.
+
+### Data providers
+
+NFL ingestion is being migrated from `nfl_data_py` to the new `nflreadpy`
+package. Choose the provider via `config/nfl.yaml`:
+
+```yaml
+provider: nflreadpy  # or `nfl_data_py` during transition
 ```
 
-This will fetch the cached raw Statcast file for the season, aggregate it with
-the functions in `src/mlb/features/mlb_features.py`, merge opponent strikeout
-and park factor context, and write the processed parquet file under
-`data/processed/`.
+`scripts/build_qb_attempts_dataset.py` also exposes `--provider` so you can test
+both backends. The default will switch to `nflreadpy` once the migration is fully
+rolled out; see `instructions/nflreadpy_migration.md` for the detailed plan.
 
-To regenerate multiple seasons in sequence, the helper script
-`scripts/bootstrap_all_years.sh` automates fetching starters, caching the raw
-pitch-level data, and producing enriched game logs for each year in the range.
+## Bet slip generation
+
+`scripts/build_betslips.py` combines MLB and/or NFL predictions into Underdog
+slip payloads. Use `--sports mlb nfl` to build both, and `--combine` to create
+mixed-sport slips. JSON outputs live under `betslips/` with a timestamped
+filename.
 
 ## Testing
 
@@ -72,3 +95,7 @@ Run the unit tests with `pytest`:
 ```bash
 pytest
 ```
+
+Most tests run offline. Network-dependent tests (if any) are skipped unless the
+required environment variables are set.
+
