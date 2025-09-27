@@ -321,15 +321,9 @@ def _fill_missing_values(merged: pd.DataFrame) -> pd.DataFrame:
             team_fallback = None
             opponent_fallback = None
             if "team" in filled.columns:
-                team_fallback = pd.to_numeric(
-                    filled.groupby("team")[column].transform("median"),
-                    errors="coerce",
-                )
+                team_fallback = column_values.groupby(filled["team"]).transform("median")
             if "opponent" in filled.columns:
-                opponent_fallback = pd.to_numeric(
-                    filled.groupby("opponent")[column].transform("median"),
-                    errors="coerce",
-                )
+                opponent_fallback = column_values.groupby(filled["opponent"]).transform("median")
             if team_fallback is not None and team_fallback.notna().any():
                 column_values = column_values.where(column_values.notna(), team_fallback)
             if opponent_fallback is not None and opponent_fallback.notna().any():
@@ -354,10 +348,7 @@ def _fill_missing_values(merged: pd.DataFrame) -> pd.DataFrame:
     for column in qb_numeric_cols:
         if column in filled.columns:
             column_values = pd.to_numeric(filled[column], errors="coerce")
-            qb_fallback = pd.to_numeric(
-                filled.groupby("qb_id")[column].transform("mean"),
-                errors="coerce",
-            )
+            qb_fallback = column_values.groupby(filled["qb_id"]).transform("mean")
             if qb_fallback.notna().any():
                 column_values = column_values.where(column_values.notna(), qb_fallback)
             if column_values.notna().any():
