@@ -48,7 +48,20 @@ def simulate_row(
             "simulated_median": np.nan,
         }
 
+    if std_dev is None or np.isnan(std_dev) or std_dev <= 0:
+        std_dev = 1.0
+
+    use_sampler = False
     if sampler is not None:
+        can_bootstrap = getattr(sampler, "can_bootstrap", None)
+        if callable(can_bootstrap):
+            try:
+                use_sampler = bool(can_bootstrap(pitcher_id))
+            except Exception:
+                use_sampler = False
+        else:
+            use_sampler = True
+    if use_sampler:
         sims = sampler.sample_counts(mean=mean, pitcher_id=pitcher_id, simulations=config.simulations, rng=rng)
     else:
         scale = max(float(std_dev), 1e-6)
@@ -82,11 +95,21 @@ def apply_simulations(
     config = config or MonteCarloConfig()
     rng = np.random.default_rng(config.random_seed)
 
+    if isinstance(std_dev, str):
+        std_values = pd.to_numeric(lines[std_dev], errors="coerce").to_numpy()
+    elif np.isscalar(std_dev):
+        std_values = np.full(len(lines), float(std_dev))
+    else:
+        std_values = pd.to_numeric(np.asarray(std_dev), errors="coerce")
+        if std_values.shape[0] != len(lines):
+            raise ValueError("std_dev length must match number of rows in lines")
+
     results = []
-    for row in lines.itertuples(index=False):
+    for idx, row in enumerate(lines.itertuples(index=False)):
+        sigma = std_values[idx] if idx < len(std_values) else float(std_dev)
         stats = simulate_row(
             mean=getattr(row, mean_col),
-            std_dev=std_dev,
+            std_dev=sigma,
             strikeout_line=row.k_line,
             config=config,
             rng=rng,

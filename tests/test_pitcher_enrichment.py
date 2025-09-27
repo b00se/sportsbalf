@@ -118,7 +118,7 @@ def test_enrich_pitcher_games_coerces_types(monkeypatch):
     stringified["game_date"] = stringified["game_date"].astype(str)
 
     monkeypatch.setattr(
-        "features.pitcher_enrichment.aggregate_pitcher_games",
+        "src.mlb.features.pitcher_enrichment.aggregate_pitcher_games",
         lambda _: stringified.copy(),
     )
 
