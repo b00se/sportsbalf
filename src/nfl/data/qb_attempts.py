@@ -3,20 +3,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
-import warnings
-from urllib.error import HTTPError
-
-try:  # pragma: no cover - optional dependency
-    import nfl_data_py as nfl  # type: ignore
-except ImportError as exc:  # pragma: no cover - optional dependency missing
-    nfl = None  # type: ignore
-    _NFL_IMPORT_ERROR: Exception | None = exc
-else:  # pragma: no cover
-    _NFL_IMPORT_ERROR = None
 
 try:  # pragma: no cover - optional dependency
     import pyarrow as pa
@@ -25,6 +14,7 @@ except Exception:  # pragma: no cover - optional dependency missing
     pa = None  # type: ignore
     pq = None  # type: ignore
 
+from src.nfl.data.providers import NFLDataProvider, NFLReadPyProvider
 from src.nfl.features import (
     compute_game_context_features,
     compute_ngs_passing_features,
@@ -67,150 +57,90 @@ SCHEDULE_COLUMNS = [
 ]
 
 
-def _require_nfl_data_py() -> Any:
-    """Return the nfl_data_py module or raise a helpful error."""
-    if nfl is None:
-        raise ImportError(
-            "nfl_data_py is required to build the QB attempts dataset. "
-            "Install the package in your environment before running this loader."
-        ) from _NFL_IMPORT_ERROR
-    return nfl
-
-
 def _cache_path(prefix: str, years: Sequence[int]) -> Path:
     start, end = min(years), max(years)
     return RAW_DATA_DIR / f"{prefix}_{start}_{end}.parquet"
 
-def _import_with_fallback(
-    label: str,
-    fetch_fn: Callable[[list[int]], Any],
+
+_DEFAULT_PROVIDER = NFLReadPyProvider()
+
+
+def _get_provider(provider: NFLDataProvider | None) -> NFLDataProvider:
+    """Return a provider instance, defaulting to nflreadpy."""
+
+    return provider or _DEFAULT_PROVIDER
+
+
+def load_weekly_data(
     years: Sequence[int],
-) -> tuple[pd.DataFrame, list[int]]:
-    """Import seasonal data while skipping missing years that return 404s."""
-    years_list = [int(year) for year in years]
-    if not years_list:
-        return pd.DataFrame(), []
-
-    try:
-        data = fetch_fn(list(years_list))
-    except HTTPError as exc:  # pragma: no cover - network exception path
-        if exc.code != 404:
-            raise
-    except Exception as exc:  # pragma: no cover - unexpected network error
-        message = str(exc)
-        if '404' not in message and 'Not Found' not in message:
-            raise
-    else:
-        frame = pd.DataFrame(data)
-        if not frame.empty:
-            return frame, []
-
-    frames: list[pd.DataFrame] = []
-    skipped: list[int] = []
-    for year in years_list:
-        try:
-            data = fetch_fn([int(year)])
-        except HTTPError as exc:  # pragma: no cover - network exception path
-            if exc.code == 404:
-                skipped.append(year)
-                continue
-            raise
-        except Exception as exc:  # pragma: no cover - unexpected network error
-            message = str(exc)
-            if '404' in message or 'Not Found' in message:
-                skipped.append(year)
-                continue
-            raise
-        frame = pd.DataFrame(data)
-        if frame.empty:
-            skipped.append(year)
-            continue
-        frames.append(frame)
-
-    if not frames:
-        raise ValueError(
-            f"No {label} data available for seasons {sorted(set(years_list))}"
-        )
-
-    if skipped:
-        warnings.warn(
-            f"Skipping {label} data for unavailable seasons: {sorted(set(skipped))}",
-            RuntimeWarning,
-            stacklevel=3,
-        )
-
-    return pd.concat(frames, ignore_index=True), skipped
-def load_weekly_data(years: Sequence[int]) -> pd.DataFrame:
+    provider: NFLDataProvider | None = None,
+) -> pd.DataFrame:
     """Fetch weekly NFL data for the given seasons."""
-    nfl_module = _require_nfl_data_py()
-    frame, _ = _import_with_fallback(
-        "weekly",
-        lambda season_list: nfl_module.import_weekly_data(list(season_list)),
-        years,
-    )
-    return frame
+
+    resolved = _get_provider(provider)
+    result = resolved.load_weekly(list(years))
+    return result.data
 
 
-def load_schedule(years: Sequence[int]) -> pd.DataFrame:
+def load_schedule(
+    years: Sequence[int],
+    provider: NFLDataProvider | None = None,
+) -> pd.DataFrame:
     """Fetch season schedules for the given seasons."""
-    nfl_module = _require_nfl_data_py()
-    frame, _ = _import_with_fallback(
-        "schedule",
-        lambda season_list: nfl_module.import_schedules(list(season_list)),
-        years,
-    )
-    return frame
+
+    resolved = _get_provider(provider)
+    result = resolved.load_schedules(list(years))
+    return result.data
 
 
-def load_pbp_data(years: Sequence[int]) -> pd.DataFrame:
-    """Fetch play-by-play data with simple parquet caching."""
+def load_pbp_data(
+    years: Sequence[int],
+    provider: NFLDataProvider | None = None,
+) -> pd.DataFrame:
+    """Fetch play-by-play data with parquet caching."""
+
     years_list = list(years)
+    if not years_list:
+        return pd.DataFrame()
+
+    resolved = _get_provider(provider)
     cache_file = _cache_path("pbp", years_list)
     if cache_file.exists():
         return pd.read_parquet(cache_file)
 
-    nfl_module = _require_nfl_data_py()
-    frame, skipped = _import_with_fallback(
-        "pbp",
-        lambda season_list: nfl_module.import_pbp_data(list(season_list)),
-        years_list,
-    )
+    result = resolved.load_pbp(years_list)
+    frame = result.data
 
-    if skipped:
-        return frame
+    if not frame.empty and not result.skipped_years:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_parquet(cache_file, index=False)
 
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_parquet(cache_file, index=False)
     return frame
 
 
-def load_ngs_passing_data(years: Sequence[int]) -> pd.DataFrame:
+def load_ngs_passing_data(
+    years: Sequence[int],
+    provider: NFLDataProvider | None = None,
+) -> pd.DataFrame:
     """Return Next Gen Stats passing data when available."""
+
     years_list = list(years)
+    if not years_list:
+        return pd.DataFrame()
+
+    resolved = _get_provider(provider)
     cache_file = _cache_path("ngs_passing", years_list)
     if cache_file.exists():
         return pd.read_parquet(cache_file)
 
-    nfl_module = _require_nfl_data_py()
-    try:
-        frame, skipped = _import_with_fallback(
-            "ngs passing",
-            lambda season_list: nfl_module.import_ngs_data(
-                stat_type="passing",
-                years=list(season_list),
-            ),
-            years_list,
-        )
-    except Exception:  # pragma: no cover - optional dependency
-        return pd.DataFrame()
+    result = resolved.load_ngs_passing(years_list)
+    frame = result.data
 
-    if frame.empty or skipped:
-        return frame
+    if not frame.empty and not result.skipped_years:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_parquet(cache_file, index=False)
 
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_parquet(cache_file, index=False)
     return frame
-
 
 def _normalize_name(value: str | None) -> str:
     """Lowercase and strip punctuation for fuzzy name matches."""
@@ -387,17 +317,23 @@ def _fill_missing_values(merged: pd.DataFrame) -> pd.DataFrame:
     ]
     for column in numeric_team_cols:
         if column in filled.columns:
-            team_fallback = filled.groupby("team")[column].transform("median") if "team" in filled.columns else None
-            opponent_fallback = filled.groupby("opponent")[column].transform("median") if "opponent" in filled.columns else None
-            if team_fallback is not None:
-                filled[column] = filled[column].fillna(team_fallback)
-            if opponent_fallback is not None:
-                filled[column] = filled[column].fillna(opponent_fallback)
-            if filled[column].notna().any():
-                global_median = filled[column].median()
+            column_values = pd.to_numeric(filled[column], errors="coerce")
+            team_fallback = None
+            opponent_fallback = None
+            if "team" in filled.columns:
+                team_fallback = column_values.groupby(filled["team"]).transform("median")
+            if "opponent" in filled.columns:
+                opponent_fallback = column_values.groupby(filled["opponent"]).transform("median")
+            if team_fallback is not None and team_fallback.notna().any():
+                column_values = column_values.where(column_values.notna(), team_fallback)
+            if opponent_fallback is not None and opponent_fallback.notna().any():
+                column_values = column_values.where(column_values.notna(), opponent_fallback)
+            if column_values.notna().any():
+                global_median = float(column_values.median())
             else:
                 global_median = 0.0
-            filled[column] = filled[column].fillna(global_median)
+            column_values = column_values.where(column_values.notna(), global_median)
+            filled[column] = column_values
 
     qb_numeric_cols = [
         "qb_dropbacks",
@@ -411,19 +347,25 @@ def _fill_missing_values(merged: pd.DataFrame) -> pd.DataFrame:
     ]
     for column in qb_numeric_cols:
         if column in filled.columns:
-            qb_fallback = filled.groupby("qb_id")[column].transform("mean")
-            filled[column] = filled[column].fillna(qb_fallback)
-            if filled[column].notna().any():
-                global_median = filled[column].median()
+            column_values = pd.to_numeric(filled[column], errors="coerce")
+            qb_fallback = column_values.groupby(filled["qb_id"]).transform("mean")
+            if qb_fallback.notna().any():
+                column_values = column_values.where(column_values.notna(), qb_fallback)
+            if column_values.notna().any():
+                global_median = float(column_values.median())
             else:
                 global_median = 0.0
-            filled[column] = filled[column].fillna(global_median)
+            column_values = column_values.where(column_values.notna(), global_median)
+            filled[column] = column_values
 
     if "rest_days" in filled.columns:
-        filled["rest_days"] = filled["rest_days"].fillna(7)
+        rest_days = pd.to_numeric(filled["rest_days"], errors="coerce")
+        rest_days = rest_days.where(rest_days.notna(), 7)
+        filled["rest_days"] = rest_days
     for boolean_col in ["short_week", "is_divisional"]:
         if boolean_col in filled.columns:
-            filled[boolean_col] = filled[boolean_col].fillna(False).astype(bool)
+            boolean_values = filled[boolean_col].where(filled[boolean_col].notna(), False)
+            filled[boolean_col] = boolean_values.astype(bool)
 
     return filled
 
@@ -615,19 +557,41 @@ def build_qb_attempts_dataset(
     team_map: Mapping[str, str] | None = None,
     pbp_loader: Callable[[Sequence[int]], pd.DataFrame] | None = None,
     ngs_loader: Callable[[Sequence[int]], pd.DataFrame] | None = None,
+    provider: NFLDataProvider | None = None,
 ) -> pd.DataFrame:
-    """High-level helper to fetch data, assemble the dataset, and persist to disk."""
+    """High-level helper to fetch data, assemble the dataset, and persist to disk.
+
+    Args:
+        years: Season years to include.
+        output_path: Destination parquet path for the assembled dataset.
+        ud_loader: Optional override for Underdog lines loader.
+        team_map: Optional mapping to normalise team abbreviations.
+        pbp_loader: Optional override for play-by-play loader.
+        ngs_loader: Optional override for Next Gen Stats loader.
+        provider: Optional provider override (defaults to nflreadpy).
+
+    Returns:
+        The assembled dataset.
+    """
+
     years_list = list(years)
-    weekly = load_weekly_data(years_list)
-    schedule = load_schedule(years_list)
+    resolved_provider = _get_provider(provider)
+
+    weekly = load_weekly_data(years_list, provider=resolved_provider)
+    schedule = load_schedule(years_list, provider=resolved_provider)
 
     loader = ud_loader or import_ud_pass_attempt_lines
     ud_lines = loader(years=years_list)
 
-    pbp_loader = pbp_loader or load_pbp_data
-    ngs_loader = ngs_loader or load_ngs_passing_data
-    pbp = pbp_loader(years_list)
-    ngs = ngs_loader(years_list)
+    if pbp_loader is None:
+        pbp = load_pbp_data(years_list, provider=resolved_provider)
+    else:
+        pbp = pbp_loader(years_list)
+
+    if ngs_loader is None:
+        ngs = load_ngs_passing_data(years_list, provider=resolved_provider)
+    else:
+        ngs = ngs_loader(years_list)
 
     dataset = prepare_qb_attempts_dataset(
         weekly,

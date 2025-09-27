@@ -50,7 +50,10 @@ def _maybe_build_dataset(config: Mapping[str, Any]) -> Path:
     else:
         years = list(years)
 
-    build_qb_attempts_dataset(years=years, output_path=dataset_path)
+    build_qb_attempts_dataset(
+        years=years,
+        output_path=dataset_path,
+    )
     return dataset_path
 
 

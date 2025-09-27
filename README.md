@@ -49,7 +49,7 @@ Key entry points:
 
 - **Build / refresh the dataset**
   ```bash
-  python scripts/build_qb_attempts_dataset.py --start 2015 --end 2024 [--provider nflreadpy]
+  python scripts/build_qb_attempts_dataset.py --start 2015 --end 2024
   ```
   This pulls weekly QB stats, schedules, play-by-play, Next Gen passing metrics,
   and Underdog lines, then writes `data/qb_attempts_dataset.parquet`.
@@ -70,16 +70,9 @@ Key entry points:
 
 ### Data providers
 
-NFL ingestion is being migrated from `nfl_data_py` to the new `nflreadpy`
-package. Choose the provider via `config/nfl.yaml`:
-
-```yaml
-provider: nflreadpy  # or `nfl_data_py` during transition
-```
-
-`scripts/build_qb_attempts_dataset.py` also exposes `--provider` so you can test
-both backends. The default will switch to `nflreadpy` once the migration is fully
-rolled out; see `instructions/nflreadpy_migration.md` for the detailed plan.
+NFL ingestion now uses `nflreadpy` exclusively. The migration away from
+`nfl_data_py` is complete, so `config/nfl.yaml` no longer needs a provider
+switch; the dataset builder and pipeline always rely on `nflreadpy`.
 
 ## Bet slip generation
 
