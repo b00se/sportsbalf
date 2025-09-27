@@ -342,7 +342,9 @@ def compute_game_context_features(schedule: pd.DataFrame) -> pd.DataFrame:
     frame["gameday"] = pd.to_datetime(frame["gameday"], errors="coerce")
     frame["season"] = _to_numeric(frame["season"]).astype("Int64")
     frame["week"] = _to_numeric(frame["week"]).astype("Int64")
-    frame["div_game"] = frame["div_game"].fillna(0).astype(int)
+    div_game = pd.to_numeric(frame["div_game"], errors="coerce")
+    div_game = div_game.where(div_game.notna(), 0).astype(int)
+    frame["div_game"] = div_game
 
     home = frame[["season", "week", "game_id", "home_team", "away_team", "gameday", "div_game"]].copy()
     home.rename(columns={"home_team": "team", "away_team": "opponent"}, inplace=True)
@@ -356,7 +358,8 @@ def compute_game_context_features(schedule: pd.DataFrame) -> pd.DataFrame:
     combined["rest_days"] = (
         combined["gameday"] - combined.groupby("team")["gameday"].shift(1)
     ).dt.days
-    combined["rest_days"].fillna(7, inplace=True)
+    rest_days = combined["rest_days"].where(combined["rest_days"].notna(), 7)
+    combined["rest_days"] = rest_days
     combined["short_week"] = combined["rest_days"] <= 4
     combined["is_divisional"] = combined["div_game"] > 0
 

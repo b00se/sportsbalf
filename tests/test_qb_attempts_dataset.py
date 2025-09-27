@@ -2,9 +2,11 @@ import warnings
 from urllib.error import HTTPError
 
 import pandas as pd
+import pandas.testing as pdt
 
 import src.nfl.data.qb_attempts as qb_attempts
 from src.nfl.data.qb_attempts import prepare_qb_attempts_dataset
+import src.nfl.data.providers.readpy as readpy_provider_module
 
 
 def test_prepare_qb_attempts_dataset_merges_ud_lines_and_features():
@@ -253,8 +255,10 @@ def test_prepare_qb_attempts_dataset_normalizes_team_names():
 
 def test_load_weekly_data_skips_missing_year(monkeypatch):
     class DummyNFL:
-        def import_weekly_data(self, years):
-            if len(years) > 1:
+        def load_player_stats(self, years_arg, summary_level="week"):
+            if summary_level != "week":
+                raise AssertionError(f"Unexpected summary level: {summary_level}")
+            if len(years_arg) > 1:
                 raise HTTPError(
                     url="http://example/multi",
                     code=404,
@@ -262,7 +266,7 @@ def test_load_weekly_data_skips_missing_year(monkeypatch):
                     hdrs=None,
                     fp=None,
                 )
-            year = years[0]
+            year = years_arg[0]
             if year == 2025:
                 raise HTTPError(
                     url=f"http://example/{year}",
@@ -273,25 +277,208 @@ def test_load_weekly_data_skips_missing_year(monkeypatch):
                 )
             return pd.DataFrame(
                 {
-                    "position": ["QB"],
+                    "player_position": ["QB"],
                     "season": [year],
-                    "week": [1],
-                    "game_id": [f"{year}_01"],
-                    "player_id": [f"QB-{year}"],
-                    "player_display_name": [f"QB {year}"],
-                    "recent_team": ["AAA"],
-                    "opponent_team": ["BBB"],
-                    "attempts": [30],
+                    "game_week": [1],
+                    "gsis_game_id": [f"{year}_01"],
+                    "player_id_gsis": [f"QB-{year}"],
+                    "player_name": [f"QB {year}"],
+                    "team": ["AAA"],
+                    "opp_team": ["BBB"],
+                    "pass_attempts": [30],
                 }
             )
 
-    monkeypatch.setattr(qb_attempts, "nfl", DummyNFL())
-    monkeypatch.setattr(qb_attempts, "_NFL_IMPORT_ERROR", None)
+    monkeypatch.setattr(readpy_provider_module, "nfl", DummyNFL(), raising=False)
+    monkeypatch.setattr(readpy_provider_module, "_NFL_IMPORT_ERROR", None, raising=False)
+
+    provider = readpy_provider_module.NFLReadPyProvider()
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        result = qb_attempts.load_weekly_data([2024, 2025])
+        result = provider.load_weekly([2024, 2025])
 
-    assert list(result["season"].unique()) == [2024]
+    assert list(result.data["season"].unique()) == [2024]
+    assert result.skipped_years == [2025]
     assert any("Skipping weekly data" in str(entry.message) for entry in caught)
+
+    frame = qb_attempts.load_weekly_data([2024, 2025], provider=provider)
+    assert list(frame["season"].unique()) == [2024]
+
+
+def test_provider_schema_alignment(monkeypatch):
+    years = [2024]
+
+    expected_weekly = pd.DataFrame(
+        {
+            "position": ["QB"],
+            "season": [2024],
+            "week": [1],
+            "game_id": ["2024_01_ARI_SEA"],
+            "player_id": ["QB-2024"],
+            "player_display_name": ["Kyler Murray"],
+            "recent_team": ["ARI"],
+            "opponent_team": ["SEA"],
+            "attempts": [30],
+        }
+    )
+
+    expected_schedule = pd.DataFrame(
+        {
+            "game_id": ["2024_01_ARI_SEA"],
+            "season": [2024],
+            "week": [1],
+            "gameday": ["2024-09-09"],
+            "home_team": ["ARI"],
+            "away_team": ["SEA"],
+            "spread_line": [-1.5],
+            "total_line": [47.5],
+            "div_game": [0],
+        }
+    )
+
+    expected_pbp = pd.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "game_id": ["2024_01_ARI_SEA"],
+            "posteam": ["ARI"],
+            "defteam": ["SEA"],
+            "pass_attempt": [1],
+            "rush_attempt": [0],
+            "score_differential": [3],
+            "qtr": [1],
+            "passer_player_id": ["QB-2024"],
+            "rusher_player_id": ["QB-2024"],
+            "qb_dropback": [1],
+            "epa": [0.5],
+            "cpoe": [0.1],
+            "air_yards": [6.0],
+        }
+    )
+
+    expected_ngs = pd.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "player_gsis_id": ["QB-2024"],
+            "avg_time_to_throw": [2.5],
+            "avg_intended_air_yards": [7.1],
+            "completion_percentage_above_expectation": [1.2],
+        }
+    )
+
+    class FakePolars:
+        def __init__(self, frame: pd.DataFrame) -> None:
+            self._frame = frame
+
+        def to_pandas(self) -> pd.DataFrame:
+            return self._frame.copy()
+
+    readpy_weekly = pd.DataFrame(
+        {
+            "player_position": ["QB"],
+            "season": [2024],
+            "game_week": [1],
+            "gsis_game_id": ["2024_01_ARI_SEA"],
+            "player_id_gsis": ["QB-2024"],
+            "player_name": ["Kyler Murray"],
+            "team": ["ARI"],
+            "opp_team": ["SEA"],
+            "pass_attempts": [30],
+        }
+    )
+
+    readpy_schedule = pd.DataFrame(
+        {
+            "gsis_game_id": ["2024_01_ARI_SEA"],
+            "season": [2024],
+            "game_week": [1],
+            "game_date": ["2024-09-09"],
+            "home": ["ARI"],
+            "away": ["SEA"],
+            "home_spread": [-1.5],
+            "over_under": [47.5],
+            "is_division_game": [0],
+        }
+    )
+
+    readpy_pbp = pd.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "gsis_game_id": ["2024_01_ARI_SEA"],
+            "offense_team": ["ARI"],
+            "defense_team": ["SEA"],
+            "is_pass_attempt": [1],
+            "is_rush_attempt": [0],
+            "score_diff": [3],
+            "quarter": [1],
+            "passer_player_gsis_id": ["QB-2024"],
+            "rusher_player_gsis_id": ["QB-2024"],
+            "is_qb_dropback": [1],
+            "epa": [0.5],
+            "cpoe": [0.1],
+            "air_yards_intended": [6.0],
+        }
+    )
+
+    readpy_ngs = pd.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "player_id": ["QB-2024"],
+            "average_time_to_throw": [2.5],
+            "intended_air_yards_avg": [7.1],
+            "cpoe": [1.2],
+        }
+    )
+
+    class ReadPyStub:
+        def load_player_stats(self, years_arg, summary_level="week"):
+            assert summary_level == "week"
+            assert years_arg == years
+            return FakePolars(readpy_weekly.copy())
+
+        def load_schedules(self, years_arg):
+            assert years_arg == years
+            return FakePolars(readpy_schedule.copy())
+
+        def load_pbp(self, years_arg):
+            assert years_arg == years
+            return FakePolars(readpy_pbp.copy())
+
+        def load_nextgen_stats(self, years_arg, stat_type="passing"):
+            assert stat_type == "passing"
+            assert years_arg == years
+            return FakePolars(readpy_ngs.copy())
+
+    monkeypatch.setattr(readpy_provider_module, "nfl", ReadPyStub(), raising=False)
+    monkeypatch.setattr(readpy_provider_module, "_NFL_IMPORT_ERROR", None, raising=False)
+
+    provider = readpy_provider_module.NFLReadPyProvider()
+
+    expected_frames = {
+        "weekly": expected_weekly,
+        "schedule": expected_schedule,
+        "pbp": expected_pbp,
+        "ngs": expected_ngs,
+    }
+
+    provider_results = {
+        "weekly": provider.load_weekly(years),
+        "schedule": provider.load_schedules(years),
+        "pbp": provider.load_pbp(years),
+        "ngs": provider.load_ngs_passing(years),
+    }
+
+    for key, expected in expected_frames.items():
+        actual = provider_results[key].data[expected.columns].reset_index(drop=True)
+        pdt.assert_frame_equal(
+            actual,
+            expected.reset_index(drop=True),
+            check_dtype=False,
+        )
+        assert provider_results[key].skipped_years == []
+
 

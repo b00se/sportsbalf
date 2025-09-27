@@ -4,19 +4,15 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 from typing import Sequence
 
 import pandas as pd
 
-from src.nfl.data.qb_attempts import (
-    build_qb_attempts_dataset,
-    load_ngs_passing_data,
-    load_pbp_data,
-)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.nfl.data.qb_attempts import build_qb_attempts_dataset
 
 DEFAULT_OUTPUT = "data/qb_attempts_dataset.parquet"
 
@@ -27,7 +23,7 @@ def _empty_loader(_: Sequence[int]) -> pd.DataFrame:  # pragma: no cover - CLI c
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build QB pass attempts dataset from nfl_data_py + Underdog lines",
+        description="Build QB pass attempts dataset using nflreadpy data",
     )
     parser.add_argument(
         "--years",
@@ -74,8 +70,8 @@ def main() -> None:
     else:
         years = list(range(args.start, args.end + 1))
 
-    pbp_loader = _empty_loader if args.skip_pbp else load_pbp_data
-    ngs_loader = _empty_loader if args.skip_ngs else load_ngs_passing_data
+    pbp_loader = _empty_loader if args.skip_pbp else None
+    ngs_loader = _empty_loader if args.skip_ngs else None
 
     dataset = build_qb_attempts_dataset(
         years=years,
@@ -83,12 +79,14 @@ def main() -> None:
         pbp_loader=pbp_loader,
         ngs_loader=ngs_loader,
     )
+    summary_provider = "nflreadpy"
     print(
         "Dataset built",
         {
             "years": f"{years[0]}-{years[-1]}",
             "rows": len(dataset),
             "features": len(dataset.columns),
+            "provider": summary_provider,
             "output": args.output,
         },
     )
