@@ -5,6 +5,25 @@ import pandas as pd
 from .team_abbr_map import team_fix_map
 
 
+def derive_park_factors_from_games(games_df: pd.DataFrame) -> pd.DataFrame:
+    """Derive park strikeout factors from an aggregated pitcher game dataset."""
+
+    if "home_team" not in games_df.columns or "park_factor_K" not in games_df.columns:
+        return pd.DataFrame(columns=["Team_abbr", "K_park_factor"])
+
+    park_df = (
+        games_df.dropna(subset=["home_team", "park_factor_K"])
+        .groupby("home_team", as_index=False)["park_factor_K"]
+        .mean()
+        .rename(columns={"home_team": "Team_abbr", "park_factor_K": "K_park_factor"})
+    )
+
+    park_df["K_park_factor"] = pd.to_numeric(park_df["K_park_factor"], errors="coerce")
+    park_df = park_df.dropna(subset=["K_park_factor"])
+
+    return park_df
+
+
 def load_historic_park_factors(csv_path: str) -> pd.DataFrame:
     """
     Load a manually downloaded park factor CSV from FanGraphs Guts! page.

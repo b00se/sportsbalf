@@ -7,6 +7,8 @@ from typing import Iterable
 
 import pandas as pd
 
+from src.utils.io import read_csv
+
 _REQUIRED_COLUMNS = {
     "player",
     "k_line",
@@ -23,7 +25,7 @@ def _coerce_numeric(df: pd.DataFrame, columns: Iterable[str]) -> None:
 
 
 def load_strikeout_lines(path: str) -> pd.DataFrame:
-    """Load raw Underdog strikeout lines from CSV/Parquet and coerce numerics."""
+    """Load raw Underdog strikeout lines and coerce numeric odds columns."""
 
     file_path = Path(path)
     if not file_path.exists():
@@ -32,7 +34,7 @@ def load_strikeout_lines(path: str) -> pd.DataFrame:
     if file_path.suffix.lower() == ".parquet":
         df = pd.read_parquet(file_path)
     else:
-        df = pd.read_csv(file_path)
+        df = read_csv(str(file_path))
 
     missing = _REQUIRED_COLUMNS - set(df.columns)
     if missing:
@@ -40,7 +42,6 @@ def load_strikeout_lines(path: str) -> pd.DataFrame:
             f"Strikeout lines missing required columns: {sorted(missing)}"
         )
 
-    # Ensure odds columns can be multiplied later when building slips.
     numeric_columns = [
         "k_line",
         "over_decimal_price",
@@ -50,8 +51,5 @@ def load_strikeout_lines(path: str) -> pd.DataFrame:
     ]
     _coerce_numeric(df, numeric_columns)
 
-    # American odds are helpful for reporting but keep them as strings.
     df["player"] = df["player"].astype(str)
-
     return df
-
