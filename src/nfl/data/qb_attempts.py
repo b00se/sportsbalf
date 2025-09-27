@@ -462,9 +462,11 @@ def prepare_qb_attempts_dataset(
     _apply_team_map(merged, ["recent_team", "opponent_team", "home_team", "away_team"], team_map)
 
     merged.sort_values(["player_id", "season", "week"], inplace=True)
-    merged["prev_attempts"] = merged.groupby("player_id")["attempts"].shift(1)
-    rolling = merged.groupby("player_id")["attempts"].rolling(window=3).mean()
-    merged["rolling3_attempts"] = rolling.reset_index(level=0, drop=True)
+    attempts_by_qb = merged.groupby("player_id")["attempts"]
+    merged["prev_attempts"] = attempts_by_qb.shift(1)
+    merged["rolling3_attempts"] = attempts_by_qb.transform(
+        lambda s: s.shift(1).rolling(window=3).mean()
+    )
 
     merged = _attach_ud_lines(merged, schedule_trimmed, ud_lines)
 
