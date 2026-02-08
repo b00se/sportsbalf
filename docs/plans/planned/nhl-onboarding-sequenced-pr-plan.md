@@ -39,7 +39,7 @@ Sequence is optimized for low-risk integration: each PR has explicit acceptance 
 - Dependency: PR 3 shared interface.
 
 ### PR 5: Config Schema Validation Hardening
-- Scope: add typed schema validation layer per sport/stat (required keys, defaults, type checks); add migration/fallback tests for legacy config shape.
+- Scope: enforce sectioned-only root schema (`pipeline.sport`, `pipeline.stat`, `{sport}.{stat}`), add typed runtime-critical validation for implemented sport/stats, and add migration/rejection tests for legacy flat config shape.
 - Purpose: fail fast at config load time instead of runtime.
 - Acceptance: invalid configs fail with specific field-path errors; current `config/mlb.yaml` and `config/nfl.yaml` validate cleanly.
 - Dependency: PR 1 config schema doc.

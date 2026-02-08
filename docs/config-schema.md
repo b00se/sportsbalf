@@ -8,30 +8,29 @@ Date: 2026-02-08
 - `src/core/config.py` (`load_pipeline_config`, `_resolve_pipeline_identity`, `extract_stat_section`)
 
 ## Root schema
-### Sectioned schema (current preferred form)
+### Sectioned schema (required)
 - `pipeline.sport` (required)
 - `pipeline.stat` (required)
 - Active stat section located at `{sport}.{stat}`
 
-### Legacy flat schema (still supported)
-- If `pipeline` is absent/non-mapping:
-  - effective sport defaults to `mlb` unless CLI override is provided
-  - effective stat defaults to `strikeouts` unless CLI override is provided
-  - entire root config mapping is used as the active stat section
+### Legacy flat schema (rejected in PR#5)
+- If `pipeline` is missing or non-mapping, config loading fails with a migration-focused `ConfigValidationError`.
+- Required sectioned shape is explicitly referenced in the error (`pipeline.sport`, `pipeline.stat`, `{sport}.{stat}`).
 
 ## Section resolution behavior
 1. Resolve sport/stat identity from `pipeline.*` or CLI overrides.
-2. If sectioned schema is present:
-   - load `raw_config[sport][stat]`
-   - raise validation errors when sport/stat sections are missing.
-3. If sectioned schema is absent:
-   - treat full config as active section (legacy fallback).
+2. Load `raw_config[sport][stat]`.
+3. Raise validation errors when sport/stat sections are missing.
+4. Apply runtime-critical typed validators for implemented pipelines.
+5. If no validator is registered for a resolved sport/stat, loader remains permissive for section contents.
 
 ## Validation behavior and current error modes
+- Missing/non-mapping `pipeline`:
+  - raises `ConfigValidationError` with migration guidance and required sectioned fields.
 - Missing `pipeline.sport` in sectioned schema:
-  - raises `ConfigValidationError("Config is missing required field 'pipeline.sport'.")`
+  - raises `ConfigValidationError("Invalid required field 'pipeline.sport': expected non-empty string.")`
 - Missing `pipeline.stat` in sectioned schema:
-  - raises `ConfigValidationError("Config is missing required field 'pipeline.stat'.")`
+  - raises `ConfigValidationError("Invalid required field 'pipeline.stat': expected non-empty string.")`
 - Missing sport section:
   - raises `ConfigValidationError("Missing sport section '<sport>' in config.")`
 - Missing stat section:
@@ -45,7 +44,7 @@ Notes:
 - Some keys have defaults in code and are optional; keys listed as required are directly indexed and expected in normal runs.
 
 ### MLB `strikeouts` (section: `mlb.strikeouts`)
-Required:
+Runtime-critical required:
 - `pitch_data_path`
 - `model_path`
 - `lines_path`
@@ -71,7 +70,7 @@ Applies to sections:
 - `mlb.hits_allowed`
 - `mlb.bb_allowed`
 
-Required:
+Runtime-critical required:
 - `pitch_data_path`
 - `model_path`
 - `lines_path`
@@ -80,8 +79,8 @@ Optional:
 - same optional set as MLB strikeouts above (stat-specific line column is inferred by stat key, not config key)
 
 ### NFL `pass_attempts` (section: `nfl.pass_attempts`)
-Required:
-- `training_years` (empty/missing triggers runtime `ValueError`)
+Runtime-critical required:
+- `training_years` (non-empty `list[int]`; bool and non-int entries are rejected with index-qualified field-path errors)
 
 Optional (defaults exist):
 - `dataset_path` (default `data/qb_attempts_dataset.parquet`)
@@ -128,4 +127,4 @@ nfl:
 ```
 
 ## Forward-looking note
-Stricter typed schema validation is planned in NHL onboarding PR#5; this document intentionally reflects current behavior, including legacy fallback support.
+PR#5 typed schema hardening is implemented. Legacy flat schema fallback is intentionally removed.
