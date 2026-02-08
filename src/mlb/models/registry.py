@@ -27,6 +27,7 @@ class ModelSpec:
     name: str
     factory: Callable[..., Any]
     default_params: Mapping[str, Any]
+    trial_params: Sequence[Mapping[str, Any]] = ()
     preprocess_linear: bool = False
 
 
@@ -60,6 +61,11 @@ _MODEL_REGISTRY: dict[str, ModelSpec] = {
             "reg_lambda": 1.0,
             "random_state": DEFAULT_RANDOM_SEED,
         },
+        trial_params=(
+            {"max_depth": 3, "learning_rate": 0.1, "n_estimators": 300},
+            {"max_depth": 4, "learning_rate": 0.08, "n_estimators": 400},
+            {"max_depth": 2, "learning_rate": 0.12, "n_estimators": 260},
+        ),
     ),
     "random_forest": ModelSpec(
         name="random_forest",
@@ -71,6 +77,11 @@ _MODEL_REGISTRY: dict[str, ModelSpec] = {
             "random_state": DEFAULT_RANDOM_SEED,
             "n_jobs": -1,
         },
+        trial_params=(
+            {"max_depth": 10, "min_samples_leaf": 2, "n_estimators": 400},
+            {"max_depth": 12, "min_samples_leaf": 1, "n_estimators": 500},
+            {"max_depth": 8, "min_samples_leaf": 3, "n_estimators": 320},
+        ),
     ),
     "hist_gradient_boosting": ModelSpec(
         name="hist_gradient_boosting",
@@ -81,6 +92,11 @@ _MODEL_REGISTRY: dict[str, ModelSpec] = {
             "max_iter": 400,
             "random_state": DEFAULT_RANDOM_SEED,
         },
+        trial_params=(
+            {"max_depth": 6, "learning_rate": 0.05, "max_iter": 400},
+            {"max_depth": 8, "learning_rate": 0.04, "max_iter": 500},
+            {"max_depth": 4, "learning_rate": 0.08, "max_iter": 320},
+        ),
     ),
     "elastic_net": ModelSpec(
         name="elastic_net",
@@ -91,6 +107,11 @@ _MODEL_REGISTRY: dict[str, ModelSpec] = {
             "max_iter": 20_000,
             "random_state": DEFAULT_RANDOM_SEED,
         },
+        trial_params=(
+            {"alpha": 0.05, "l1_ratio": 0.4},
+            {"alpha": 0.1, "l1_ratio": 0.2},
+            {"alpha": 0.02, "l1_ratio": 0.7},
+        ),
         preprocess_linear=True,
     ),
     "poisson": ModelSpec(
@@ -100,6 +121,11 @@ _MODEL_REGISTRY: dict[str, ModelSpec] = {
             "alpha": 0.1,
             "max_iter": 1_000,
         },
+        trial_params=(
+            {"alpha": 0.1},
+            {"alpha": 0.2},
+            {"alpha": 0.05},
+        ),
         preprocess_linear=True,
     ),
 }
@@ -144,3 +170,18 @@ def available_candidates() -> list[str]:
     """Return known candidate identifiers."""
 
     return sorted(_MODEL_REGISTRY.keys())
+
+
+def resolve_trial_params(spec: ModelSpec, max_trials: int) -> list[dict[str, Any]]:
+    """Return bounded parameter overrides for deterministic tuning trials."""
+
+    if max_trials <= 1:
+        return [{}]
+
+    trials = [dict(params) for params in spec.trial_params]
+    if not trials:
+        return [{}]
+    bounded = trials[:max_trials]
+    if {} not in bounded:
+        bounded.insert(0, {})
+    return bounded[:max_trials]

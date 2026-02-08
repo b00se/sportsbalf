@@ -28,7 +28,10 @@ The pipeline aggregates pitch-level data using the helpers in
 `src/mlb/features/`, enriches games with rolling and park context, and scores
 props with a persisted champion model. Champion selection is optional/config
 driven and compares candidate regressors on season walk-forward splits using
-lowest MAE as the primary objective (RMSE and R² tie-breakers). Ahead of
+lowest MAE as the primary objective (RMSE and R² tie-breakers). When enabled,
+the tournament evaluates `global`, `quantile3`, and `kmeans` workload
+segmentation strategies and persists the winning strategy + model artifact.
+Ahead of
 scoring, the pipeline fetches each team’s upcoming opponent from Baseball
 Reference (via `pybaseball.schedule_and_record`), recomputes rest days, applies
 the correct park factor, and normalizes player names to handle accents. The
@@ -53,8 +56,9 @@ PYTHONPATH=. python scripts/backtest_mlb_strikeouts.py --config config/mlb.yaml
 ```
 
 Outputs:
+- CSV fold metrics (`strategy`, `model`, `test_season`, `mae`, `rmse`, `r2`)
 - CSV leaderboard with fold aggregates (`mean_mae`, `median_mae`, `std_mae`, `mean_rmse`, `mean_r2`)
-- JSON champion metadata with selected model and fold-level metrics
+- JSON champion metadata with selected strategy/model and fold-level metrics
 
 Compatibility note: legacy helpers such as `src.mlb.pipeline.run(...)` and
 `src.nfl.pipeline.run(...)` still work, but engine-based invocation is the default interface.

@@ -34,6 +34,7 @@ from src.mlb.features.park_factors import (
     compute_k_park_factors,
     derive_park_factors_from_games,
 )
+from src.mlb.models.buckets import segmentation_config_from_model_selection
 from src.mlb.models.distributions import ResidualBootstrapper
 from src.mlb.models.evaluation import run_walk_forward_tournament, select_champion
 from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
@@ -41,7 +42,6 @@ from src.mlb.models.predict import (
     DEFAULT_MODEL_PATH,
     FEATURES,
     load_model,
-    predict_strikeouts,
     residual_std,
     save_model,
     train_model,
@@ -50,6 +50,12 @@ from src.mlb.models.registry import (
     SIMPLE_MODEL_PREFERENCE,
     get_model_spec,
     resolve_model_specs,
+)
+from src.mlb.models.strategy import (
+    predict_with_strategy_artifact,
+    strategy_candidates_from_config,
+    strategy_metadata,
+    train_strategy_artifact,
 )
 from src.utils.io import read_csv
 from src.utils.names import normalize_person_name, resolve_unique_name_match
@@ -390,6 +396,10 @@ def _model_selection_config(section: dict[str, Any]) -> dict[str, Any]:
         "primary_metric": raw.get("primary_metric", "mae"),
         "tie_breakers": raw.get("tie_breakers", ["rmse", "r2"]),
         "tie_epsilon": float(raw.get("tie_epsilon", 1e-6)),
+        "runtime_budget_minutes": int(raw.get("runtime_budget_minutes", 30)),
+        "tuning": raw.get("tuning", {}),
+        "segmentation": raw.get("segmentation", {}),
+        "random_seed": int(raw.get("random_seed", 42)),
         "champion_model_path": raw.get(
             "champion_model_path", "models/mlb_strikeouts_champion.joblib"
         ),
@@ -414,7 +424,7 @@ def _train_or_load_serving_model(
     *,
     section: dict[str, Any],
     retrain: bool,
-) -> tuple[Any, str]:
+) -> tuple[Any, str, str]:
     """Resolve serving model, optionally running model selection tournament."""
 
     selection = _model_selection_config(section)
@@ -430,14 +440,19 @@ def _train_or_load_serving_model(
             )
             model = train_model(model_frame, params=params, model_name="xgboost")
             save_model(model, model_path)
-            return model, "xgboost"
+            return model, "xgboost", "global"
         logger.info("Loading existing baseline model from %s", model_path)
-        return load_model(model_path), "xgboost"
+        return load_model(model_path), "xgboost", "global"
 
     champion_model_path = Path(selection["champion_model_path"])
     champion_metadata_path = Path(selection["champion_metadata_path"])
     leaderboard_path = Path(selection["leaderboard_path"])
     candidates = selection["candidates"]
+    tuning_cfg = selection["tuning"] if isinstance(selection["tuning"], dict) else {}
+    tuning_enabled = bool(tuning_cfg.get("enabled", False))
+    max_trials = int(tuning_cfg.get("max_trials_per_model", 1)) if tuning_enabled else 1
+    segmentation = segmentation_config_from_model_selection(selection)
+    strategies = strategy_candidates_from_config(segmentation)
 
     should_retrain_champion = (
         retrain
@@ -454,6 +469,9 @@ def _train_or_load_serving_model(
                 features=FEATURES,
                 target_col="strikeouts",
                 date_col="game_date",
+                strategies=strategies,
+                segmentation=segmentation,
+                max_trials_per_model=max_trials,
             )
             winner = select_champion(
                 leaderboard,
@@ -463,8 +481,16 @@ def _train_or_load_serving_model(
                 simplicity_order=SIMPLE_MODEL_PREFERENCE,
             )
             winner_spec = get_model_spec(winner.model_name)
-            model = train_model(model_frame, model_name=winner_spec.name)
-            save_model(model, champion_model_path)
+            artifact = train_strategy_artifact(
+                model_frame,
+                spec=winner_spec,
+                features=FEATURES,
+                target_col="strikeouts",
+                strategy_name=winner.strategy_name,
+                segmentation=segmentation,
+                model_params=winner.params,
+            )
+            save_model(artifact, champion_model_path)
 
             leaderboard_path.parent.mkdir(parents=True, exist_ok=True)
             leaderboard.to_csv(leaderboard_path, index=False)
@@ -472,6 +498,7 @@ def _train_or_load_serving_model(
             dated = pd.to_datetime(model_frame["game_date"], errors="coerce")
             metadata_payload = {
                 "model_name": winner.model_name,
+                "strategy_name": winner.strategy_name,
                 "training_window": {
                     "start": str(dated.min().date()) if dated.notna().any() else None,
                     "end": str(dated.max().date()) if dated.notna().any() else None,
@@ -480,21 +507,26 @@ def _train_or_load_serving_model(
                 "metrics_snapshot": {
                     "primary_metric": selection["primary_metric"],
                     "tie_breakers": selection["tie_breakers"],
+                    "trial_id": winner.trial_id,
+                    "trial_params": winner.params or {},
                     "mean_mae": winner.mean_mae,
                     "mean_rmse": winner.mean_rmse,
                     "mean_r2": winner.mean_r2,
                 },
+                "selection_runtime_budget_minutes": selection["runtime_budget_minutes"],
+                "segmentation": strategy_metadata(artifact),
                 "feature_schema_hash": _feature_schema_hash(FEATURES),
                 "leaderboard_path": str(leaderboard_path),
                 "fold_metrics": fold_metrics.to_dict(orient="records"),
             }
             _persist_champion_metadata(champion_metadata_path, metadata_payload)
             logger.info(
-                "Selected champion model=%s with mean_mae=%.4f",
+                "Selected champion strategy=%s model=%s with mean_mae=%.4f",
+                winner.strategy_name,
                 winner.model_name,
                 winner.mean_mae,
             )
-            return model, winner.model_name
+            return artifact, winner.model_name, winner.strategy_name
         except Exception as exc:
             logger.warning(
                 "Model tournament failed (%s); training baseline model instead.",
@@ -503,13 +535,14 @@ def _train_or_load_serving_model(
             params = section.get("xgb_params")
             model = train_model(model_frame, params=params, model_name="xgboost")
             save_model(model, model_path)
-            return model, "xgboost"
+            return model, "xgboost", "global"
 
     try:
         metadata = json.loads(champion_metadata_path.read_text(encoding="utf-8"))
         champion_name = str(metadata.get("model_name", "xgboost"))
+        champion_strategy = str(metadata.get("strategy_name", "global"))
         model = load_model(champion_model_path)
-        return model, champion_name
+        return model, champion_name, champion_strategy
     except Exception as exc:
         logger.warning(
             "Champion artifact missing/incompatible (%s); training baseline model.",
@@ -518,7 +551,7 @@ def _train_or_load_serving_model(
         params = section.get("xgb_params")
         model = train_model(model_frame, params=params, model_name="xgboost")
         save_model(model, model_path)
-        return model, "xgboost"
+        return model, "xgboost", "global"
 
 
 def run_strikeouts_pipeline(
@@ -580,15 +613,24 @@ def run_strikeouts_pipeline(
 
     model_frame = _clean_for_model(training_games)
     start = time.time()
-    model, model_name = _train_or_load_serving_model(
+    model, model_name, strategy_name = _train_or_load_serving_model(
         model_frame,
         section=section,
         retrain=retrain,
     )
-    logger.info("Resolved serving model=%s in %.2fs", model_name, time.time() - start)
+    logger.info(
+        "Resolved serving strategy=%s model=%s in %.2fs",
+        strategy_name,
+        model_name,
+        time.time() - start,
+    )
 
     try:
-        train_preds = predict_strikeouts(model_frame, model)
+        train_preds = predict_with_strategy_artifact(
+            model_frame,
+            artifact=model,
+            features=FEATURES,
+        )
     except ValueError:
         logger.warning(
             "Loaded model incompatible with current features; "
@@ -598,7 +640,11 @@ def run_strikeouts_pipeline(
         fallback_model_path = Path(section.get("model_path") or str(DEFAULT_MODEL_PATH))
         model = train_model(model_frame, params=params, model_name="xgboost")
         save_model(model, fallback_model_path)
-        train_preds = predict_strikeouts(model_frame, model)
+        train_preds = predict_with_strategy_artifact(
+            model_frame,
+            artifact=model,
+            features=FEATURES,
+        )
     sigma = residual_std(model_frame["strikeouts"], train_preds)
     model_frame = model_frame.copy()
     model_frame["prediction"] = train_preds
@@ -632,7 +678,11 @@ def run_strikeouts_pipeline(
         prediction_rows["prediction"] = np.nan
         valid_mask = prediction_rows[FEATURES].notna().all(axis=1)
         if valid_mask.any():
-            preds = predict_strikeouts(prediction_rows.loc[valid_mask], model)
+            preds = predict_with_strategy_artifact(
+                prediction_rows.loc[valid_mask],
+                artifact=model,
+                features=FEATURES,
+            )
             prediction_rows.loc[valid_mask, "prediction"] = preds.values
 
         lines_enriched = lines.merge(

@@ -17,6 +17,8 @@ mlb:
     model_path: models/xgb_tuned_pitcher_k_model.joblib
     model_selection:
       enabled: true
+      runtime_budget_minutes: 30
+      random_seed: 42
       candidates:
         - xgboost
         - random_forest
@@ -28,6 +30,22 @@ mlb:
         - rmse
         - r2
       tie_epsilon: 1.0e-6
+      tuning:
+        enabled: false
+        max_trials_per_model: 1
+      segmentation:
+        enabled: true
+        bucket_methods:
+          - quantile3
+          - kmeans
+        min_bucket_size: 150
+        workload_col: rolling_pitch_count_5
+        kmeans:
+          n_clusters: 3
+          features:
+            - rolling_pitch_count_5
+            - rolling_K_avg_5
+            - rest_days
       champion_model_path: models/mlb_strikeouts_champion.joblib
       champion_metadata_path: models/mlb_strikeouts_champion_metadata.json
       leaderboard_path: models/mlb_strikeouts_leaderboard.csv
