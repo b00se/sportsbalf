@@ -239,3 +239,131 @@ def test_pipeline_retrains_when_loaded_artifact_is_incompatible(monkeypatch) -> 
 
     assert train_or_load_calls == [False, True]
     assert "predicted_outs_recorded" in result.columns
+
+
+def test_strikeouts_pipeline_applies_live_context_enrichment(monkeypatch) -> None:
+    descriptor = get_stat_descriptor("strikeouts")
+    model_frame = _synthetic_pitcher_prop_frame(descriptor.target_col).copy()
+    model_frame["game_date"] = pd.to_datetime(model_frame["game_date"])
+    model_frame["opponent_k_rate"] = 0.22
+    model_frame["park_factor_K"] = 1.0
+
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._build_training_games",
+        lambda section, descriptor: model_frame.copy(),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._persist_label_quality_report",
+        lambda games, descriptor, report_path: None,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._train_or_load",
+        lambda frame, *, section, descriptor, retrain: (
+            "compatible",
+            "xgboost",
+            "global",
+        ),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.predict_with_strategy_artifact",
+        lambda frame, *, artifact, features, name="prediction": pd.Series(
+            np.full(len(frame), 9.0),
+            index=frame.index,
+            name=name,
+        ),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.load_pitcher_prop_lines",
+        lambda _path, line_col: pd.DataFrame(
+            [
+                {
+                    "player": "123",
+                    line_col: 6.5,
+                    "over_decimal_price": 1.9,
+                    "under_decimal_price": 1.9,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._build_prediction_rows",
+        lambda lines, games, descriptor, target_date: pd.DataFrame(
+            [
+                {
+                    "player": "123",
+                    "pitcher_id": 123,
+                    "opponent_team": "NYY",
+                    descriptor.line_col: 6.5,
+                }
+            ]
+        ),
+    )
+
+    class _FakeLiveService:
+        def __init__(self, config):
+            self.config = config
+
+        def fetch(self, rows, target_date):
+            del target_date
+            frame = rows[["pitcher_id", "opponent_team"]].copy()
+            frame["humidity_pct"] = 66.0
+            frame["weather_known_flag"] = 1
+            frame["roof_state"] = "open"
+            return type(
+                "LiveResult",
+                (),
+                {
+                    "frame": frame,
+                    "metadata": {
+                        "live_feature_set_version": "v1",
+                        "live_feature_sources": ["primary", "secondary"],
+                        "live_fetch_timestamp": "2026-02-08T00:00:00Z",
+                        "cache_age_hours": 0.0,
+                        "stale_cache_usage_pct": 0.0,
+                        "cache_status": "fresh",
+                    },
+                },
+            )()
+
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.LiveContextService",
+        _FakeLiveService,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.apply_simulations",
+        lambda lines, **kwargs: lines.assign(
+            prob_over=0.5,
+            prob_under=0.5,
+            prob_push=0.0,
+            ev_over=0.0,
+            ev_under=0.0,
+            edge_over=0.0,
+            edge_under=0.0,
+            simulated_mean=9.0,
+            simulated_std=1.0,
+            simulated_median=9.0,
+        ),
+    )
+
+    config = PipelineConfig(
+        config_path=Path("config/mlb.yaml"),
+        sport="mlb",
+        stat="strikeouts",
+        raw={},
+        section={
+            "model_path": "models/tmp.joblib",
+            "lines_path": "tests/testdata/lines_with_odds.csv",
+            "fallback_std": 1.0,
+            "live_features": {"enabled": True},
+        },
+    )
+
+    result = run_mlb_pitcher_prop_pipeline(config, retrain=False)
+
+    assert "predicted_strikeouts" in result.columns
+    assert "live_feature_set_version" in result.columns
+    assert "live_feature_sources" in result.columns
+    assert "live_fetch_timestamp" in result.columns
+    assert "cache_age_hours" in result.columns
+    assert "stale_cache_usage_pct" in result.columns
+    assert float(result.loc[0, "humidity_pct"]) == 66.0

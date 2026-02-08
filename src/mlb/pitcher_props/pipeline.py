@@ -18,8 +18,11 @@ from src.mlb.data.load_props import load_pitcher_prop_lines
 from src.mlb.features.feature_store import (
     LIVE_CONTEXT_FEATURE_COLUMNS,
     build_historical_live_features,
+    coverage_metrics,
     ensure_live_feature_defaults,
+    merge_live_feature_frame,
 )
+from src.mlb.features.live_context import LiveContextService
 from src.mlb.features.rolling import add_rolling_features
 from src.mlb.models.buckets import (
     SegmentationConfig,
@@ -838,6 +841,82 @@ def _infer_target_date(lines_path: str, fallback: pd.Timestamp) -> pd.Timestamp:
     return pd.Timestamp(fallback)
 
 
+def _resolve_live_features_config(section: dict[str, object]) -> dict[str, object]:
+    """Return non-breaking live-feature config with strikeouts defaults."""
+
+    raw = section.get("live_features")
+    if not isinstance(raw, dict):
+        raw = {}
+
+    weather_raw = raw.get("weather")
+    if not isinstance(weather_raw, dict):
+        weather_raw = {}
+
+    return {
+        "enabled": bool(raw.get("enabled", True)),
+        "source_policy": str(raw.get("source_policy", "pybaseball_first")),
+        "fallback_policy": str(raw.get("fallback_policy", "stale_cache")),
+        "cache_path": str(
+            raw.get("cache_path", "data/cache/mlb_live_features.parquet")
+        ),
+        "cache_ttl_hours": int(raw.get("cache_ttl_hours", 24)),
+        "weather": {
+            "enabled": bool(weather_raw.get("enabled", True)),
+            "primary_source": str(
+                weather_raw.get("primary_source", "pybaseball_team_game_logs")
+            ),
+            "secondary_source": str(
+                weather_raw.get("secondary_source", "statsapi_game_feed")
+            ),
+        },
+    }
+
+
+def _enrich_live_context_for_strikeouts(
+    prediction_rows: pd.DataFrame,
+    *,
+    section: dict[str, object],
+    target_date: pd.Timestamp,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Apply live-context enrichment for strikeouts inference rows."""
+
+    live_cfg = _resolve_live_features_config(section)
+    service = LiveContextService(config=live_cfg)
+    live_result = service.fetch(prediction_rows, target_date.to_pydatetime())
+    enriched = merge_live_feature_frame(
+        prediction_rows,
+        live_result.frame,
+        join_keys=("pitcher_id", "opponent_team"),
+    )
+
+    coverage = coverage_metrics(enriched)
+    logger.info(
+        (
+            "Strikeouts live-feature coverage weather=%.1f%% roof=%.1f%% "
+            "umpire=%.1f%% handedness=%.1f%% cache=%s"
+        ),
+        100.0 * coverage["weather_known_pct"],
+        100.0 * coverage["roof_known_pct"],
+        100.0 * coverage["umpire_known_pct"],
+        100.0 * coverage["handedness_known_pct"],
+        live_result.metadata.get("cache_status"),
+    )
+
+    metadata: dict[str, object] = {
+        "live_feature_set_version": live_result.metadata.get(
+            "live_feature_set_version"
+        ),
+        "live_feature_sources": ",".join(
+            str(source)
+            for source in (live_result.metadata.get("live_feature_sources") or [])
+        ),
+        "live_fetch_timestamp": live_result.metadata.get("live_fetch_timestamp"),
+        "cache_age_hours": live_result.metadata.get("cache_age_hours"),
+        "stale_cache_usage_pct": live_result.metadata.get("stale_cache_usage_pct"),
+    }
+    return enriched, metadata
+
+
 def _empty_result(
     descriptor: StatDescriptor, *, run_mode: str, lines_status: str
 ) -> pd.DataFrame:
@@ -978,6 +1057,14 @@ def run_mlb_pitcher_prop_pipeline(
         result["lines_status"] = lines_status
         return result
 
+    live_metadata: dict[str, object] = {}
+    if descriptor.stat == "strikeouts":
+        prediction_rows, live_metadata = _enrich_live_context_for_strikeouts(
+            prediction_rows,
+            section=section,
+            target_date=target_date,
+        )
+
     prediction_rows["prediction"] = predict_with_strategy_artifact(
         prediction_rows,
         features=_model_features(descriptor),
@@ -1009,6 +1096,8 @@ def run_mlb_pitcher_prop_pipeline(
     simulated["model_residual_std"] = sigma
     simulated["run_mode"] = "prediction"
     simulated["lines_status"] = lines_status
+    for key, value in live_metadata.items():
+        simulated[key] = value
 
     simulated.rename(
         columns={
