@@ -1,5 +1,43 @@
 # MLB Multi-Stat Expansion Plan (Pitcher Props Now, Batter-Ready Data Foundation)
 
+## Implementation Status (Updated: 2026-02-08)
+### Completed
+1. Registered new MLB stat pipelines in `src/pipeline/engine.py`:
+   - `mlb.outs_recorded`
+   - `mlb.earned_runs`
+   - `mlb.hits_allowed`
+   - `mlb.bb_allowed`
+2. Added stat sections in `config/mlb.yaml` for all four new pitcher stats with:
+   - stat-specific line schemas (`outs_line`, `er_line`, `hits_line`, `bb_line`)
+   - model/data paths
+   - `allow_missing_lines: true`
+3. Implemented shared pitcher-prop core under `src/mlb/pitcher_props/`:
+   - stat descriptors
+   - training/inference orchestration
+   - lines-optional branching
+   - rolling park factors by stat
+4. Implemented reusable Statcast-derived tables:
+   - multi-target pitcher-game table
+   - batter-game foundation table
+5. Implemented output metadata fields and offseason behavior:
+   - `run_mode` (`prediction` / `train_backtest_only`)
+   - `lines_status` (`present` / `missing`)
+6. Fixed post-review reliability issues:
+   - no-match line runs preserve full simulation schema columns
+   - `rest_days` is derived from target slate date (not wall-clock time)
+7. Added offline test coverage:
+   - target derivation tests
+   - park-factor fallback tests
+   - integration tests for `outs_recorded`, `earned_runs`, `hits_allowed`, `bb_allowed` in lines-present and lines-missing modes
+
+### In Progress
+1. Bring shared-core model selection/tournament behavior to parity with legacy strikeouts path.
+2. Expand data-integrity/leakage guard tests for multi-stat datasets.
+
+### Deferred / Not Yet Implemented
+1. High-fidelity earned-runs label join from external game-log/event sources (current ER label is derived from available event/score context with fallback logic).
+2. Full strikeouts migration onto shared core while preserving strict backward parity.
+
 ## Summary
 Extend the MLB pipeline to support new pitcher stats in order: `outs_recorded`, `earned_runs`, `hits_allowed`, `bb_allowed`, while simultaneously building a full Statcast-based batter data foundation for future batter props.
 
