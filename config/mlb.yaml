@@ -74,11 +74,7 @@ mlb:
       runtime_budget_minutes: 30
       random_seed: 42
       candidates:
-        - xgboost
-        - random_forest
         - hist_gradient_boosting
-        - elastic_net
-        - poisson
       primary_metric: mae
       tie_breakers:
         - rmse
@@ -118,11 +114,7 @@ mlb:
       runtime_budget_minutes: 30
       random_seed: 42
       candidates:
-        - xgboost
         - random_forest
-        - hist_gradient_boosting
-        - elastic_net
-        - poisson
       primary_metric: mae
       tie_breakers:
         - rmse
@@ -162,11 +154,7 @@ mlb:
       runtime_budget_minutes: 30
       random_seed: 42
       candidates:
-        - xgboost
-        - random_forest
         - hist_gradient_boosting
-        - elastic_net
-        - poisson
       primary_metric: mae
       tie_breakers:
         - rmse
@@ -206,11 +194,7 @@ mlb:
       runtime_budget_minutes: 30
       random_seed: 42
       candidates:
-        - xgboost
         - random_forest
-        - hist_gradient_boosting
-        - elastic_net
-        - poisson
       primary_metric: mae
       tie_breakers:
         - rmse
