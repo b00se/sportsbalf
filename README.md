@@ -25,14 +25,15 @@ python -m pipeline.main --sport nfl --stat pass_attempts --config config/nfl.yam
 ```
 
 The pipeline aggregates pitch-level data using the helpers in
-`src/mlb/features/`, enriches games with rolling and park context, loads the
-pretrained XGBoost model (retraining on demand), and bootstraps historical
-residuals to produce a discrete strikeout distribution. Ahead of scoring it
-fetches each team’s upcoming opponent from Baseball Reference (via
-`pybaseball.schedule_and_record`), recomputes rest days, applies the correct
-park factor, and normalizes player names to handle accents. The Monte Carlo
-step then adds win probabilities, medians, and expected values for each side of
-the bet.
+`src/mlb/features/`, enriches games with rolling and park context, and scores
+props with a persisted champion model. Champion selection is optional/config
+driven and compares candidate regressors on season walk-forward splits using
+lowest MAE as the primary objective (RMSE and R² tie-breakers). Ahead of
+scoring, the pipeline fetches each team’s upcoming opponent from Baseball
+Reference (via `pybaseball.schedule_and_record`), recomputes rest days, applies
+the correct park factor, and normalizes player names to handle accents. The
+Monte Carlo step then adds win probabilities, medians, and expected values for
+each side of the bet.
 
 Model training and the residual bootstrap now pull from every parquet listed in
 `training_data_paths`, so earlier seasons (2021–2024) are folded in alongside
@@ -44,6 +45,16 @@ To retrain before scoring, pass the `--retrain` flag:
 ```bash
 python -m pipeline.main --sport mlb --stat strikeouts --config config/mlb.yaml --retrain
 ```
+
+To run the offline tournament directly and emit leaderboard/champion artifacts:
+
+```bash
+PYTHONPATH=. python scripts/backtest_mlb_strikeouts.py --config config/mlb.yaml
+```
+
+Outputs:
+- CSV leaderboard with fold aggregates (`mean_mae`, `median_mae`, `std_mae`, `mean_rmse`, `mean_r2`)
+- JSON champion metadata with selected model and fold-level metrics
 
 Compatibility note: legacy helpers such as `src.mlb.pipeline.run(...)` and
 `src.nfl.pipeline.run(...)` still work, but engine-based invocation is the default interface.

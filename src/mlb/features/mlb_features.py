@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 
 from .team_abbr_map import team_fix_map
@@ -11,6 +13,41 @@ REQUIRED_PITCH_COLUMNS = {"description", "events", "inning", "pitch_type"}
 
 WHIFF_EVENTS = {"swinging_strike", "swinging_strike_blocked"}
 SWING_EVENTS = WHIFF_EVENTS | {"foul", "foul_tip", "hit_into_play"}
+logger = logging.getLogger(__name__)
+
+
+def _dedupe_pitch_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop duplicate pitch-level rows using stable canonical keys.
+
+    Args:
+        df: Pitch-level Statcast-like frame.
+
+    Returns:
+        DataFrame with duplicate pitch rows removed.
+    """
+
+    key_candidates = [
+        ["game_pk", "pitcher", "at_bat_number", "pitch_number"],
+        ["pitcher", "game_date", "inning", "at_bat_number", "pitch_number"],
+        ["pitcher", "game_date", "inning", "pitch_number"],
+    ]
+    for columns in key_candidates:
+        if set(columns).issubset(df.columns):
+            deduped = df.drop_duplicates(subset=columns, keep="last").copy()
+            removed = len(df) - len(deduped)
+            if removed > 0:
+                logger.info(
+                    "Removed %d duplicate pitch rows using key=%s.",
+                    removed,
+                    columns,
+                )
+            return deduped
+
+    deduped = df.drop_duplicates().copy()
+    removed = len(df) - len(deduped)
+    if removed > 0:
+        logger.info("Removed %d duplicate pitch rows using full-row dedupe.", removed)
+    return deduped
 
 
 def _first_pitch_metadata(df: pd.DataFrame) -> pd.DataFrame:
@@ -92,7 +129,8 @@ def aggregate_pitcher_games(df: pd.DataFrame) -> pd.DataFrame:
             df = df.drop(columns=existing)
         return df.reset_index(drop=True)
 
-    grouped = df.groupby(["pitcher", "game_date"])
+    deduped = _dedupe_pitch_rows(df)
+    grouped = deduped.groupby(["pitcher", "game_date"])
     games = grouped.agg(
         pitch_count=("description", "count"),
         strikeouts=("events", lambda x: (x == "strikeout").sum()),
@@ -100,10 +138,10 @@ def aggregate_pitcher_games(df: pd.DataFrame) -> pd.DataFrame:
         num_pitch_types=("pitch_type", pd.Series.nunique),
     ).reset_index()
 
-    meta = _first_pitch_metadata(df)
+    meta = _first_pitch_metadata(deduped)
     games = games.merge(meta, on=["pitcher", "game_date"], how="left")
 
-    counts = _count_events(df)
+    counts = _count_events(deduped)
     games = games.merge(counts, on=["pitcher", "game_date"], how="left")
 
     games.sort_values(["pitcher", "game_date"], inplace=True)
