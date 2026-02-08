@@ -37,6 +37,29 @@ _OUT_EVENT_MAP = {
 }
 
 
+def _canonical_pitcher_join_key(values: pd.Series) -> pd.Series:
+    """Return canonical pitcher join keys that are dtype-stable across sources."""
+
+    key = values.astype(str).str.strip().str.lower()
+    numeric = pd.to_numeric(values, errors="coerce")
+    numeric_mask = numeric.notna()
+    if numeric_mask.any():
+        key.loc[numeric_mask] = numeric.loc[numeric_mask].map(
+            lambda x: str(int(float(x)))
+            if float(x).is_integer()
+            else f"{float(x):.12g}"
+        )
+    key = key.replace({"": np.nan, "nan": np.nan, "none": np.nan})
+    return key
+
+
+def _canonical_game_date_join_key(values: pd.Series) -> pd.Series:
+    """Return canonical tz-naive date keys for join operations."""
+
+    parsed = pd.to_datetime(values, errors="coerce", utc=True)
+    return parsed.dt.tz_convert(None).dt.normalize()
+
+
 def _normalize_earned_runs_source_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Normalize a high-fidelity earned-runs source into join-ready columns.
 
@@ -92,18 +115,29 @@ def _normalize_earned_runs_source_frame(frame: pd.DataFrame) -> pd.DataFrame:
             er_col: "earned_runs_hf",
         }
     )
-    normalized["game_date"] = pd.to_datetime(normalized["game_date"], errors="coerce")
+    normalized["__pitcher_join_key"] = _canonical_pitcher_join_key(
+        normalized["pitcher"]
+    )
+    normalized["__game_date_join_key"] = _canonical_game_date_join_key(
+        normalized["game_date"]
+    )
     normalized["earned_runs_hf"] = pd.to_numeric(
         normalized["earned_runs_hf"], errors="coerce"
     )
-    normalized = normalized.dropna(subset=["pitcher", "game_date", "earned_runs_hf"])
+    normalized = normalized.dropna(
+        subset=["__pitcher_join_key", "__game_date_join_key", "earned_runs_hf"]
+    )
     if normalized.empty:
-        return pd.DataFrame(columns=["pitcher", "game_date", "earned_runs_hf"])
+        return pd.DataFrame(
+            columns=["__pitcher_join_key", "__game_date_join_key", "earned_runs_hf"]
+        )
 
     grouped = (
-        normalized.groupby(["pitcher", "game_date"], as_index=False)["earned_runs_hf"]
+        normalized.groupby(
+            ["__pitcher_join_key", "__game_date_join_key"], as_index=False
+        )["earned_runs_hf"]
         .max()
-        .sort_values(["pitcher", "game_date"], kind="stable")
+        .sort_values(["__pitcher_join_key", "__game_date_join_key"], kind="stable")
     )
     return grouped
 
@@ -284,7 +318,15 @@ def build_pitcher_game_table(
     )
     games["earned_runs_high_fidelity_used"] = 0
     if not high_fidelity.empty:
-        games = games.merge(high_fidelity, on=["pitcher", "game_date"], how="left")
+        games["__pitcher_join_key"] = _canonical_pitcher_join_key(games["pitcher"])
+        games["__game_date_join_key"] = _canonical_game_date_join_key(
+            games["game_date"]
+        )
+        games = games.merge(
+            high_fidelity,
+            on=["__pitcher_join_key", "__game_date_join_key"],
+            how="left",
+        )
         games["earned_runs"] = pd.to_numeric(games["earned_runs"], errors="coerce")
         games["earned_runs_hf"] = pd.to_numeric(
             games["earned_runs_hf"], errors="coerce"
@@ -298,6 +340,11 @@ def build_pitcher_game_table(
                 "Applied high-fidelity earned-runs labels to %d pitcher-game rows.",
                 int(hf_mask.sum()),
             )
+        games.drop(
+            columns=["__pitcher_join_key", "__game_date_join_key"],
+            inplace=True,
+            errors="ignore",
+        )
 
     fallback_earned = None
     for candidate in ["earned_runs", "er", "runs_allowed"]:

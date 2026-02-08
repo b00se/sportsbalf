@@ -353,3 +353,35 @@ def test_build_pitcher_game_table_high_fidelity_source_accepts_alias_columns() -
 
     assert float(games.iloc[0]["earned_runs"]) == 2.0
     assert int(games.iloc[0]["earned_runs_high_fidelity_used"]) == 1
+
+
+def test_build_pitcher_game_table_high_fidelity_join_normalizes_id_and_timezone(
+) -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "pitcher": 77,
+                "game_date": "2024-04-03",
+                "game_pk": 3001,
+                "at_bat_number": 1,
+                "pitch_number": 1,
+                "events": "walk",
+                "inning_topbot": "Top",
+                "runs_allowed": 0,
+            }
+        ]
+    )
+    high_fidelity = pd.DataFrame(
+        [
+            {
+                "pitcher_id": "77",
+                "game_dt": "2024-04-03T04:00:00+00:00",
+                "earned_runs": 4,
+            }
+        ]
+    )
+
+    games = build_pitcher_game_table(frame, earned_runs_source=high_fidelity)
+
+    assert float(games.iloc[0]["earned_runs"]) == 4.0
+    assert int(games.iloc[0]["earned_runs_high_fidelity_used"]) == 1
