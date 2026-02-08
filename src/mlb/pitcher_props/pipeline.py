@@ -85,6 +85,21 @@ def _model_features(descriptor: StatDescriptor) -> list[str]:
     return BASE_FEATURES + [descriptor.opponent_feature_col, descriptor.park_factor_col]
 
 
+def _person_lookup_key(name: object, *, fallback_id: object | None = None) -> str:
+    """Build a stable lookup key from person-name text or a numeric ID."""
+
+    normalized = normalize_person_name(str(name))
+    if normalized:
+        return normalized
+
+    null_tokens = {"", "nan", "none", "nat", "<na>", "null"}
+    for candidate in (fallback_id, name):
+        raw = str(candidate).strip().lower()
+        if raw not in null_tokens:
+            return f"id:{raw}"
+    return ""
+
+
 def _feature_schema_hash(features: list[str]) -> str:
     """Return deterministic hash for a feature schema."""
 
@@ -176,15 +191,18 @@ def _add_opponent_tendency(
         Enriched frame with opponent tendency feature.
     """
 
-    enriched = games.sort_values(["opponent_team", "game_date"]).copy()
+    enriched = games.sort_values(["game_date", "opponent_team"]).copy()
+    target = pd.to_numeric(enriched[target_col], errors="coerce")
     grouped = enriched.groupby("opponent_team", sort=False)
-    csum = grouped[target_col].cumsum().groupby(enriched["opponent_team"]).shift(1)
+    csum = target.groupby(enriched["opponent_team"]).cumsum().shift(1)
     ccnt = grouped.cumcount().astype(float)
     tendency = csum / ccnt.replace(0.0, np.nan)
-    fallback = float(pd.to_numeric(enriched[target_col], errors="coerce").mean())
-    if np.isnan(fallback):
-        fallback = 0.0
-    enriched[feature_col] = pd.to_numeric(tendency, errors="coerce").fillna(fallback)
+    global_prior = target.expanding(min_periods=1).mean().shift(1)
+    enriched[feature_col] = (
+        pd.to_numeric(tendency, errors="coerce")
+        .fillna(pd.to_numeric(global_prior, errors="coerce"))
+        .fillna(0.0)
+    )
     return enriched
 
 
@@ -435,7 +453,13 @@ def _build_prediction_rows(
         .drop_duplicates(subset=["pitcher_id"], keep="last")
         .copy()
     )
-    latest["name_key"] = latest["pitcher_name"].map(normalize_person_name)
+    latest["name_key"] = latest.apply(
+        lambda row: _person_lookup_key(
+            row.get("pitcher_name"),
+            fallback_id=row.get("pitcher_id"),
+        ),
+        axis=1,
+    )
 
     index = latest.set_index("name_key", drop=False)
     lookup = {
@@ -447,7 +471,7 @@ def _build_prediction_rows(
     park_lookup = park_factor_lookup(games, descriptor.park_factor_col)
     rows: list[pd.Series] = []
     for line in lines.itertuples(index=False):
-        name_key = normalize_person_name(getattr(line, "player"))
+        name_key = _person_lookup_key(getattr(line, "player"))
         try:
             row = index.loc[name_key]
         except KeyError:

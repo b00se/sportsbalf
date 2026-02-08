@@ -209,18 +209,29 @@ def build_pitcher_game_table(pitch_df: pd.DataFrame) -> pd.DataFrame:
             fallback_earned = candidate
             break
 
-    if games["earned_runs"].isna().all() and fallback_earned is not None:
-        logger.info(
-            "Using fallback earned-runs column '%s' from source frame.", fallback_earned
-        )
+    if fallback_earned is not None:
         fallback = (
             source.groupby(["pitcher", "game_date"], as_index=False)[fallback_earned]
             .max()
-            .rename(columns={fallback_earned: "earned_runs"})
+            .rename(columns={fallback_earned: "earned_runs_fallback"})
         )
-        games = games.drop(columns=["earned_runs"], errors="ignore").merge(
-            fallback, on=["pitcher", "game_date"], how="left"
+        games = games.merge(fallback, on=["pitcher", "game_date"], how="left")
+        games["earned_runs"] = pd.to_numeric(games["earned_runs"], errors="coerce")
+        games["earned_runs_fallback"] = pd.to_numeric(
+            games["earned_runs_fallback"], errors="coerce"
         )
+        missing_before = int(games["earned_runs"].isna().sum())
+        games["earned_runs"] = games["earned_runs"].fillna(
+            games["earned_runs_fallback"]
+        )
+        filled = missing_before - int(games["earned_runs"].isna().sum())
+        if filled > 0:
+            logger.info(
+                "Filled %d earned-runs rows from fallback column '%s'.",
+                filled,
+                fallback_earned,
+            )
+        games.drop(columns=["earned_runs_fallback"], inplace=True)
 
     fill_zero = [
         "outs_recorded",
