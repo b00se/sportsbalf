@@ -92,6 +92,7 @@ def load_pitcher_ids(csv_path: str, raw_df: pd.DataFrame) -> list[tuple[str, int
 
 def generate_dataset_from_raw(season):
     from src.mlb.features.dynamic_opponent import compute_opponent_k_pct_dynamic
+    from src.mlb.features.feature_store import build_historical_live_features
     from src.mlb.features.park_factors import compute_k_park_factors
     from src.mlb.features.pitcher_enrichment import enrich_pitcher_games
 
@@ -140,6 +141,7 @@ def generate_dataset_from_raw(season):
         return
 
     full_df = pd.concat(all_games, ignore_index=True)
+    full_df = build_historical_live_features(full_df)
     full_df.to_parquet(output_file, index=False)
     print(f"✅ Saved {len(full_df)} rows to {output_file}")
 

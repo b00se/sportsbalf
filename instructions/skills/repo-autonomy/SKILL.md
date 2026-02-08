@@ -3,6 +3,11 @@
 ## Purpose
 Run end-to-end repo tasks with minimal user intervention while preserving safety, determinism, and reviewability.
 
+## Current Repo Mode
+- Model-first/offseason:
+  - Prioritize modeling improvements and offline validation loops.
+  - Defer non-blocking live reliability churn unless explicitly requested.
+
 ## Use This Skill When
 - User asks for autonomous execution ("just do it", "handle everything", "run full flow").
 - User asks for fast merge readiness checks (lint/tests/e2e/PR updates).
@@ -13,8 +18,8 @@ Run end-to-end repo tasks with minimal user intervention while preserving safety
 2. Gather only needed context (`rg`, targeted file reads).
 3. Implement with surgical edits.
 4. Validate:
-   - `ruff check .`
-   - `pytest -q`
+   - `.venv/bin/ruff check .`
+   - `.venv/bin/pytest -q`
    - optional e2e run requested by user
 5. Summarize with exact outputs, unresolved risks, and next action.
 
@@ -26,8 +31,9 @@ Run end-to-end repo tasks with minimal user intervention while preserving safety
 
 ## Preferred Commands
 - Search/files: `rg`, `rg --files`
-- Lint: `ruff check .`
-- Format: `black .`
-- Tests: `pytest -q`
+- Lint: `.venv/bin/ruff check .`
+- Format: `.venv/bin/black .`
+- Tests: `.venv/bin/pytest -q`
+- Install deps: `.venv/bin/pip install -r requirements.txt`
 - Pipeline:
-  - `python -m pipeline.main --sport <sport> --stat <stat> --config <path> [--retrain]`
+  - `.venv/bin/python -m pipeline.main --sport <sport> --stat <stat> --config <path> [--retrain]`

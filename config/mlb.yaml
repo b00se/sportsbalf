@@ -20,11 +20,7 @@ mlb:
       runtime_budget_minutes: 30
       random_seed: 42
       candidates:
-        - xgboost
         - random_forest
-        - hist_gradient_boosting
-        - elastic_net
-        - poisson
       primary_metric: mae
       tie_breakers:
         - rmse
@@ -34,10 +30,9 @@ mlb:
         enabled: false
         max_trials_per_model: 1
       segmentation:
-        enabled: true
+        enabled: false
         bucket_methods:
-          - quantile3
-          - kmeans
+          - global
         min_bucket_size: 150
         workload_col: rolling_pitch_count_5
         kmeans:
@@ -52,3 +47,13 @@ mlb:
     monte_carlo_simulations: 10000
     monte_carlo_seed: 42
     fallback_std: 1.0
+    live_features:
+      enabled: true
+      source_policy: pybaseball_first
+      fallback_policy: stale_cache
+      cache_path: data/cache/mlb_live_features.parquet
+      cache_ttl_hours: 24
+      weather:
+        enabled: true
+        primary_source: pybaseball_team_game_logs
+        secondary_source: statsapi_game_feed

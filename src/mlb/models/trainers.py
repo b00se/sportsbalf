@@ -12,6 +12,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from src.mlb.features.feature_store import LIVE_CONTEXT_DEFAULTS
 from src.mlb.models.registry import ModelSpec
 
 
@@ -29,11 +30,16 @@ def _ordered_features(frame: pd.DataFrame, features: list[str]) -> pd.DataFrame:
         ValueError: If required features are missing.
     """
 
-    missing = [column for column in features if column not in frame.columns]
-    if missing:
-        raise ValueError(f"Missing required feature columns: {missing}")
+    ordered_frame = frame.copy()
+    missing = [column for column in features if column not in ordered_frame.columns]
+    unsupported = [column for column in missing if column not in LIVE_CONTEXT_DEFAULTS]
+    if unsupported:
+        raise ValueError(f"Missing required feature columns: {unsupported}")
 
-    ordered = frame[features].replace([np.inf, -np.inf], np.nan).copy()
+    for column in missing:
+        ordered_frame[column] = LIVE_CONTEXT_DEFAULTS[column]
+
+    ordered = ordered_frame[features].replace([np.inf, -np.inf], np.nan).copy()
     return ordered
 
 

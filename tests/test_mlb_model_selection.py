@@ -80,6 +80,18 @@ def test_walk_forward_splits_consistent_across_models() -> None:
     assert len(splits) == 3
 
 
+def test_walk_forward_splits_prevent_temporal_leakage() -> None:
+    frame = _synthetic_training_frame()
+    frame["game_date"] = pd.to_datetime(frame["game_date"])
+
+    splits = build_walk_forward_splits(frame)
+    assert splits
+    for _season, train_idx, test_idx in splits:
+        train_max = frame.loc[train_idx, "game_date"].max()
+        test_min = frame.loc[test_idx, "game_date"].min()
+        assert train_max < test_min
+
+
 def test_walk_forward_includes_quantile_and_kmeans_strategy_rows() -> None:
     frame = _synthetic_training_frame()
     specs = resolve_model_specs(["poisson", "xgboost"])

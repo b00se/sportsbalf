@@ -101,6 +101,7 @@ def load_pitcher_ids(starter_csv: str, raw_df: pd.DataFrame) -> list[tuple[str, 
 def update_pitcher_dataset(season):
     from src.mlb.features.dynamic_opponent import compute_opponent_k_pct_dynamic
     from src.mlb.features.enrichments import add_park_factor
+    from src.mlb.features.feature_store import build_historical_live_features
     from src.mlb.features.mlb_features import aggregate_pitcher_games
     from src.mlb.features.park_factors import compute_k_park_factors
     from src.mlb.features.rolling import add_rolling_features
@@ -184,6 +185,7 @@ def update_pitcher_dataset(season):
     new_games = pd.concat(all_games, ignore_index=True)
     full_df = pd.read_parquet(processed_file)
     updated_df = pd.concat([full_df, new_games], ignore_index=True).drop_duplicates()
+    updated_df = build_historical_live_features(updated_df)
     updated_df.to_parquet(processed_file, index=False)
     print(f"✅ Appended {len(new_games)} new rows. Total rows: {len(updated_df)}")
 
