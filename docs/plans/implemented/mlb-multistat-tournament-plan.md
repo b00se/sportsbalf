@@ -1,5 +1,7 @@
 # Updated Plan: Reusable Multi-Stat Model Tournament with Quantile vs K-Means Bucketing
 
+Status: Implemented
+
 ## Summary
 Build a stat-agnostic model tournament framework (reused later for additional pitcher stats) while implementing MLB strikeouts as the first adapter.  
 For segmented modeling, implement **both** workload bucketing strategies:

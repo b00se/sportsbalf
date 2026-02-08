@@ -1,5 +1,7 @@
 # Plan Completion Record: MLB Multi-Stat Expansion Plan
 
+Status: Implemented
+
 ## Metadata
 - Plan file: `docs/plans/implemented/mlb-multi-stat-expansion-plan.md`
 - Owner: Codex

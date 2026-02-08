@@ -1,5 +1,7 @@
 # Definition of Done Template (Plan Completion Record)
 
+Status: Implemented (Template)
+
 Use this template when moving a plan from `docs/plans/planned/` to `docs/plans/implemented/`.
 
 ## Metadata

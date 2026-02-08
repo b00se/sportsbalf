@@ -1,5 +1,7 @@
 # MLB Multi-Stat Expansion Plan (Pitcher Props Now, Batter-Ready Data Foundation)
 
+Status: Implemented
+
 ## Implementation Status (Updated: 2026-02-08)
 ### Completed
 1. Registered new MLB stat pipelines in `src/pipeline/engine.py`:

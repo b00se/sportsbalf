@@ -1,5 +1,9 @@
 # Plan Doneness Audit (2026-02-08)
 
+Status: Audit Report (Not a Plan Spec)
+
+Note: This file is an audit artifact summarizing plan-completion evidence. It is not an executable plan specification.
+
 ## Scope audited
 - `docs/plans/implemented/mlb-multi-stat-expansion-plan.md`
 - `docs/plans/implemented/mlb-multistat-tournament-plan.md`

@@ -8,5 +8,11 @@ This directory is split into:
 ## Lifecycle
 
 1. Create new planning docs in `planned/`.
-2. When the planned scope is completed, move the doc to `implemented/`.
-3. Keep filenames stable when moving so references stay intact.
+2. Keep docs in `planned/` while work is intended, in progress, partially complete, or blocked.
+3. Move a doc to `implemented/` only when scope is fully shipped against acceptance criteria.
+4. Keep filenames stable when moving so references stay intact.
+
+## Status labels (required in each plan doc)
+- `Status: Planned`
+- `Status: Planned (Partially Implemented)` when substantial work is done but criteria are not fully met.
+- `Status: Implemented` when scope is fully shipped.
