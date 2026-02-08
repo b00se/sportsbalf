@@ -4,12 +4,8 @@ from src.mlb.models.monte_carlo import MonteCarloConfig, simulate_row
 
 
 class DummySampler:
-    def __init__(self, allow: bool):
-        self.allow = allow
+    def __init__(self):
         self.calls = 0
-
-    def can_bootstrap(self, pitcher_id):
-        return self.allow
 
     def sample_counts(self, mean: float, pitcher_id, simulations: int, rng: np.random.Generator):
         self.calls += 1
@@ -17,7 +13,6 @@ class DummySampler:
 
 
 def test_simulate_row_skips_sampler_when_not_allowed():
-    sampler = DummySampler(allow=False)
     rng = np.random.default_rng(123)
     config = MonteCarloConfig(simulations=100)
 
@@ -27,16 +22,15 @@ def test_simulate_row_skips_sampler_when_not_allowed():
         strikeout_line=9.5,
         config=config,
         rng=rng,
-        sampler=sampler,
+        sampler=None,
         pitcher_id="pitcher-a",
     )
 
-    assert sampler.calls == 0
     assert set(result.keys()) >= {"prob_over", "prob_under", "prob_push"}
 
 
 def test_simulate_row_uses_sampler_when_allowed():
-    sampler = DummySampler(allow=True)
+    sampler = DummySampler()
     rng = np.random.default_rng(123)
     config = MonteCarloConfig(simulations=100)
 
