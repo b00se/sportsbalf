@@ -157,3 +157,30 @@ def test_aggregate_pitcher_games_dedupes_duplicate_pitches():
 
     assert dupe_row["pitch_count"] == base_row["pitch_count"]
     assert dupe_row["strikeouts"] == base_row["strikeouts"]
+
+
+def test_aggregate_pitcher_games_is_order_independent():
+    df = make_player_df()
+    shuffled = df.sample(frac=1.0, random_state=42).reset_index(drop=True)
+
+    ordered_games = aggregate_pitcher_games(df).sort_values(
+        ["pitcher", "game_date"], kind="stable"
+    )
+    shuffled_games = aggregate_pitcher_games(shuffled).sort_values(
+        ["pitcher", "game_date"], kind="stable"
+    )
+
+    compare_cols = [
+        "pitch_count",
+        "strikeouts",
+        "max_inning",
+        "num_pitch_types",
+        "rest_days",
+        "whiff_rate",
+        "csw_pct",
+        "whiff_rate_expanding",
+        "csw_pct_expanding",
+    ]
+    assert ordered_games[compare_cols].reset_index(drop=True).equals(
+        shuffled_games[compare_cols].reset_index(drop=True)
+    )
