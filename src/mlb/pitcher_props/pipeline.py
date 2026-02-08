@@ -889,6 +889,8 @@ def run_mlb_pitcher_prop_pipeline(
             name="prediction",
             artifact=model,
         )
+    model_frame = model_frame.copy()
+    model_frame["prediction"] = pd.to_numeric(train_preds, errors="coerce")
 
     residuals = pd.to_numeric(
         model_frame[descriptor.target_col], errors="coerce"
