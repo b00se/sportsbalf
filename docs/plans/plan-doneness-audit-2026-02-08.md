@@ -8,11 +8,17 @@ Note: This file is an audit artifact summarizing plan-completion evidence. It is
 - `docs/plans/implemented/mlb-multi-stat-expansion-plan.md`
 - `docs/plans/implemented/mlb-multistat-tournament-plan.md`
 - `docs/plans/planned/mlb-pybaseball-live-features-plan.md`
+- `docs/plans/implemented/nhl-pr1-architecture-baseline-canonical-docs-plan.md`
+- `docs/plans/planned/nhl-onboarding-sequenced-pr-plan.md`
+- `docs/plans/planned/nhl-pr2-contract-enforcement-tests-plan.md`
 
 ## Summary verdict
 - `mlb-multi-stat-expansion-plan.md`: **Implemented**.
 - `mlb-multistat-tournament-plan.md`: **Implemented** (acceptance criteria met by code + tests).
 - `mlb-pybaseball-live-features-plan.md`: **Partially implemented** (engineering scope implemented; strict MAE+ gate still not met).
+- `nhl-pr1-architecture-baseline-canonical-docs-plan.md`: **Implemented** (merged via PR #11).
+- `nhl-onboarding-sequenced-pr-plan.md`: **Partially implemented** (roadmap-level plan; PR1 done, PR2+ pending).
+- `nhl-pr2-contract-enforcement-tests-plan.md`: **Planned** (decision-complete implementation plan authored, not executed yet).
 
 ## Evidence
 
@@ -64,9 +70,42 @@ Open gap:
 - Current validation report (`docs/reports/mlb-live-features-mae-validation-2026-02-08.md`)
   shows no tested candidate set meeting positive MAE lift.
 
+### 4) NHL PR#1 Architecture Baseline + Canonical Docs Plan
+Status: **Implemented**
+
+Implemented evidence:
+- Canonical docs added:
+  - `docs/architecture.md`
+  - `docs/contracts.md`
+  - `docs/config-schema.md`
+  - `docs/new-sport-playbook.md`
+- Plan-status taxonomy normalization delivered across `docs/plans/*`.
+- Merged to `main` via PR #11:
+  - `https://github.com/b00se/sportsbalf/pull/11`
+
+### 5) NHL Onboarding Sequenced PR Plan
+Status: **Partially implemented**
+
+Implemented evidence:
+- PR 1 track item completed and merged (`#11`).
+
+Open gaps:
+- PR 2 through PR 10 are not implemented yet.
+
+### 6) NHL PR#2 Contract Enforcement Tests Plan
+Status: **Planned**
+
+Current state:
+- Detailed execution plan exists at
+  `docs/plans/planned/nhl-pr2-contract-enforcement-tests-plan.md`.
+- Implementation not yet started in code/tests.
+
 ## Recommended folder placement
 - Move to `implemented/` now:
   - `mlb-multi-stat-expansion-plan.md`
   - `mlb-multistat-tournament-plan.md`
+  - `nhl-pr1-architecture-baseline-canonical-docs-plan.md`
 - Keep in `planned/` until deferred/gap items are closed:
   - `mlb-pybaseball-live-features-plan.md`
+  - `nhl-onboarding-sequenced-pr-plan.md`
+  - `nhl-pr2-contract-enforcement-tests-plan.md`
