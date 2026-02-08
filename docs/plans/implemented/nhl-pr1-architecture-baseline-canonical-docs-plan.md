@@ -1,8 +1,12 @@
 # PR#1 Execution Plan: Architecture Baseline + Canonical Docs (NHL Onboarding Program)
 
-Status: Planned
+Status: Implemented
 
 Date: 2026-02-08
+
+Completion note (2026-02-08):
+- Implemented and merged via PR #11:
+  - https://github.com/b00se/sportsbalf/pull/11
 
 ## Summary
 Create a canonical documentation baseline that reflects the current code reality before any refactors. This PR is docs-first, with no behavior changes. It introduces four authoritative docs and normalizes plan-status labeling under `docs/plans/`.

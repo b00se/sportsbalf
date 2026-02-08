@@ -55,3 +55,9 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
 ## Field stability policy for onboarding work
 - Existing MLB/NFL output columns above are treated as backward-compatible commitments for this onboarding program.
 - New NHL outputs should align to shared probability/EV conventions (`prob_*`, `ev_*`, `edge_*`) from day one.
+
+## PR#2 enforcement baseline
+- Engine contract invariants are enforced in `tests/test_engine_contract_enforcement.py`:
+  strict stage order, stage handoff artifacts, CLI override passthrough, and default registration pairs.
+- Temporary simulate-only adapter behavior is explicitly allowlisted in that test module via fully qualified class names.
+- Any new simulate-only adapter must be intentionally added to the allowlist; silent introduction of new no-op adapters is a test failure.
