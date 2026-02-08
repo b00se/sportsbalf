@@ -77,6 +77,8 @@ def run_backtest(config_path: str) -> tuple[pd.DataFrame, dict[str, object]]:
 
     selection_cfg = section.get("model_selection") or {}
     candidates = selection_cfg.get("candidates")
+    primary_metric = str(selection_cfg.get("primary_metric", "mae"))
+    tie_breakers = list(selection_cfg.get("tie_breakers", ["rmse", "r2"]))
     tie_epsilon = float(selection_cfg.get("tie_epsilon", 1e-6))
 
     frame = _prepare_training_frame(section)
@@ -88,6 +90,8 @@ def run_backtest(config_path: str) -> tuple[pd.DataFrame, dict[str, object]]:
     )
     champion = select_champion(
         leaderboard,
+        primary_metric=primary_metric,
+        tie_breakers=tie_breakers,
         epsilon=tie_epsilon,
         simplicity_order=SIMPLE_MODEL_PREFERENCE,
     )

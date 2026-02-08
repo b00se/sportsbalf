@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from src.mlb.models.evaluation import (
     build_walk_forward_splits,
     run_walk_forward_tournament,
@@ -103,6 +104,49 @@ def test_champion_selection_uses_deterministic_tiebreakers() -> None:
 
     winner = select_champion(leaderboard, epsilon=1e-6)
     assert winner.model_name == "poisson"
+
+
+def test_champion_selection_honors_configured_primary_metric() -> None:
+    leaderboard = pd.DataFrame(
+        [
+            {
+                "model": "random_forest",
+                "mean_mae": 2.90,
+                "mean_rmse": 3.90,
+                "mean_r2": 0.48,
+            },
+            {
+                "model": "xgboost",
+                "mean_mae": 2.95,
+                "mean_rmse": 3.70,
+                "mean_r2": 0.44,
+            },
+        ]
+    )
+
+    winner = select_champion(
+        leaderboard,
+        primary_metric="rmse",
+        tie_breakers=["mae", "r2"],
+        epsilon=1e-6,
+    )
+    assert winner.model_name == "xgboost"
+
+
+def test_champion_selection_rejects_unknown_metric_name() -> None:
+    leaderboard = pd.DataFrame(
+        [
+            {
+                "model": "poisson",
+                "mean_mae": 2.95,
+                "mean_rmse": 4.00,
+                "mean_r2": 0.45,
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match="Unsupported metric"):
+        select_champion(leaderboard, primary_metric="mape")
 
 
 def test_pipeline_champion_model_roundtrip_predicts(tmp_path: Path) -> None:

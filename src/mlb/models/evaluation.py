@@ -146,19 +146,22 @@ def run_walk_forward_tournament(
 def select_champion(
     leaderboard: pd.DataFrame,
     *,
+    primary_metric: str = "mae",
+    tie_breakers: Sequence[str] | None = None,
     epsilon: float = 1e-6,
     simplicity_order: Sequence[str] | None = None,
 ) -> ChampionSelection:
     """Select champion model using deterministic tie-break rules.
 
     Rules:
-    1. Lowest mean MAE
-    2. Within epsilon: lower mean RMSE
-    3. Within epsilon: higher mean R^2
-    4. Within epsilon: simpler model using fixed preference order
+    1. Best value for primary metric
+    2. Within epsilon: best value for each tie-break metric in order
+    3. Within epsilon: simpler model using fixed preference order
 
     Args:
         leaderboard: Aggregated model leaderboard.
+        primary_metric: Primary metric name (``mae``, ``rmse``, or ``r2``).
+        tie_breakers: Ordered tie-break metrics.
         epsilon: Tolerance for tie comparisons.
         simplicity_order: Ordered model preference from simplest to most complex.
 
@@ -169,15 +172,30 @@ def select_champion(
     if leaderboard.empty:
         raise ValueError("Cannot select champion from empty leaderboard.")
 
+    metric_col_map = {
+        "mae": "mean_mae",
+        "rmse": "mean_rmse",
+        "r2": "mean_r2",
+    }
+    maximize_metrics = {"r2"}
+    tie_break_metric_names = list(tie_breakers) if tie_breakers else ["rmse", "r2"]
+    metric_priority = [primary_metric, *tie_break_metric_names]
+
+    unknown_metrics = [m for m in metric_priority if m not in metric_col_map]
+    if unknown_metrics:
+        raise ValueError(
+            f"Unsupported metric(s) in champion selection: {unknown_metrics}"
+        )
+
     candidates = leaderboard.copy()
-    min_mae = float(candidates["mean_mae"].min())
-    candidates = candidates[candidates["mean_mae"] <= min_mae + epsilon]
-
-    min_rmse = float(candidates["mean_rmse"].min())
-    candidates = candidates[candidates["mean_rmse"] <= min_rmse + epsilon]
-
-    max_r2 = float(candidates["mean_r2"].max())
-    candidates = candidates[candidates["mean_r2"] >= max_r2 - epsilon]
+    for metric_name in metric_priority:
+        column = metric_col_map[metric_name]
+        if metric_name in maximize_metrics:
+            best = float(candidates[column].max())
+            candidates = candidates[candidates[column] >= best - epsilon]
+        else:
+            best = float(candidates[column].min())
+            candidates = candidates[candidates[column] <= best + epsilon]
 
     ranking = list(simplicity_order) if simplicity_order else SIMPLE_MODEL_PREFERENCE
     rank_map = {name: idx for idx, name in enumerate(ranking)}

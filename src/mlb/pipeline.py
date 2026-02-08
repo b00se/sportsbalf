@@ -457,6 +457,8 @@ def _train_or_load_serving_model(
             )
             winner = select_champion(
                 leaderboard,
+                primary_metric=str(selection["primary_metric"]),
+                tie_breakers=list(selection["tie_breakers"]),
                 epsilon=selection["tie_epsilon"],
                 simplicity_order=SIMPLE_MODEL_PREFERENCE,
             )
