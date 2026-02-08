@@ -385,3 +385,35 @@ def test_build_pitcher_game_table_high_fidelity_join_normalizes_id_and_timezone(
 
     assert float(games.iloc[0]["earned_runs"]) == 4.0
     assert int(games.iloc[0]["earned_runs_high_fidelity_used"]) == 1
+
+
+def test_build_pitcher_game_table_high_fidelity_preserves_local_game_day() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "pitcher": 88,
+                "game_date": "2024-04-03",
+                "game_pk": 3002,
+                "at_bat_number": 1,
+                "pitch_number": 1,
+                "events": "walk",
+                "inning_topbot": "Top",
+                "runs_allowed": 0,
+            }
+        ]
+    )
+    high_fidelity = pd.DataFrame(
+        [
+            {
+                "pitcher_id": "88",
+                # Evening PT first pitch should still join to local game date.
+                "game_dt": "2024-04-03T20:10:00-07:00",
+                "earned_runs": 5,
+            }
+        ]
+    )
+
+    games = build_pitcher_game_table(frame, earned_runs_source=high_fidelity)
+
+    assert float(games.iloc[0]["earned_runs"]) == 5.0
+    assert int(games.iloc[0]["earned_runs_high_fidelity_used"]) == 1

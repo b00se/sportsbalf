@@ -56,8 +56,18 @@ def _canonical_pitcher_join_key(values: pd.Series) -> pd.Series:
 def _canonical_game_date_join_key(values: pd.Series) -> pd.Series:
     """Return canonical tz-naive date keys for join operations."""
 
-    parsed = pd.to_datetime(values, errors="coerce", utc=True)
-    return parsed.dt.tz_convert(None).dt.normalize()
+    parsed = pd.to_datetime(values, errors="coerce")
+
+    def _normalize_local_day(value: object) -> pd.Timestamp:
+        if pd.isna(value):
+            return pd.NaT
+        ts = pd.Timestamp(value)
+        if ts.tzinfo is not None:
+            # Preserve the source-local wall-clock date (avoid UTC day shift).
+            ts = ts.tz_localize(None)
+        return ts.normalize()
+
+    return parsed.map(_normalize_local_day)
 
 
 def _normalize_earned_runs_source_frame(frame: pd.DataFrame) -> pd.DataFrame:
