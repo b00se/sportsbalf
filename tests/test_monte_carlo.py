@@ -9,7 +9,7 @@ class DummySampler:
         self.calls = 0
 
     def sample_counts(
-        self, mean: float, pitcher_id, simulations: int, rng: np.random.Generator
+        self, mean: float, entity_id, simulations: int, rng: np.random.Generator
     ):
         self.calls += 1
         return np.full(simulations, mean + 1.0)
@@ -22,11 +22,11 @@ def test_simulate_row_skips_sampler_when_not_allowed():
     result = simulate_row(
         mean=10.0,
         std_dev=1.5,
-        strikeout_line=9.5,
+        line=9.5,
         config=config,
         rng=rng,
         sampler=None,
-        pitcher_id="pitcher-a",
+        entity_id="pitcher-a",
     )
 
     assert set(result.keys()) >= {"prob_over", "prob_under", "prob_push"}
@@ -40,11 +40,11 @@ def test_simulate_row_uses_sampler_when_allowed():
     result = simulate_row(
         mean=10.0,
         std_dev=1.5,
-        strikeout_line=9.5,
+        line=9.5,
         config=config,
         rng=rng,
         sampler=sampler,
-        pitcher_id="pitcher-b",
+        entity_id="pitcher-b",
     )
 
     assert sampler.calls == 1
@@ -57,11 +57,11 @@ def test_apply_simulations_accepts_std_dev_column_name():
         [
             {
                 "prediction": 30.0,
-                "k_line": 29.5,
+                "ud_line": 29.5,
                 "simulation_sigma": 1.2,
                 "over_decimal_price": 1.9,
                 "under_decimal_price": 1.9,
-                "pitcher_id": "QB1",
+                "qb_id": "QB1",
             }
         ]
     )
@@ -71,6 +71,8 @@ def test_apply_simulations_accepts_std_dev_column_name():
         std_dev="simulation_sigma",
         config=MonteCarloConfig(simulations=200, random_seed=42),
         sampler=None,
+        line_col="ud_line",
+        id_col="qb_id",
     )
 
     assert {"prob_over", "prob_under", "prob_push"}.issubset(result.columns)

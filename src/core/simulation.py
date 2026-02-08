@@ -15,7 +15,7 @@ class CountSampler(Protocol):
     def sample_counts(
         self,
         mean: float,
-        pitcher_id: float | str | None,
+        entity_id: float | str | None,
         simulations: int,
         rng: np.random.Generator,
     ) -> np.ndarray:
@@ -48,11 +48,11 @@ def _edge_from_decimal(prob_win: float, decimal_price: float) -> float:
 def simulate_row(
     mean: float,
     std_dev: float,
-    strikeout_line: float,
+    line: float,
     config: MonteCarloConfig,
     rng: np.random.Generator,
     sampler: CountSampler | None = None,
-    pitcher_id: float | str | None = None,
+    entity_id: float | str | None = None,
 ) -> dict[str, float]:
     """Simulate a count distribution for a single player line."""
     if np.isnan(mean):
@@ -67,15 +67,15 @@ def simulate_row(
 
     if sampler is not None:
         sims = sampler.sample_counts(
-            mean=mean, pitcher_id=pitcher_id, simulations=config.simulations, rng=rng
+            mean=mean, entity_id=entity_id, simulations=config.simulations, rng=rng
         )
     else:
         scale = max(float(std_dev), 1e-6)
         sims = rng.normal(loc=mean, scale=scale, size=config.simulations)
         sims = np.clip(np.rint(sims), 0.0, None)
 
-    prob_over = float(np.mean(sims > strikeout_line))
-    prob_under = float(np.mean(sims < strikeout_line))
+    prob_over = float(np.mean(sims > line))
+    prob_under = float(np.mean(sims < line))
     prob_push = max(0.0, 1.0 - prob_over - prob_under)
 
     return {
@@ -95,6 +95,7 @@ def apply_simulations(
     config: MonteCarloConfig | None = None,
     sampler: CountSampler | None = None,
     line_col: str = "k_line",
+    id_col: str = "pitcher_id",
 ) -> pd.DataFrame:
     """Run Monte Carlo simulations for each input row."""
     config = config or MonteCarloConfig()
@@ -119,15 +120,21 @@ def apply_simulations(
             raise KeyError(
                 f"Missing line column '{line_col}' in simulation frame."
             ) from exc
+        try:
+            entity_id = getattr(row, id_col)
+        except AttributeError as exc:
+            raise KeyError(
+                f"Missing id column '{id_col}' in simulation frame."
+            ) from exc
 
         stats = simulate_row(
             mean=getattr(row, mean_col),
             std_dev=std_values[i],
-            strikeout_line=line_value,
+            line=line_value,
             config=config,
             rng=rng,
             sampler=sampler,
-            pitcher_id=getattr(row, "pitcher_id", np.nan),
+            entity_id=entity_id,
         )
 
         over_decimal = getattr(row, "over_decimal_price", np.nan)

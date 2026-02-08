@@ -44,4 +44,7 @@ Date: 2026-02-08
 
 ## Known architecture debt
 - Stage semantics are not yet enforced by dedicated contract tests (planned follow-up: PR#2 in NHL onboarding sequence).
-- NFL alias cleanup debt remains (`ud_line`/`qb_id` simulation aliases), planned follow-up in PR#4.
+
+## PR#4 simulation API update
+- Shared simulation APIs in `src/core/simulation.py` now use sport-neutral naming (`line`, `entity_id`) with explicit line and ID column mapping at call sites.
+- NFL pass-attempt orchestration no longer introduces `k_line`/`pitcher_id` alias columns before simulation.

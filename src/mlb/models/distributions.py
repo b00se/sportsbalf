@@ -56,25 +56,29 @@ class ResidualBootstrapper:
             min_sigma=min_sigma,
         )
 
-    def can_bootstrap(self, pitcher_id: Optional[float]) -> bool:
+    def can_bootstrap(self, entity_id: Optional[float | str]) -> bool:
         return True
 
-    def _residual_pool(self, pitcher_id: Optional[float]) -> np.ndarray:
-        if pitcher_id is not None and not np.isnan(pitcher_id):
-            key = int(pitcher_id)
-            pool = self.pitcher_residuals.get(key)
-            if pool is not None and pool.size >= self.min_pitcher_history:
-                return pool
+    def _residual_pool(self, entity_id: Optional[float | str]) -> np.ndarray:
+        if entity_id is not None and not pd.isna(entity_id):
+            try:
+                key = int(entity_id)
+            except (TypeError, ValueError):
+                key = None
+            if key is not None:
+                pool = self.pitcher_residuals.get(key)
+                if pool is not None and pool.size >= self.min_pitcher_history:
+                    return pool
         return self.global_residuals
 
     def sample_counts(
         self,
         mean: float,
-        pitcher_id: Optional[float],
+        entity_id: Optional[float | str],
         simulations: int,
         rng: np.random.Generator,
     ) -> np.ndarray:
-        local_pool = self._residual_pool(pitcher_id)
+        local_pool = self._residual_pool(entity_id)
         if local_pool.size == 0 and self.global_residuals.size:
             local_pool = self.global_residuals
 
@@ -98,4 +102,3 @@ class ResidualBootstrapper:
         samples = mean + draws
         samples = np.clip(np.rint(samples), 0, None)
         return samples
-
