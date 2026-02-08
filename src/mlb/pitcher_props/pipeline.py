@@ -11,6 +11,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from src.core.contracts import PipelineConfig
 from src.mlb.data.load_props import load_pitcher_prop_lines
@@ -20,7 +21,10 @@ from src.mlb.features.feature_store import (
     ensure_live_feature_defaults,
 )
 from src.mlb.features.rolling import add_rolling_features
-from src.mlb.models.buckets import segmentation_config_from_model_selection
+from src.mlb.models.buckets import (
+    SegmentationConfig,
+    segmentation_config_from_model_selection,
+)
 from src.mlb.models.distributions import ResidualBootstrapper
 from src.mlb.models.evaluation import run_walk_forward_tournament, select_champion
 from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
@@ -118,6 +122,10 @@ def _model_selection_config(
         raw = {}
 
     stat_tag = descriptor.stat
+    holdout = raw.get("final_holdout")
+    if not isinstance(holdout, dict):
+        holdout = {}
+
     return {
         "enabled": bool(raw.get("enabled", False)),
         "candidates": raw.get("candidates"),
@@ -139,6 +147,17 @@ def _model_selection_config(
             "leaderboard_path",
             f"models/mlb_{stat_tag}_leaderboard.csv",
         ),
+        "final_holdout": {
+            "enabled": bool(holdout.get("enabled", False)),
+            "seasons": max(1, int(holdout.get("seasons", 1))),
+            "baseline_model": str(holdout.get("baseline_model", "xgboost")),
+            "report_path": str(
+                holdout.get(
+                    "report_path",
+                    f"models/mlb_{stat_tag}_final_holdout_report.csv",
+                )
+            ),
+        },
     }
 
 
@@ -191,19 +210,79 @@ def _add_opponent_tendency(
         Enriched frame with opponent tendency feature.
     """
 
-    enriched = games.sort_values(["game_date", "opponent_team"]).copy()
-    target = pd.to_numeric(enriched[target_col], errors="coerce")
-    grouped = enriched.groupby("opponent_team", sort=False)
-    csum = target.groupby(enriched["opponent_team"]).cumsum().shift(1)
-    ccnt = grouped.cumcount().astype(float)
-    tendency = csum / ccnt.replace(0.0, np.nan)
-    global_prior = target.expanding(min_periods=1).mean().shift(1)
-    enriched[feature_col] = (
-        pd.to_numeric(tendency, errors="coerce")
-        .fillna(pd.to_numeric(global_prior, errors="coerce"))
+    enriched = games.copy()
+    enriched["game_date"] = pd.to_datetime(enriched["game_date"], errors="coerce")
+    enriched = enriched.dropna(subset=["game_date"]).copy()
+    if enriched.empty:
+        enriched[feature_col] = 0.0
+        return enriched
+
+    sort_cols = ["game_date", "opponent_team"]
+    for candidate in ["game_pk", "pitcher_id", "pitcher"]:
+        if candidate in enriched.columns:
+            sort_cols.append(candidate)
+    enriched = enriched.sort_values(sort_cols, kind="stable").reset_index(drop=True)
+
+    enriched["_target_value"] = pd.to_numeric(enriched[target_col], errors="coerce")
+    enriched["_target_valid"] = enriched["_target_value"].notna().astype(int)
+
+    opponent_daily = (
+        enriched.groupby(["opponent_team", "game_date"], as_index=False)
+        .agg(
+            day_target_sum=("_target_value", "sum"),
+            day_target_count=("_target_valid", "sum"),
+        )
+        .sort_values(["opponent_team", "game_date"], kind="stable")
+    )
+    opponent_daily["prior_sum"] = (
+        opponent_daily.groupby("opponent_team", sort=False)["day_target_sum"]
+        .cumsum()
+        .shift(1)
+    )
+    opponent_daily["prior_count"] = (
+        opponent_daily.groupby("opponent_team", sort=False)["day_target_count"]
+        .cumsum()
+        .shift(1)
+    )
+    opponent_daily["_opponent_prior"] = opponent_daily["prior_sum"] / opponent_daily[
+        "prior_count"
+    ].replace(0.0, np.nan)
+
+    global_daily = (
+        enriched.groupby("game_date", as_index=False)
+        .agg(
+            day_target_sum=("_target_value", "sum"),
+            day_target_count=("_target_valid", "sum"),
+        )
+        .sort_values("game_date", kind="stable")
+    )
+    global_daily["global_prior"] = (
+        global_daily["day_target_sum"].cumsum().shift(1)
+        / global_daily["day_target_count"].cumsum().shift(1).replace(0.0, np.nan)
+    )
+
+    merged = enriched.merge(
+        opponent_daily[["opponent_team", "game_date", "_opponent_prior"]],
+        on=["opponent_team", "game_date"],
+        how="left",
+    ).merge(
+        global_daily[["game_date", "global_prior"]],
+        on="game_date",
+        how="left",
+    )
+    merged[feature_col] = (
+        pd.to_numeric(merged["_opponent_prior"], errors="coerce")
+        .fillna(pd.to_numeric(merged["global_prior"], errors="coerce"))
         .fillna(0.0)
     )
-    return enriched
+    return merged.drop(
+        columns=[
+            "_target_value",
+            "_target_valid",
+            "_opponent_prior",
+            "global_prior",
+        ]
+    )
 
 
 def _build_training_games(
@@ -284,6 +363,183 @@ def _clean_for_model(games: pd.DataFrame, descriptor: StatDescriptor) -> pd.Data
     frame = ensure_live_feature_defaults(games.replace([np.inf, -np.inf], np.nan))
     required = [descriptor.target_col] + features
     return frame.dropna(subset=required).copy()
+
+
+def _persist_label_quality_report(
+    games: pd.DataFrame,
+    *,
+    descriptor: StatDescriptor,
+    report_path: str,
+) -> None:
+    """Persist per-season label fallback share diagnostics."""
+
+    if games.empty or "game_date" not in games.columns:
+        return
+
+    report = games.copy()
+    report["game_date"] = pd.to_datetime(report["game_date"], errors="coerce")
+    report = report.dropna(subset=["game_date"]).copy()
+    if report.empty:
+        return
+
+    report["season"] = report["game_date"].dt.year.astype(int)
+    report["target_non_null"] = pd.to_numeric(
+        report[descriptor.target_col], errors="coerce"
+    ).notna()
+
+    if (
+        descriptor.stat == "earned_runs"
+        and "earned_runs_fallback_used" in report.columns
+    ):
+        report["fallback_used"] = pd.to_numeric(
+            report["earned_runs_fallback_used"], errors="coerce"
+        ).fillna(0.0)
+    else:
+        report["fallback_used"] = 0.0
+
+    grouped = (
+        report.groupby("season", as_index=False)
+        .agg(
+            rows=("target_non_null", "sum"),
+            fallback_rows=("fallback_used", "sum"),
+        )
+        .sort_values("season", kind="stable")
+    )
+    grouped["fallback_rows"] = grouped["fallback_rows"].astype(int)
+    grouped["fallback_share"] = np.where(
+        grouped["rows"] > 0,
+        grouped["fallback_rows"] / grouped["rows"],
+        0.0,
+    )
+    grouped["stat"] = descriptor.stat
+    grouped = grouped[
+        ["stat", "season", "rows", "fallback_rows", "fallback_share"]
+    ].reset_index(drop=True)
+
+    output = Path(report_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    grouped.to_csv(output, index=False)
+
+
+def _score_regression(actual: pd.Series, predicted: pd.Series) -> dict[str, float]:
+    """Compute regression metrics for holdout comparisons."""
+
+    mae = float(mean_absolute_error(actual, predicted))
+    rmse = float(np.sqrt(mean_squared_error(actual, predicted)))
+    r2 = float(r2_score(actual, predicted))
+    return {"mae": mae, "rmse": rmse, "r2": r2}
+
+
+def _persist_final_holdout_report(
+    frame: pd.DataFrame,
+    *,
+    descriptor: StatDescriptor,
+    winner_model_name: str,
+    winner_strategy_name: str,
+    winner_params: dict[str, float | int] | None,
+    segmentation: SegmentationConfig,
+    features: list[str],
+    holdout_cfg: dict[str, object],
+) -> None:
+    """Persist champion-vs-baseline metrics on an untouched final-season slice."""
+
+    if not bool(holdout_cfg.get("enabled", False)):
+        return
+
+    dated = frame.copy()
+    dated["game_date"] = pd.to_datetime(dated["game_date"], errors="coerce")
+    dated = dated.dropna(subset=["game_date"]).copy()
+    if dated.empty:
+        return
+    dated["season"] = dated["game_date"].dt.year.astype(int)
+    seasons = sorted(int(x) for x in dated["season"].unique())
+
+    holdout_seasons = max(1, int(holdout_cfg.get("seasons", 1)))
+    if len(seasons) <= holdout_seasons:
+        logger.warning(
+            "Skipping final holdout report for '%s': only %d season(s) available.",
+            descriptor.stat,
+            len(seasons),
+        )
+        return
+
+    locked = seasons[-holdout_seasons:]
+    train_df = dated[~dated["season"].isin(locked)].copy()
+    holdout_df = dated[dated["season"].isin(locked)].copy()
+    if train_df.empty or holdout_df.empty:
+        return
+
+    baseline_name = str(holdout_cfg.get("baseline_model", "xgboost"))
+    baseline_spec = get_model_spec(baseline_name)
+    baseline_artifact = train_strategy_artifact(
+        train_df,
+        spec=baseline_spec,
+        features=features,
+        target_col=descriptor.target_col,
+        strategy_name="global",
+        segmentation=segmentation,
+    )
+    champion_spec = get_model_spec(winner_model_name)
+    champion_artifact = train_strategy_artifact(
+        train_df,
+        spec=champion_spec,
+        features=features,
+        target_col=descriptor.target_col,
+        strategy_name=winner_strategy_name,
+        segmentation=segmentation,
+        model_params=winner_params,
+    )
+
+    actual = pd.to_numeric(holdout_df[descriptor.target_col], errors="coerce")
+    baseline_preds = predict_with_strategy_artifact(
+        holdout_df,
+        features=features,
+        name="prediction",
+        artifact=baseline_artifact,
+    )
+    champion_preds = predict_with_strategy_artifact(
+        holdout_df,
+        features=features,
+        name="prediction",
+        artifact=champion_artifact,
+    )
+
+    baseline_scores = _score_regression(actual, baseline_preds)
+    champion_scores = _score_regression(actual, champion_preds)
+    report_rows = [
+        {
+            "stat": descriptor.stat,
+            "model_role": "baseline",
+            "model_name": baseline_name,
+            "strategy_name": "global",
+            "holdout_seasons": ",".join(str(x) for x in locked),
+            "train_rows": int(len(train_df)),
+            "holdout_rows": int(len(holdout_df)),
+            "mae": baseline_scores["mae"],
+            "rmse": baseline_scores["rmse"],
+            "r2": baseline_scores["r2"],
+        },
+        {
+            "stat": descriptor.stat,
+            "model_role": "champion",
+            "model_name": winner_model_name,
+            "strategy_name": winner_strategy_name,
+            "holdout_seasons": ",".join(str(x) for x in locked),
+            "train_rows": int(len(train_df)),
+            "holdout_rows": int(len(holdout_df)),
+            "mae": champion_scores["mae"],
+            "rmse": champion_scores["rmse"],
+            "r2": champion_scores["r2"],
+        },
+    ]
+    report = pd.DataFrame(report_rows)
+    report["mae_delta_vs_baseline"] = report["mae"] - baseline_scores["mae"]
+    report["rmse_delta_vs_baseline"] = report["rmse"] - baseline_scores["rmse"]
+    report["r2_delta_vs_baseline"] = report["r2"] - baseline_scores["r2"]
+
+    output = Path(str(holdout_cfg["report_path"]))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    report.to_csv(output, index=False)
 
 
 def _train_or_load(
@@ -397,6 +653,23 @@ def _train_or_load(
                 "fold_metrics": fold_metrics.to_dict(orient="records"),
             }
             _persist_champion_metadata(champion_metadata_path, metadata_payload)
+            try:
+                _persist_final_holdout_report(
+                    frame,
+                    descriptor=descriptor,
+                    winner_model_name=winner.model_name,
+                    winner_strategy_name=winner.strategy_name,
+                    winner_params=winner.params,
+                    segmentation=segmentation,
+                    features=features,
+                    holdout_cfg=dict(selection["final_holdout"]),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to write final holdout report for '%s': %s",
+                    descriptor.stat,
+                    exc,
+                )
             logger.info(
                 "Selected %s champion strategy=%s model=%s with mean_mae=%.4f",
                 descriptor.stat,
@@ -563,6 +836,17 @@ def run_mlb_pitcher_prop_pipeline(
     section = config.section
 
     training_games = _build_training_games(section, descriptor)
+    label_quality_path = str(
+        section.get(
+            "label_quality_report_path",
+            f"models/mlb_{descriptor.stat}_label_quality.csv",
+        )
+    )
+    _persist_label_quality_report(
+        training_games,
+        descriptor=descriptor,
+        report_path=label_quality_path,
+    )
     model_frame = _clean_for_model(training_games, descriptor)
     if model_frame.empty:
         raise ValueError(f"No model-ready rows for stat '{descriptor.stat}'.")

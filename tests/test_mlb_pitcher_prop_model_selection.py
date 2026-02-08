@@ -5,7 +5,11 @@ from pathlib import Path
 import pandas as pd
 from src.mlb.models.strategy import predict_with_strategy_artifact
 from src.mlb.pitcher_props.descriptors import get_stat_descriptor
-from src.mlb.pitcher_props.pipeline import _model_features, _train_or_load
+from src.mlb.pitcher_props.pipeline import (
+    _model_features,
+    _persist_label_quality_report,
+    _train_or_load,
+)
 
 
 def _synthetic_pitcher_prop_frame(target_col: str) -> pd.DataFrame:
@@ -43,6 +47,12 @@ def test_pitcher_props_model_selection_roundtrip_predicts_with_strategy(
             "champion_model_path": str(tmp_path / "outs_champion.joblib"),
             "champion_metadata_path": str(tmp_path / "outs_champion.json"),
             "leaderboard_path": str(tmp_path / "outs_leaderboard.csv"),
+            "final_holdout": {
+                "enabled": True,
+                "seasons": 1,
+                "baseline_model": "xgboost",
+                "report_path": str(tmp_path / "outs_final_holdout.csv"),
+            },
             "segmentation": {
                 "enabled": True,
                 "bucket_methods": ["quantile3", "kmeans"],
@@ -69,6 +79,8 @@ def test_pitcher_props_model_selection_roundtrip_predicts_with_strategy(
     assert (tmp_path / "outs_champion.joblib").exists()
     assert (tmp_path / "outs_champion.json").exists()
     assert (tmp_path / "outs_leaderboard.csv").exists()
+    report = pd.read_csv(tmp_path / "outs_final_holdout.csv")
+    assert {"baseline", "champion"} == set(report["model_role"].tolist())
 
 
 def test_pitcher_props_model_selection_falls_back_to_baseline_when_insufficient_history(
@@ -103,3 +115,25 @@ def test_pitcher_props_model_selection_falls_back_to_baseline_when_insufficient_
     assert strategy_name == "global"
     assert preds.notna().all()
     assert (tmp_path / "outs_baseline.joblib").exists()
+
+
+def test_label_quality_report_tracks_earned_runs_fallback_share(tmp_path: Path) -> None:
+    descriptor = get_stat_descriptor("earned_runs")
+    games = pd.DataFrame(
+        {
+            "game_date": ["2024-04-01", "2024-04-02", "2025-04-01"],
+            "earned_runs": [1.0, 2.0, 0.0],
+            "earned_runs_fallback_used": [0, 1, 1],
+        }
+    )
+    output = tmp_path / "earned_runs_label_quality.csv"
+
+    _persist_label_quality_report(
+        games,
+        descriptor=descriptor,
+        report_path=str(output),
+    )
+
+    report = pd.read_csv(output).sort_values("season").reset_index(drop=True)
+    assert report["fallback_rows"].tolist() == [1, 1]
+    assert report["rows"].tolist() == [2, 1]

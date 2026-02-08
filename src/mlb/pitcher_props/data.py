@@ -209,6 +209,7 @@ def build_pitcher_game_table(pitch_df: pd.DataFrame) -> pd.DataFrame:
             fallback_earned = candidate
             break
 
+    games["earned_runs_fallback_used"] = 0
     if fallback_earned is not None:
         fallback = (
             source.groupby(["pitcher", "game_date"], as_index=False)[fallback_earned]
@@ -220,7 +221,10 @@ def build_pitcher_game_table(pitch_df: pd.DataFrame) -> pd.DataFrame:
         games["earned_runs_fallback"] = pd.to_numeric(
             games["earned_runs_fallback"], errors="coerce"
         )
-        missing_before = int(games["earned_runs"].isna().sum())
+        missing_mask = games["earned_runs"].isna()
+        fallback_mask = games["earned_runs_fallback"].notna()
+        games["earned_runs_fallback_used"] = (missing_mask & fallback_mask).astype(int)
+        missing_before = int(missing_mask.sum())
         games["earned_runs"] = games["earned_runs"].fillna(
             games["earned_runs_fallback"]
         )

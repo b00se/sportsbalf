@@ -7,6 +7,7 @@ import pytest
 from src.mlb.models.buckets import SegmentationConfig, fit_bucket_model
 from src.mlb.models.evaluation import (
     build_walk_forward_splits,
+    probability_calibration_report,
     run_walk_forward_tournament,
     select_champion,
 )
@@ -285,3 +286,38 @@ def test_pipeline_champion_model_roundtrip_predicts_with_strategy(
     assert (tmp_path / "champion.joblib").exists()
     assert (tmp_path / "champion.json").exists()
     assert (tmp_path / "leaderboard.csv").exists()
+
+
+def test_probability_calibration_report_computes_summary_and_bins() -> None:
+    frame = pd.DataFrame(
+        {
+            "actual": [1, 0, 1, 1, 0, 0],
+            "prob": [0.8, 0.2, 0.7, 0.6, 0.3, 0.1],
+        }
+    )
+
+    summary, by_bin = probability_calibration_report(
+        frame,
+        actual_col="actual",
+        probability_col="prob",
+        bins=3,
+    )
+
+    assert summary["rows"] == 6.0
+    assert 0.0 <= summary["brier_score"] <= 1.0
+    assert summary["log_loss"] > 0.0
+    assert 0.0 <= summary["ece"] <= 1.0
+    assert {"count", "mean_probability", "observed_rate"}.issubset(by_bin.columns)
+
+
+def test_probability_calibration_report_handles_empty_valid_rows() -> None:
+    frame = pd.DataFrame({"actual": [2, None], "prob": [1.2, None]})
+    summary, by_bin = probability_calibration_report(
+        frame,
+        actual_col="actual",
+        probability_col="prob",
+        bins=5,
+    )
+
+    assert summary["rows"] == 0.0
+    assert by_bin.empty

@@ -48,6 +48,42 @@ def test_add_opponent_tendency_uses_historical_only() -> None:
     assert float(atl.iloc[2]["opponent_out_rate"]) == 15.0
 
 
+def test_add_opponent_tendency_same_date_rows_do_not_cross_leak() -> None:
+    games = pd.DataFrame(
+        [
+            {
+                "opponent_team": "ATL",
+                "game_date": "2024-04-01",
+                "game_pk": 9001,
+                "outs_recorded": 10.0,
+            },
+            {
+                "opponent_team": "ATL",
+                "game_date": "2024-04-02",
+                "game_pk": 9002,
+                "outs_recorded": 8.0,
+            },
+            {
+                "opponent_team": "ATL",
+                "game_date": "2024-04-02",
+                "game_pk": 9003,
+                "outs_recorded": 30.0,
+            },
+        ]
+    )
+    games["game_date"] = pd.to_datetime(games["game_date"])
+
+    enriched = _add_opponent_tendency(
+        games,
+        target_col="outs_recorded",
+        feature_col="opponent_out_rate",
+    )
+    same_day = enriched[enriched["game_date"] == pd.Timestamp("2024-04-02")]
+
+    assert len(same_day) == 2
+    assert set(same_day["opponent_out_rate"].round(6).tolist()) == {10.0}
+
+
 def test_build_prediction_rows_preserves_pitcher_id_matching_when_names_missing(
 ) -> None:
     descriptor = get_stat_descriptor("outs_recorded")
@@ -192,6 +228,7 @@ def test_build_pitcher_game_table_earned_runs_fallback_uses_game_level_value() -
     games = build_pitcher_game_table(frame)
 
     assert float(games.iloc[0]["earned_runs"]) == 2.0
+    assert int(games.iloc[0]["earned_runs_fallback_used"]) == 1
 
 
 def test_build_pitcher_game_table_earned_runs_fallback_fills_partial_missing_rows(
@@ -249,3 +286,5 @@ def test_build_pitcher_game_table_earned_runs_fallback_fills_partial_missing_row
 
     assert float(games.loc[0, "earned_runs"]) == 1.0
     assert float(games.loc[1, "earned_runs"]) == 2.0
+    assert int(games.loc[0, "earned_runs_fallback_used"]) == 0
+    assert int(games.loc[1, "earned_runs_fallback_used"]) == 1
