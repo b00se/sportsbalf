@@ -127,6 +127,7 @@ def test_label_quality_report_tracks_earned_runs_fallback_share(tmp_path: Path) 
             "game_date": ["2024-04-01", "2024-04-02", "2025-04-01"],
             "earned_runs": [1.0, 2.0, 0.0],
             "earned_runs_fallback_used": [0, 1, 1],
+            "earned_runs_high_fidelity_used": [1, 0, 0],
         }
     )
     output = tmp_path / "earned_runs_label_quality.csv"
@@ -140,6 +141,7 @@ def test_label_quality_report_tracks_earned_runs_fallback_share(tmp_path: Path) 
     report = pd.read_csv(output).sort_values("season").reset_index(drop=True)
     assert report["fallback_rows"].tolist() == [1, 1]
     assert report["rows"].tolist() == [2, 1]
+    assert report["high_fidelity_rows"].tolist() == [1, 0]
 
 
 def test_pipeline_retrains_when_loaded_artifact_is_incompatible(monkeypatch) -> None:

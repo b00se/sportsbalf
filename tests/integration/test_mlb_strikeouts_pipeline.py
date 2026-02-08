@@ -40,11 +40,11 @@ def test_engine_run_mlb_strikeouts_schema(tmp_path: Path, monkeypatch) -> None:
         ]
     )
 
-    from src.mlb.strikeouts import pipeline as mlb_pipeline
+    from src.mlb.pitcher_props import adapter as mlb_adapter
 
     monkeypatch.setattr(
-        mlb_pipeline,
-        "run_strikeouts_pipeline",
+        mlb_adapter,
+        "run_mlb_pitcher_prop_pipeline",
         lambda **_: fixture.copy(),
     )
 

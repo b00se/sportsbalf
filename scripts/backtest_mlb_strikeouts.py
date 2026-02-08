@@ -30,6 +30,17 @@ from src.utils.io import read_csv
 
 logger = logging.getLogger(__name__)
 
+BASELINE_FEATURES: list[str] = [
+    "rolling_K_avg_3",
+    "rolling_K_avg_5",
+    "rolling_pitch_count_5",
+    "rolling_K_rate",
+    "opponent_k_pct",
+    "opponent_k_rate",
+    "park_factor_K",
+    "rest_days",
+]
+
 
 def _prepare_training_frame(section: dict[str, object]) -> pd.DataFrame:
     """Build full historical training frame from configured paths."""
@@ -72,6 +83,43 @@ def _prepare_training_frame(section: dict[str, object]) -> pd.DataFrame:
     return _clean_for_model(full)
 
 
+def _run_tournament(
+    frame: pd.DataFrame,
+    *,
+    selection_cfg: dict[str, object],
+    features: list[str],
+) -> tuple[pd.DataFrame, pd.DataFrame, object]:
+    """Run tournament for a feature set and return fold metrics, leaderboard, winner."""
+
+    candidates = selection_cfg.get("candidates")
+    primary_metric = str(selection_cfg.get("primary_metric", "mae"))
+    tie_breakers = list(selection_cfg.get("tie_breakers", ["rmse", "r2"]))
+    tie_epsilon = float(selection_cfg.get("tie_epsilon", 1e-6))
+    tuning_cfg = selection_cfg.get("tuning") or {}
+    tuning_enabled = bool(tuning_cfg.get("enabled", False))
+    max_trials = int(tuning_cfg.get("max_trials_per_model", 1)) if tuning_enabled else 1
+    segmentation = segmentation_config_from_model_selection(selection_cfg)
+    strategies = strategy_candidates_from_config(segmentation)
+
+    specs = resolve_model_specs(candidates)
+    fold_metrics, leaderboard = run_walk_forward_tournament(
+        frame,
+        specs=specs,
+        features=features,
+        strategies=strategies,
+        segmentation=segmentation,
+        max_trials_per_model=max_trials,
+    )
+    winner = select_champion(
+        leaderboard,
+        primary_metric=primary_metric,
+        tie_breakers=tie_breakers,
+        epsilon=tie_epsilon,
+        simplicity_order=SIMPLE_MODEL_PREFERENCE,
+    )
+    return fold_metrics, leaderboard, winner
+
+
 def run_backtest(
     config_path: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, object]]:
@@ -85,32 +133,11 @@ def run_backtest(
     section = config.section
 
     selection_cfg = section.get("model_selection") or {}
-    candidates = selection_cfg.get("candidates")
-    primary_metric = str(selection_cfg.get("primary_metric", "mae"))
-    tie_breakers = list(selection_cfg.get("tie_breakers", ["rmse", "r2"]))
-    tie_epsilon = float(selection_cfg.get("tie_epsilon", 1e-6))
-    tuning_cfg = selection_cfg.get("tuning") or {}
-    tuning_enabled = bool(tuning_cfg.get("enabled", False))
-    max_trials = int(tuning_cfg.get("max_trials_per_model", 1)) if tuning_enabled else 1
-    segmentation = segmentation_config_from_model_selection(selection_cfg)
-    strategies = strategy_candidates_from_config(segmentation)
-
     frame = _prepare_training_frame(section)
-    specs = resolve_model_specs(candidates)
-    fold_metrics, leaderboard = run_walk_forward_tournament(
+    fold_metrics, leaderboard, champion = _run_tournament(
         frame,
-        specs=specs,
+        selection_cfg=selection_cfg,
         features=FEATURES,
-        strategies=strategies,
-        segmentation=segmentation,
-        max_trials_per_model=max_trials,
-    )
-    champion = select_champion(
-        leaderboard,
-        primary_metric=primary_metric,
-        tie_breakers=tie_breakers,
-        epsilon=tie_epsilon,
-        simplicity_order=SIMPLE_MODEL_PREFERENCE,
     )
 
     metadata: dict[str, object] = {
@@ -126,6 +153,87 @@ def run_backtest(
         "fold_metrics": fold_metrics.to_dict(orient="records"),
     }
     return fold_metrics, leaderboard, metadata
+
+
+def run_feature_set_comparison(
+    config_path: str,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Run baseline-vs-enriched comparison and return summary artifacts."""
+
+    config = load_pipeline_config(
+        config_path,
+        sport_override="mlb",
+        stat_override="strikeouts",
+    )
+    section = config.section
+    selection_cfg = section.get("model_selection") or {}
+    frame = _prepare_training_frame(section)
+
+    rows: list[dict[str, object]] = []
+    details: dict[str, object] = {}
+    for label, feature_set in [
+        ("baseline", BASELINE_FEATURES),
+        ("enriched", FEATURES),
+    ]:
+        fold_metrics, leaderboard, champion = _run_tournament(
+            frame,
+            selection_cfg=selection_cfg,
+            features=feature_set,
+        )
+        rows.append(
+            {
+                "variant": label,
+                "feature_count": len(feature_set),
+                "champion_model": champion.model_name,
+                "champion_strategy": champion.strategy_name,
+                "mean_mae": float(champion.mean_mae),
+                "mean_rmse": float(champion.mean_rmse),
+                "mean_r2": float(champion.mean_r2),
+            }
+        )
+        details[label] = {
+            "features": feature_set,
+            "fold_metrics": fold_metrics.to_dict(orient="records"),
+            "leaderboard_rows": int(len(leaderboard)),
+        }
+
+    comparison = pd.DataFrame(rows)
+    baseline_mae = float(
+        comparison.loc[comparison["variant"] == "baseline", "mean_mae"].iloc[0]
+    )
+    enriched_mae = float(
+        comparison.loc[comparison["variant"] == "enriched", "mean_mae"].iloc[0]
+    )
+    mae_improvement = baseline_mae - enriched_mae
+    live_cov = {
+        "weather_known_pct": float(
+            pd.to_numeric(frame.get("weather_known_flag"), errors="coerce")
+            .fillna(0.0)
+            .mean()
+        ),
+        "roof_known_pct": float(
+            (~frame.get("roof_state", pd.Series("unknown", index=frame.index))
+            .astype(str)
+            .str.lower()
+            .eq("unknown"))
+            .mean()
+        ),
+        "umpire_known_pct": float(
+            pd.to_numeric(frame.get("umpire_known_flag"), errors="coerce")
+            .fillna(0.0)
+            .mean()
+        ),
+    }
+    summary: dict[str, object] = {
+        "config_path": config_path,
+        "baseline_mae": baseline_mae,
+        "enriched_mae": enriched_mae,
+        "mae_improvement_vs_baseline": mae_improvement,
+        "mae_gate_passed": bool(mae_improvement > 0),
+        "coverage": live_cov,
+        "details": details,
+    }
+    return comparison, summary
 
 
 def main() -> None:
@@ -148,12 +256,50 @@ def main() -> None:
         default="runtime/mlb_strikeouts_fold_metrics.csv",
         help="CSV output path for fold-level metrics",
     )
+    parser.add_argument(
+        "--compare-feature-sets",
+        action="store_true",
+        help="Run baseline-vs-enriched feature MAE comparison.",
+    )
+    parser.add_argument(
+        "--comparison-out",
+        default="runtime/mlb_strikeouts_feature_comparison.csv",
+        help="CSV output path for feature-set comparison rows.",
+    )
+    parser.add_argument(
+        "--require-mae-lift",
+        action="store_true",
+        help="Exit non-zero when enriched feature set does not improve MAE.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s %(name)s - %(message)s",
     )
+
+    if args.compare_feature_sets:
+        comparison, summary = run_feature_set_comparison(args.config)
+        comparison_out = Path(args.comparison_out)
+        champion_out = Path(args.champion_out)
+        comparison_out.parent.mkdir(parents=True, exist_ok=True)
+        champion_out.parent.mkdir(parents=True, exist_ok=True)
+        comparison.to_csv(comparison_out, index=False)
+        champion_out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+        print("MLB Strikeouts Feature-Set Comparison")
+        print(comparison.to_string(index=False))
+        print(
+            f"\nMAE improvement vs baseline: "
+            f"{summary['mae_improvement_vs_baseline']:.6f}"
+        )
+        print(f"MAE gate passed: {summary['mae_gate_passed']}")
+        print(f"Comparison CSV: {comparison_out}")
+        print(f"Summary JSON: {champion_out}")
+
+        if args.require_mae_lift and not bool(summary["mae_gate_passed"]):
+            raise SystemExit(2)
+        return
 
     fold_metrics, leaderboard, metadata = run_backtest(args.config)
 

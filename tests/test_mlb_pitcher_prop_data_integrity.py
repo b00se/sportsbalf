@@ -288,3 +288,68 @@ def test_build_pitcher_game_table_earned_runs_fallback_fills_partial_missing_row
     assert float(games.loc[1, "earned_runs"]) == 2.0
     assert int(games.loc[0, "earned_runs_fallback_used"]) == 0
     assert int(games.loc[1, "earned_runs_fallback_used"]) == 1
+
+
+def test_build_pitcher_game_table_prefers_high_fidelity_earned_runs_source() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "pitcher": 11,
+                "game_date": "2024-04-01",
+                "game_pk": 2001,
+                "at_bat_number": 1,
+                "pitch_number": 1,
+                "events": "single",
+                "inning_topbot": "Top",
+                "home_score": 0,
+                "away_score": 0,
+                "post_home_score": 0,
+                "post_away_score": 1,
+                "runs_allowed": 1,
+            }
+        ]
+    )
+    high_fidelity = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 11,
+                "game_date": "2024-04-01",
+                "earned_runs": 3,
+            }
+        ]
+    )
+
+    games = build_pitcher_game_table(frame, earned_runs_source=high_fidelity)
+
+    assert float(games.iloc[0]["earned_runs"]) == 3.0
+    assert int(games.iloc[0]["earned_runs_high_fidelity_used"]) == 1
+
+
+def test_build_pitcher_game_table_high_fidelity_source_accepts_alias_columns() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "pitcher": 22,
+                "game_date": "2024-04-02",
+                "game_pk": 2002,
+                "at_bat_number": 1,
+                "pitch_number": 1,
+                "events": "walk",
+                "inning_topbot": "Top",
+            }
+        ]
+    )
+    high_fidelity = pd.DataFrame(
+        [
+            {
+                "mlbam_id": 22,
+                "date": "2024-04-02",
+                "er": 2,
+            }
+        ]
+    )
+
+    games = build_pitcher_game_table(frame, earned_runs_source=high_fidelity)
+
+    assert float(games.iloc[0]["earned_runs"]) == 2.0
+    assert int(games.iloc[0]["earned_runs_high_fidelity_used"]) == 1

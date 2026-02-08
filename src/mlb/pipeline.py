@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 import warnings
 from datetime import datetime
 from functools import lru_cache
@@ -23,31 +22,17 @@ except Exception:  # pragma: no cover - optional dependency missing
 
 from src.core.config import load_pipeline_config
 from src.core.contracts import PipelineConfig
-from src.mlb.data.load_props import load_strikeout_lines
-from src.mlb.features import (
-    LiveContextService,
-    add_opponent_k_rate,
-    add_park_factor,
-    add_rolling_features,
-    aggregate_pitcher_games,
-    build_historical_live_features,
-    coverage_metrics,
-    ensure_live_feature_defaults,
-    merge_live_feature_frame,
-)
+from src.mlb.features import ensure_live_feature_defaults
 from src.mlb.features.park_factors import (
     compute_k_park_factors,
     derive_park_factors_from_games,
 )
 from src.mlb.models.buckets import segmentation_config_from_model_selection
-from src.mlb.models.distributions import ResidualBootstrapper
 from src.mlb.models.evaluation import run_walk_forward_tournament, select_champion
-from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
 from src.mlb.models.predict import (
     DEFAULT_MODEL_PATH,
     FEATURES,
     load_model,
-    residual_std,
     save_model,
     train_model,
 )
@@ -57,11 +42,11 @@ from src.mlb.models.registry import (
     resolve_model_specs,
 )
 from src.mlb.models.strategy import (
-    predict_with_strategy_artifact,
     strategy_candidates_from_config,
     strategy_metadata,
     train_strategy_artifact,
 )
+from src.mlb.pitcher_props.pipeline import run_mlb_pitcher_prop_pipeline
 from src.utils.io import read_csv
 from src.utils.names import normalize_person_name, resolve_unique_name_match
 
@@ -604,226 +589,9 @@ def _train_or_load_serving_model(
 def run_strikeouts_pipeline(
     config: PipelineConfig, retrain: bool = False
 ) -> pd.DataFrame:
-    """Execute the MLB strikeout workflow and return lines with probabilities."""
+    """Execute strikeouts via the shared MLB pitcher-prop core."""
 
-    section = config.section
-    lines = load_strikeout_lines(section["lines_path"])
-    lines = lines.copy()
-    lines["name_key"] = lines["player"].map(_normalize_name)
-    pitch_df = read_csv(section["pitch_data_path"])
-    park_df = _load_or_create_park_factors(
-        pitch_df, section["park_factors_path"], retrain
-    )
-
-    games = aggregate_pitcher_games(pitch_df)
-    if "pitcher_id" not in games.columns and "pitcher" in games.columns:
-        games["pitcher_id"] = games["pitcher"]
-    if "pitcher_name" not in games.columns:
-        games["pitcher_name"] = games["pitcher_id"].astype(str)
-    games = add_rolling_features(games)
-    games = add_park_factor(games, park_df)
-    games = add_opponent_k_rate(games)
-    games = _normalize_opponent_feature_columns(games)
-    games = build_historical_live_features(games)
-
-    training_games_list = []
-    training_paths = section.get("training_data_paths") or [section["pitch_data_path"]]
-    for path in training_paths:
-        if Path(path).resolve() == Path(section["pitch_data_path"]).resolve():
-            training_games_list.append(games)
-            continue
-
-        hist_df = read_csv(path)
-        hist_games = aggregate_pitcher_games(hist_df)
-        hist_games = add_rolling_features(hist_games)
-        hist_games = add_park_factor(hist_games, park_df)
-        hist_games = add_opponent_k_rate(hist_games)
-        hist_games = _normalize_opponent_feature_columns(hist_games)
-        hist_games = build_historical_live_features(hist_games)
-        training_games_list.append(hist_games)
-
-    training_games = pd.concat(training_games_list, ignore_index=True)
-    training_games = _normalize_opponent_feature_columns(training_games)
-    training_games = build_historical_live_features(training_games)
-    if (
-        "pitcher_id" not in training_games.columns
-        and "pitcher" in training_games.columns
-    ):
-        training_games["pitcher_id"] = training_games["pitcher"]
-
-    training_games.sort_values(["pitcher_id", "game_date"], inplace=True)
-    training_games = training_games.drop_duplicates(
-        subset=["pitcher_id", "game_date"], keep="last"
-    )
-    _log_strikeout_scale(training_games, label="training_games")
-
-    target_date = _infer_target_date(
-        section["lines_path"], default=games["game_date"].max()
-    )
-
-    model_frame = _clean_for_model(training_games)
-    start = time.time()
-    model, model_name, strategy_name = _train_or_load_serving_model(
-        model_frame,
-        section=section,
-        retrain=retrain,
-    )
-    logger.info(
-        "Resolved serving strategy=%s model=%s in %.2fs",
-        strategy_name,
-        model_name,
-        time.time() - start,
-    )
-
-    try:
-        train_preds = predict_with_strategy_artifact(
-            model_frame,
-            artifact=model,
-            features=FEATURES,
-        )
-    except ValueError:
-        logger.warning(
-            "Loaded model incompatible with current features; "
-            "retraining XGBoost baseline."
-        )
-        params = section.get("xgb_params")
-        fallback_model_path = Path(section.get("model_path") or str(DEFAULT_MODEL_PATH))
-        model = train_model(model_frame, params=params, model_name="xgboost")
-        save_model(model, fallback_model_path)
-        train_preds = predict_with_strategy_artifact(
-            model_frame,
-            artifact=model,
-            features=FEATURES,
-        )
-    sigma = residual_std(model_frame["strikeouts"], train_preds)
-    model_frame = model_frame.copy()
-    model_frame["prediction"] = train_preds
-
-    park_lookup = _park_lookup(park_df)
-    opponent_lookup, opponent_fallback = _opponent_metrics(model_frame, target_date)
-    latest_games = _latest_games(games)
-
-    prediction_rows = _build_prediction_rows(
-        lines,
-        latest_games,
-        target_date,
-        park_lookup,
-        opponent_lookup,
-        opponent_fallback,
-    )
-
-    if prediction_rows.empty:
-        lines_enriched = lines.copy()
-        lines_enriched["prediction"] = np.nan
-        lines_enriched["pitcher_id"] = np.nan
-        lines_enriched["pitcher_team"] = np.nan
-        lines_enriched["most_recent_game"] = np.nan
-        lines_enriched["upcoming_game_date"] = pd.Timestamp(target_date)
-        lines_enriched["opponent_team"] = np.nan
-        lines_enriched["park_factor_K"] = np.nan
-        lines_enriched["rest_days"] = np.nan
-    else:
-        prediction_rows = prediction_rows.reset_index(drop=True)
-        prediction_rows = _normalize_opponent_feature_columns(prediction_rows)
-        prediction_rows = ensure_live_feature_defaults(prediction_rows)
-        live_cfg = _resolve_live_features_config(section)
-        live_service = LiveContextService(config=live_cfg)
-        live_result = live_service.fetch(prediction_rows, target_date)
-        prediction_rows = merge_live_feature_frame(
-            prediction_rows,
-            live_result.frame,
-            join_keys=("pitcher_id", "opponent_team"),
-        )
-        coverage = coverage_metrics(prediction_rows)
-        logger.info(
-            (
-                "Live feature coverage weather=%.1f%% roof=%.1f%% "
-                "umpire=%.1f%% handedness=%.1f%% cache=%s"
-            ),
-            100.0 * coverage["weather_known_pct"],
-            100.0 * coverage["roof_known_pct"],
-            100.0 * coverage["umpire_known_pct"],
-            100.0 * coverage["handedness_known_pct"],
-            live_result.metadata.get("cache_status"),
-        )
-        prediction_rows["prediction"] = np.nan
-        valid_mask = prediction_rows[FEATURES].notna().all(axis=1)
-        if valid_mask.any():
-            preds = predict_with_strategy_artifact(
-                prediction_rows.loc[valid_mask],
-                artifact=model,
-                features=FEATURES,
-            )
-            prediction_rows.loc[valid_mask, "prediction"] = preds.values
-
-        lines_enriched = lines.merge(
-            prediction_rows[
-                [
-                    "player_key",
-                    "pitcher_id",
-                    "pitcher_team",
-                    "prediction",
-                    "most_recent_game",
-                    "upcoming_game_date",
-                    "opponent_team",
-                    "park_factor_K",
-                    "rest_days",
-                ]
-            ],
-            left_on="name_key",
-            right_on="player_key",
-            how="left",
-        )
-        lines_enriched.drop(columns=["player_key"], inplace=True, errors="ignore")
-        lines_enriched["live_feature_set_version"] = live_result.metadata.get(
-            "live_feature_set_version"
-        )
-        live_sources = live_result.metadata.get("live_feature_sources") or []
-        lines_enriched["live_feature_sources"] = ",".join(
-            str(source) for source in live_sources
-        )
-        lines_enriched["live_fetch_timestamp"] = live_result.metadata.get(
-            "live_fetch_timestamp"
-        )
-        lines_enriched["cache_age_hours"] = live_result.metadata.get("cache_age_hours")
-        lines_enriched["stale_cache_usage_pct"] = live_result.metadata.get(
-            "stale_cache_usage_pct"
-        )
-
-    if not sigma or pd.isna(sigma) or sigma <= 0:
-        sigma = float(section.get("fallback_std", 1.0))
-    bootstrapper = None
-    try:
-        bootstrapper = ResidualBootstrapper.from_games(model_frame)
-    except ValueError:
-        bootstrapper = None
-
-    sim_count = section.get("monte_carlo_simulations", 10_000) or 10_000
-    mc_config = MonteCarloConfig(
-        simulations=int(sim_count),
-        random_seed=section.get("monte_carlo_seed"),
-    )
-
-    enriched = apply_simulations(
-        lines_enriched,
-        mean_col="prediction",
-        std_dev=sigma,
-        config=mc_config,
-        sampler=bootstrapper,
-    )
-    enriched["model_residual_std"] = sigma
-    enriched.rename(
-        columns={
-            "prediction": "predicted_strikeouts",
-            "opponent_team": "upcoming_opponent",
-            "rest_days": "upcoming_rest_days",
-            "park_factor_K": "upcoming_park_factor_K",
-        },
-        inplace=True,
-    )
-    enriched.drop(columns=["name_key"], inplace=True, errors="ignore")
-
-    return enriched
+    return run_mlb_pitcher_prop_pipeline(config=config, retrain=retrain)
 
 
 def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:

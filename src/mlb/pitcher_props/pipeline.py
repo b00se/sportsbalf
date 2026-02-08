@@ -296,6 +296,19 @@ def _build_training_games(
         str(path) for path in (section.get("training_data_paths") or [pitch_data_path])
     ]
 
+    earned_runs_source: pd.DataFrame | None = None
+    earned_runs_labels_path = section.get("earned_runs_labels_path")
+    if descriptor.stat == "earned_runs" and earned_runs_labels_path:
+        try:
+            earned_runs_source = read_csv(str(earned_runs_labels_path))
+        except FileNotFoundError:
+            logger.warning(
+                "Configured earned-runs labels path '%s' was not found; "
+                "falling back to score-delta/fallback-column labels.",
+                earned_runs_labels_path,
+            )
+            earned_runs_source = None
+
     frames: list[pd.DataFrame] = []
     for path in training_paths:
         pitch_df = read_csv(path)
@@ -314,6 +327,7 @@ def _build_training_games(
             pitch_df,
             pitcher_output_path=str(pitcher_out) if pitcher_out else None,
             batter_output_path=str(batter_out) if batter_out else None,
+            earned_runs_source=earned_runs_source,
         )
         games = add_rolling_features(games)
         games = _add_rolling_pressure_features(games)
@@ -396,24 +410,48 @@ def _persist_label_quality_report(
         ).fillna(0.0)
     else:
         report["fallback_used"] = 0.0
+    if (
+        descriptor.stat == "earned_runs"
+        and "earned_runs_high_fidelity_used" in report.columns
+    ):
+        report["high_fidelity_used"] = pd.to_numeric(
+            report["earned_runs_high_fidelity_used"], errors="coerce"
+        ).fillna(0.0)
+    else:
+        report["high_fidelity_used"] = 0.0
 
     grouped = (
         report.groupby("season", as_index=False)
         .agg(
             rows=("target_non_null", "sum"),
             fallback_rows=("fallback_used", "sum"),
+            high_fidelity_rows=("high_fidelity_used", "sum"),
         )
         .sort_values("season", kind="stable")
     )
     grouped["fallback_rows"] = grouped["fallback_rows"].astype(int)
+    grouped["high_fidelity_rows"] = grouped["high_fidelity_rows"].astype(int)
     grouped["fallback_share"] = np.where(
         grouped["rows"] > 0,
         grouped["fallback_rows"] / grouped["rows"],
         0.0,
     )
+    grouped["high_fidelity_share"] = np.where(
+        grouped["rows"] > 0,
+        grouped["high_fidelity_rows"] / grouped["rows"],
+        0.0,
+    )
     grouped["stat"] = descriptor.stat
     grouped = grouped[
-        ["stat", "season", "rows", "fallback_rows", "fallback_share"]
+        [
+            "stat",
+            "season",
+            "rows",
+            "fallback_rows",
+            "fallback_share",
+            "high_fidelity_rows",
+            "high_fidelity_share",
+        ]
     ].reset_index(drop=True)
 
     output = Path(report_path)

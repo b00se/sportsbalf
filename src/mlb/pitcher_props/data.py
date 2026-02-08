@@ -37,6 +37,77 @@ _OUT_EVENT_MAP = {
 }
 
 
+def _normalize_earned_runs_source_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalize a high-fidelity earned-runs source into join-ready columns.
+
+    Args:
+        frame: Raw earned-runs source frame.
+
+    Returns:
+        DataFrame with ``pitcher``, ``game_date``, and ``earned_runs_hf``.
+    """
+
+    if frame.empty:
+        return pd.DataFrame(columns=["pitcher", "game_date", "earned_runs_hf"])
+
+    normalized = frame.copy()
+    normalized.columns = [str(col).strip().lower() for col in normalized.columns]
+
+    pitcher_col = next(
+        (
+            col
+            for col in ["pitcher", "pitcher_id", "mlbam_id", "player_id"]
+            if col in normalized.columns
+        ),
+        None,
+    )
+    date_col = next(
+        (
+            col
+            for col in ["game_date", "date", "game_dt", "gamedate"]
+            if col in normalized.columns
+        ),
+        None,
+    )
+    er_col = next(
+        (
+            col
+            for col in ["earned_runs", "er", "earned_runs_allowed", "er_allowed"]
+            if col in normalized.columns
+        ),
+        None,
+    )
+
+    if pitcher_col is None or date_col is None or er_col is None:
+        logger.warning(
+            "High-fidelity ER source missing required columns. "
+            "Expected pitcher/date/earned-runs compatible fields."
+        )
+        return pd.DataFrame(columns=["pitcher", "game_date", "earned_runs_hf"])
+
+    normalized = normalized[[pitcher_col, date_col, er_col]].rename(
+        columns={
+            pitcher_col: "pitcher",
+            date_col: "game_date",
+            er_col: "earned_runs_hf",
+        }
+    )
+    normalized["game_date"] = pd.to_datetime(normalized["game_date"], errors="coerce")
+    normalized["earned_runs_hf"] = pd.to_numeric(
+        normalized["earned_runs_hf"], errors="coerce"
+    )
+    normalized = normalized.dropna(subset=["pitcher", "game_date", "earned_runs_hf"])
+    if normalized.empty:
+        return pd.DataFrame(columns=["pitcher", "game_date", "earned_runs_hf"])
+
+    grouped = (
+        normalized.groupby(["pitcher", "game_date"], as_index=False)["earned_runs_hf"]
+        .max()
+        .sort_values(["pitcher", "game_date"], kind="stable")
+    )
+    return grouped
+
+
 def _terminal_plate_appearances(frame: pd.DataFrame) -> pd.DataFrame:
     """Return one terminal row per pitcher/game/plate appearance.
 
@@ -122,11 +193,16 @@ def _runs_allowed_from_score_delta(terminal: pd.DataFrame) -> pd.Series:
     return pd.Series(runs_allowed, index=terminal.index, dtype="float64")
 
 
-def build_pitcher_game_table(pitch_df: pd.DataFrame) -> pd.DataFrame:
+def build_pitcher_game_table(
+    pitch_df: pd.DataFrame,
+    *,
+    earned_runs_source: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Build a multi-target pitcher-game table from Statcast-level data.
 
     Args:
         pitch_df: Pitch-level or already-aggregated frame.
+        earned_runs_source: Optional high-fidelity earned-runs frame.
 
     Returns:
         Pitcher-game table with shared and stat-specific target columns.
@@ -202,6 +278,26 @@ def build_pitcher_game_table(pitch_df: pd.DataFrame) -> pd.DataFrame:
             )
 
     games = games.merge(grouped, on=["pitcher", "game_date"], how="left")
+
+    high_fidelity = _normalize_earned_runs_source_frame(
+        earned_runs_source if earned_runs_source is not None else pd.DataFrame()
+    )
+    games["earned_runs_high_fidelity_used"] = 0
+    if not high_fidelity.empty:
+        games = games.merge(high_fidelity, on=["pitcher", "game_date"], how="left")
+        games["earned_runs"] = pd.to_numeric(games["earned_runs"], errors="coerce")
+        games["earned_runs_hf"] = pd.to_numeric(
+            games["earned_runs_hf"], errors="coerce"
+        )
+        hf_mask = games["earned_runs_hf"].notna()
+        games.loc[hf_mask, "earned_runs"] = games.loc[hf_mask, "earned_runs_hf"]
+        games["earned_runs_high_fidelity_used"] = hf_mask.astype(int)
+        games.drop(columns=["earned_runs_hf"], inplace=True, errors="ignore")
+        if int(hf_mask.sum()) > 0:
+            logger.info(
+                "Applied high-fidelity earned-runs labels to %d pitcher-game rows.",
+                int(hf_mask.sum()),
+            )
 
     fallback_earned = None
     for candidate in ["earned_runs", "er", "runs_allowed"]:
@@ -346,6 +442,7 @@ def persist_reusable_tables(
     *,
     pitcher_output_path: str | None,
     batter_output_path: str | None,
+    earned_runs_source: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build and optionally persist pitcher/batter reusable game tables.
 
@@ -353,12 +450,16 @@ def persist_reusable_tables(
         pitch_df: Pitch-level Statcast frame.
         pitcher_output_path: Optional path for persisted pitcher-game table.
         batter_output_path: Optional path for persisted batter-game table.
+        earned_runs_source: Optional high-fidelity earned-runs frame.
 
     Returns:
         Tuple of (pitcher_game_table, batter_game_table).
     """
 
-    pitcher_games = build_pitcher_game_table(pitch_df)
+    pitcher_games = build_pitcher_game_table(
+        pitch_df,
+        earned_runs_source=earned_runs_source,
+    )
     batter_games = build_batter_game_table(pitch_df)
 
     if pitcher_output_path:
