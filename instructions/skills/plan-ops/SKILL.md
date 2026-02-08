@@ -11,6 +11,7 @@ Provide a consistent command-style workflow for common planning actions without 
 ## Trigger Phrases
 Use this skill when user messages include any of these intents:
 - "keep planning"
+- "review plan"
 - "execute this plan <path>"
 - "approve plan <path>"
 - "refresh/update plan audit"
@@ -23,25 +24,30 @@ Treat these as direct workflow commands in chat.
 - Read the plan and continue refining it only (no code changes).
 - Output updated decision-complete plan content.
 
-2. `plan:execute <path>`
+2. `plan:review <path>`
+- Review the plan quality and decision-completeness.
+- Return concrete findings/gaps and required fixes before approval.
+
+3. `plan:execute <path>`
 - Execute plan end-to-end with normal repo workflow.
 - Use TDD where applicable, run validations, summarize RED/GREEN evidence.
 
-3. `plan:audit`
+4. `plan:audit`
 - Update `docs/plans/plan-doneness-audit-2026-02-08.md` to reflect current state.
 - Ensure PR/branch status and implemented/planned classifications are consistent.
 
-4. `plan:finalize <message>`
+5. `plan:finalize <message>`
 - Stage relevant plan/docs/code files.
 - Commit with provided message.
 - Push branch and open/edit PR when requested.
 
-5. `plan:approve <path>`
-- Composite workflow:
-  1) execute the plan at `<path>`
-  2) refresh doneness audit
-  3) commit with a plan-specific message
-  4) push and open PR
+6. `plan:approve <path>`
+- Approval workflow for your default sequence:
+  1) confirm plan is in `docs/plans/planned/`
+  2) commit the approved plan doc change(s) first
+  3) audit all plans by updating `docs/plans/plan-doneness-audit-2026-02-08.md`
+  4) commit the audit update
+  5) optionally push/open PR when requested
 
 ## Repo Constraints
 - Keep tests offline and deterministic.
