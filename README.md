@@ -11,17 +11,20 @@ install dependencies:
 
 ```bash
 python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+.venv/bin/pip install -r requirements.txt
 ```
+
+Automation note: in this repo, prefer direct virtualenv executables
+(`.venv/bin/python`, `.venv/bin/pytest`, `.venv/bin/ruff`, `.venv/bin/black`)
+instead of relying on shell activation state.
 
 ## Running the pipeline
 
 Run the orchestration entrypoint with explicit sport/stat selection:
 
 ```bash
-python -m pipeline.main --sport mlb --stat strikeouts --config config/mlb.yaml
-python -m pipeline.main --sport nfl --stat pass_attempts --config config/nfl.yaml
+.venv/bin/python -m pipeline.main --sport mlb --stat strikeouts --config config/mlb.yaml
+.venv/bin/python -m pipeline.main --sport nfl --stat pass_attempts --config config/nfl.yaml
 ```
 
 The pipeline aggregates pitch-level data using the helpers in
@@ -46,13 +49,13 @@ paths in the config.
 To retrain before scoring, pass the `--retrain` flag:
 
 ```bash
-python -m pipeline.main --sport mlb --stat strikeouts --config config/mlb.yaml --retrain
+.venv/bin/python -m pipeline.main --sport mlb --stat strikeouts --config config/mlb.yaml --retrain
 ```
 
 To run the offline tournament directly and emit leaderboard/champion artifacts:
 
 ```bash
-PYTHONPATH=. python scripts/backtest_mlb_strikeouts.py --config config/mlb.yaml
+PYTHONPATH=. .venv/bin/python scripts/backtest_mlb_strikeouts.py --config config/mlb.yaml
 ```
 
 Outputs:
@@ -73,7 +76,7 @@ To rebuild the enriched pitcher game logs from raw Statcast data, use the
 existing scripts in the `scripts/` directory. For a single season run:
 
 ```bash
-PYTHONPATH=. python scripts/generate_pitcher_dataset_from_raw.py --season 2023
+PYTHONPATH=. .venv/bin/python scripts/generate_pitcher_dataset_from_raw.py --season 2023
 ```
 
 This will fetch the cached raw Statcast file for the season, aggregate it with
@@ -87,15 +90,15 @@ pitch-level data, and producing enriched game logs for each year in the range.
 
 ## Testing
 
-Run the unit tests with `pytest`:
+Run the unit tests:
 
 ```bash
-pytest
+.venv/bin/pytest -q
 ```
 
 Run lint and formatting checks:
 
 ```bash
-ruff check .
-black --check .
+.venv/bin/ruff check .
+.venv/bin/black --check .
 ```

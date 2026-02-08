@@ -125,48 +125,109 @@ class LiveContextService:
                 },
             )
 
+        requested_key_columns = [
+            col
+            for col in ("pitcher_id", "opponent_team", "game_pk")
+            if col in base_frame.columns
+        ]
+
+        def _lookup_cached_rows(
+            requested: pd.DataFrame, cached: pd.DataFrame
+        ) -> tuple[pd.DataFrame, float]:
+            """Match cached rows to requested keys and return coverage ratio."""
+
+            if requested.empty or cached.empty:
+                return pd.DataFrame(), 0.0
+            cache_keys = [col for col in requested.columns if col in cached.columns]
+            if not cache_keys:
+                return pd.DataFrame(), 0.0
+
+            stale_lookup = cached.copy()
+            if "fetched_at" in stale_lookup.columns:
+                parsed_fetched_at = pd.to_datetime(
+                    stale_lookup["fetched_at"], errors="coerce"
+                )
+                stale_lookup = stale_lookup.assign(
+                    _fetched_sort=parsed_fetched_at
+                ).sort_values("_fetched_sort")
+
+            stale_lookup = stale_lookup.drop_duplicates(subset=cache_keys, keep="last")
+            matched_rows = requested.merge(
+                stale_lookup,
+                on=cache_keys,
+                how="left",
+                indicator=True,
+            )
+            matched_rows = matched_rows.loc[matched_rows["_merge"] == "both"].drop(
+                columns=["_merge", "_fetched_sort"],
+                errors="ignore",
+            )
+            usage_pct = float(len(matched_rows) / max(len(base_frame), 1))
+            return matched_rows, usage_pct
+
         fetched = self._fetch_primary(base_frame, target_date)
         used_secondary = False
-        if self.weather_enabled and not fetched.empty:
-            missing_weather = fetched[
-                [
-                    col
-                    for col in ("game_temp_f", "humidity_pct", "wind_speed_mph")
-                    if col in fetched.columns
+        used_cache = False
+        cache_age_hours: float | None = None
+        cache_status = "fresh"
+        stale_cache_usage_pct = 0.0
+        if self.weather_enabled:
+            secondary_rows = pd.DataFrame()
+            if fetched.empty:
+                secondary_request = base_frame[
+                    [
+                        col
+                        for col in ("pitcher_id", "opponent_team")
+                        if col in base_frame.columns
+                    ]
                 ]
-            ].isna().any(axis=1)
-            needs_roof_fill = (
-                fetched["roof_state"].isna()
-                | fetched["roof_state"]
-                .astype(str)
-                .str.strip()
-                .str.lower()
-                .isin({"", "unknown", "none", "nan"})
-            ) if "roof_state" in fetched.columns else pd.Series(
-                False, index=fetched.index
-            )
-            needs_secondary = missing_weather | needs_roof_fill
-            if needs_secondary.any():
-                secondary = self._fetch_secondary(
-                    fetched.loc[
-                        needs_secondary,
-                        [
-                            col
-                            for col in ("pitcher_id", "opponent_team")
-                            if col in fetched.columns
-                        ],
-                    ],
-                    target_date,
+                if not secondary_request.empty:
+                    secondary_rows = self._fetch_secondary(
+                        secondary_request, target_date
+                    )
+                if not secondary_rows.empty:
+                    used_secondary = True
+                    fetched = secondary_rows.copy()
+            else:
+                missing_weather = fetched[
+                    [
+                        col
+                        for col in ("game_temp_f", "humidity_pct", "wind_speed_mph")
+                        if col in fetched.columns
+                    ]
+                ].isna().any(axis=1)
+                needs_roof_fill = (
+                    fetched["roof_state"].isna()
+                    | fetched["roof_state"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    .isin({"", "unknown", "none", "nan"})
+                ) if "roof_state" in fetched.columns else pd.Series(
+                    False, index=fetched.index
                 )
-                if not secondary.empty:
+                needs_secondary = missing_weather | needs_roof_fill
+                if needs_secondary.any():
+                    secondary_rows = self._fetch_secondary(
+                        fetched.loc[
+                            needs_secondary,
+                            [
+                                col
+                                for col in ("pitcher_id", "opponent_team")
+                                if col in fetched.columns
+                            ],
+                        ],
+                        target_date,
+                    )
+                if not secondary_rows.empty:
                     used_secondary = True
                     merge_keys = [
                         col
                         for col in ("pitcher_id", "opponent_team")
-                        if col in fetched.columns and col in secondary.columns
+                        if col in fetched.columns and col in secondary_rows.columns
                     ]
                     fetched = fetched.merge(
-                        secondary,
+                        secondary_rows,
                         on=merge_keys,
                         how="left",
                         suffixes=("", "_secondary"),
@@ -199,6 +260,45 @@ class LiveContextService:
                         .astype(int)
                     )
 
+        if not fetched.empty:
+            key_columns = [
+                col for col in requested_key_columns if col in fetched.columns
+            ]
+            if key_columns:
+                requested_keys = base_frame[key_columns].drop_duplicates()
+                fetched_keys = fetched[key_columns].drop_duplicates()
+                missing_keys = requested_keys.merge(
+                    fetched_keys,
+                    on=key_columns,
+                    how="left",
+                    indicator=True,
+                )
+                missing_keys = missing_keys.loc[
+                    missing_keys["_merge"] == "left_only", key_columns
+                ]
+                if not missing_keys.empty:
+                    cached = self._load_cache()
+                    if not cached.empty:
+                        cache_age_hours = self._cache_age_hours(cached)
+                        if (
+                            cache_age_hours is not None
+                            and cache_age_hours <= self.cache_ttl_hours
+                        ):
+                            cached_rows, cached_usage_pct = _lookup_cached_rows(
+                                missing_keys, cached
+                            )
+                            if not cached_rows.empty:
+                                used_cache = True
+                                cache_status = "partial_stale_fallback"
+                                cached_rows["is_stale"] = 1
+                                cached_rows["source_used"] = "cache"
+                                fetched = pd.concat(
+                                    [fetched, cached_rows],
+                                    ignore_index=True,
+                                    sort=False,
+                                )
+                                stale_cache_usage_pct = cached_usage_pct
+
         if fetched.empty:
             cached = self._load_cache()
             if not cached.empty:
@@ -208,19 +308,21 @@ class LiveContextService:
                     and cache_age_hours <= self.cache_ttl_hours
                 ):
                     logger.warning("Using stale cache fallback for live features.")
-                    stale = cached.copy()
-                    stale["is_stale"] = 1
-                    return LiveFeatureFetchResult(
-                        frame=ensure_live_feature_defaults(stale),
-                        metadata={
-                            "live_feature_set_version": "v1",
-                            "live_feature_sources": ["cache"],
-                            "live_fetch_timestamp": datetime.now(UTC).isoformat(),
-                            "cache_age_hours": cache_age_hours,
-                            "cache_status": "stale_fallback",
-                            "stale_cache_usage_pct": 1.0,
-                        },
-                    )
+                    requested = base_frame[requested_key_columns].drop_duplicates()
+                    stale, stale_usage_pct = _lookup_cached_rows(requested, cached)
+                    if not stale.empty:
+                        stale["is_stale"] = 1
+                        return LiveFeatureFetchResult(
+                            frame=ensure_live_feature_defaults(stale),
+                            metadata={
+                                "live_feature_set_version": "v1",
+                                "live_feature_sources": ["cache"],
+                                "live_fetch_timestamp": datetime.now(UTC).isoformat(),
+                                "cache_age_hours": cache_age_hours,
+                                "cache_status": "stale_fallback",
+                                "stale_cache_usage_pct": stale_usage_pct,
+                            },
+                        )
 
             return LiveFeatureFetchResult(
                 frame=ensure_live_feature_defaults(base_frame),
@@ -234,24 +336,49 @@ class LiveContextService:
                 },
             )
 
-        fetched["fetched_at"] = datetime.now(UTC).isoformat()
-        fetched["source_used"] = "secondary" if used_secondary else "primary"
-        fetched["is_stale"] = 0
+        default_source = "secondary" if used_secondary else "primary"
+        if "source_used" not in fetched.columns:
+            fetched["source_used"] = default_source
+        else:
+            fetched["source_used"] = (
+                fetched["source_used"].fillna(default_source).astype(str)
+            )
+
+        if "is_stale" not in fetched.columns:
+            fetched["is_stale"] = 0
+        else:
+            fetched["is_stale"] = (
+                pd.to_numeric(fetched["is_stale"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+            )
+
+        stale_mask = fetched["is_stale"].eq(1)
+        fetched_at = datetime.now(UTC).isoformat()
+        if "fetched_at" not in fetched.columns:
+            fetched["fetched_at"] = pd.NA
+        fetched.loc[~stale_mask, "fetched_at"] = fetched_at
+        if cache_status == "fresh":
+            cache_status = "fresh_with_cache" if used_cache else "fresh"
         self._save_cache(fetched)
 
         return LiveFeatureFetchResult(
             frame=ensure_live_feature_defaults(fetched),
             metadata={
                 "live_feature_set_version": "v1",
-                "live_feature_sources": (
-                    [self.primary_weather_source, self.secondary_weather_source]
-                    if used_secondary
-                    else [self.primary_weather_source]
-                ),
+                "live_feature_sources": [
+                    source
+                    for source in [
+                        self.primary_weather_source,
+                        self.secondary_weather_source if used_secondary else None,
+                        "cache" if used_cache else None,
+                    ]
+                    if source is not None
+                ],
                 "live_fetch_timestamp": datetime.now(UTC).isoformat(),
-                "cache_age_hours": 0.0,
-                "cache_status": "fresh",
-                "stale_cache_usage_pct": 0.0,
+                "cache_age_hours": cache_age_hours if used_cache else 0.0,
+                "cache_status": cache_status,
+                "stale_cache_usage_pct": stale_cache_usage_pct,
             },
         )
 

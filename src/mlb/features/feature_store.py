@@ -208,7 +208,16 @@ def merge_live_feature_frame(
         col for col in LIVE_CONTEXT_FEATURE_COLUMNS if col in live_features.columns
     ]
     deduped = live_features[keep_cols].drop_duplicates(subset=keys, keep="last")
-    merged = predictions.merge(deduped, on=keys, how="left")
+    merged = predictions.merge(deduped, on=keys, how="left", suffixes=("", "_live"))
+    overlapping_live_cols = [
+        col for col in LIVE_CONTEXT_FEATURE_COLUMNS if col in predictions.columns
+    ]
+    for col in overlapping_live_cols:
+        live_col = f"{col}_live"
+        if live_col not in merged.columns:
+            continue
+        merged[col] = merged[live_col].combine_first(merged[col])
+        merged.drop(columns=[live_col], inplace=True)
     return ensure_live_feature_defaults(merged)
 
 

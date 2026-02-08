@@ -63,6 +63,8 @@ def _prepare_training_frame(section: dict[str, object]) -> pd.DataFrame:
         frames.append(hist_games)
 
     full = pd.concat(frames, ignore_index=True)
+    full = _normalize_opponent_feature_columns(full)
+    full = build_historical_live_features(full)
     if "pitcher_id" not in full.columns and "pitcher" in full.columns:
         full["pitcher_id"] = full["pitcher"]
     full.sort_values(["pitcher_id", "game_date"], inplace=True)

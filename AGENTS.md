@@ -6,12 +6,19 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 
 ## Goals
 - Prioritize modeling features and pipeline extensions.
+- Current operating mode: model-first/offseason. Prefer work that improves offline
+  model quality, backtests, and feature engineering over live reliability churn.
+- Live reliability fixes are still allowed when they block model development or
+  break current behavior.
 - Keep changes minimal, focused, and consistent with current structure.
 - Maintain offline-safe tests; allow online pipeline execution.
 
 ## Python & Tooling
 - Target Python: 3.11
 - Package manager: `pip`
+- Command policy: use repo-local virtualenv executables explicitly
+  (`.venv/bin/python`, `.venv/bin/pip`, `.venv/bin/pytest`, `.venv/bin/ruff`,
+  `.venv/bin/black`) instead of relying on activated shells.
 - Allowed dependencies (when beneficial): `pyarrow` (parquet I/O), `black` (format), `ruff` (lint). Add others only when there is a clear modeling or performance gain.
 
 ## Style & Conventions
@@ -49,19 +56,21 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
   - Default: use offline fixtures and `/tmp` outputs.
   - If user explicitly requests real ingestion/e2e, it is allowed to write transient artifacts under `data/` in the active worktree.
 - Safety: Never delete or reset generated `data/` artifacts automatically; leave cleanup to explicit user request.
-- After dependency changes, re-run `pytest -q` and `ruff check .` before reporting completion.
+- After dependency changes, re-run `.venv/bin/pytest -q` and `.venv/bin/ruff check .`
+  before reporting completion.
 
 ## Suggested Approval Prefixes
 - For smoother autonomous operation, pre-approve these command prefixes when possible:
-  - `["ruff", "check", "."]`
-  - `["black"]`
+  - `[".venv/bin/ruff", "check", "."]`
+  - `[".venv/bin/pytest", "-q"]`
+  - `[".venv/bin/black"]`
   - `["git", "push"]`
   - `["gh", "pr", "create"]`
   - `["gh", "pr", "edit"]`
-  - `["/Users/jbrys/sportsbalf/.venv/bin/pip", "install"]`
-  - `["/Users/jbrys/sportsbalf/.venv/bin/python", "-m", "pipeline.main"]`
-  - `["/Users/jbrys/sportsbalf/.venv/bin/python", "scripts/fetch_statcast_raw.py"]`
-  - `["/Users/jbrys/sportsbalf/.venv/bin/python", "scripts/build_qb_attempts_dataset.py"]`
+  - `[".venv/bin/pip", "install"]`
+  - `[".venv/bin/python", "-m", "pipeline.main"]`
+  - `[".venv/bin/python", "scripts/fetch_statcast_raw.py"]`
+  - `[".venv/bin/python", "scripts/build_qb_attempts_dataset.py"]`
 
 ## Local Skill & Runbook
 - Autonomy runbook: `instructions/codex_autonomy_runbook.md`
@@ -80,16 +89,16 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 - The pipeline may use the network in normal runs, but should degrade gracefully (e.g., use last-known or average opponent/park context when network fails).
 
 ## Testing
-- Runner: `pytest`
+- Runner: `.venv/bin/pytest`
 - Keep tests deterministic and fast; avoid network/file downloads.
 - Use/extend `tests/testdata/` for small fixture files. Do not change large input/output directories.
 
 ## Minimal Commands (reference)
-- Install deps: `pip install -r requirements.txt`
-- Run tests (offline): `pytest`
-- Run pipeline (online allowed): `python -m pipeline.main --sport <sport> --stat <stat> --config <path> [--retrain]`
-- Format: `black .`
-- Lint: `ruff check .`
+- Install deps: `.venv/bin/pip install -r requirements.txt`
+- Run tests (offline): `.venv/bin/pytest -q`
+- Run pipeline (online allowed): `.venv/bin/python -m pipeline.main --sport <sport> --stat <stat> --config <path> [--retrain]`
+- Format: `.venv/bin/black .`
+- Lint: `.venv/bin/ruff check .`
 
 ## When Adding Dependencies
 - Prefer widely used, well-supported libs. Justify additions with clear modeling or performance benefits.

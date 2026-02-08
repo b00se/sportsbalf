@@ -9,6 +9,7 @@ from src.mlb.features.feature_store import (
     LIVE_CONTEXT_FEATURE_COLUMNS,
     build_historical_live_features,
     ensure_live_feature_defaults,
+    merge_live_feature_frame,
 )
 from src.mlb.features.live_context import LiveContextService
 from src.mlb.features.venue import normalize_roof_state
@@ -26,6 +27,39 @@ def test_live_feature_defaults_include_all_columns() -> None:
 
 def test_model_feature_list_includes_live_context_columns() -> None:
     assert set(LIVE_CONTEXT_FEATURE_COLUMNS) - {"roof_state"} <= set(FEATURES)
+
+
+def test_merge_live_feature_frame_overwrites_existing_live_defaults() -> None:
+    predictions = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 99,
+                "opponent_team": "SEA",
+                "humidity_pct": 50.0,
+                "roof_state": "unknown",
+                "weather_known_flag": 0,
+            }
+        ]
+    )
+    live = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 99,
+                "opponent_team": "SEA",
+                "humidity_pct": 80.0,
+                "roof_state": "closed",
+                "weather_known_flag": 1,
+            }
+        ]
+    )
+
+    merged = merge_live_feature_frame(predictions, live)
+
+    assert float(merged.loc[0, "humidity_pct"]) == 80.0
+    assert str(merged.loc[0, "roof_state"]).lower() == "closed"
+    assert int(merged.loc[0, "weather_known_flag"]) == 1
+    assert "humidity_pct_live" not in merged.columns
+    assert "roof_state_live" not in merged.columns
 
 
 def test_historical_umpire_features_are_shifted() -> None:
@@ -80,12 +114,169 @@ def test_live_context_uses_stale_cache_fallback(tmp_path) -> None:
     )
 
     service._fetch_primary = lambda *_args, **_kwargs: pd.DataFrame()  # type: ignore[method-assign]
+    service._fetch_secondary = lambda *_args, **_kwargs: pd.DataFrame()  # type: ignore[method-assign]
 
     rows = pd.DataFrame([{"pitcher_id": 123, "opponent_team": "LAD"}])
     result = service.fetch(rows, datetime.now())
 
     assert result.metadata["cache_status"] == "stale_fallback"
     assert float(result.frame.loc[0, "humidity_pct"]) == 55.0
+
+
+def test_live_context_uses_secondary_when_primary_returns_empty(tmp_path) -> None:
+    cache_path = tmp_path / "live_cache.parquet"
+    service = LiveContextService(
+        {
+            "enabled": True,
+            "cache_path": str(cache_path),
+            "cache_ttl_hours": 24,
+            "weather": {
+                "enabled": True,
+                "primary_source": "pybaseball_team_game_logs",
+                "secondary_source": "statsapi_game_feed",
+            },
+        }
+    )
+
+    secondary = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 31,
+                "opponent_team": "ATL",
+                "game_temp_f": 67.0,
+                "humidity_pct": 49.0,
+                "wind_speed_mph": 10.0,
+                "wind_out_to_cf_flag": 1,
+                "roof_state": "open",
+            }
+        ]
+    )
+
+    service._fetch_primary = lambda *_args, **_kwargs: pd.DataFrame()  # type: ignore[method-assign]
+    service._fetch_secondary = lambda *_args, **_kwargs: secondary.copy()  # type: ignore[method-assign]
+
+    rows = pd.DataFrame([{"pitcher_id": 31, "opponent_team": "ATL"}])
+    result = service.fetch(rows, datetime.now())
+
+    assert "statsapi_game_feed" in result.metadata["live_feature_sources"]
+    assert float(result.frame.loc[0, "humidity_pct"]) == 49.0
+    assert result.metadata["cache_status"] == "fresh"
+
+
+def test_live_context_uses_cache_for_missing_rows_in_partial_fetch(tmp_path) -> None:
+    cache_path = tmp_path / "live_cache.parquet"
+    now = datetime.now(UTC)
+    cached = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 22,
+                "opponent_team": "LAD",
+                "game_temp_f": 61.0,
+                "humidity_pct": 66.0,
+                "wind_speed_mph": 12.0,
+                "wind_out_to_cf_flag": 1,
+                "roof_state": "open",
+                "fetched_at": now.isoformat(),
+            }
+        ]
+    )
+    cached.to_parquet(cache_path, index=False)
+
+    service = LiveContextService(
+        {
+            "enabled": True,
+            "cache_path": str(cache_path),
+            "cache_ttl_hours": 24,
+            "weather": {"enabled": True},
+        }
+    )
+
+    primary = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 11,
+                "opponent_team": "BOS",
+                "game_temp_f": 70.0,
+                "humidity_pct": 40.0,
+                "wind_speed_mph": 5.0,
+                "wind_out_to_cf_flag": 0,
+                "roof_state": "open",
+                "weather_known_flag": 1,
+            }
+        ]
+    )
+    service._fetch_primary = lambda *_args, **_kwargs: primary.copy()  # type: ignore[method-assign]
+    service._fetch_secondary = lambda *_args, **_kwargs: pd.DataFrame()  # type: ignore[method-assign]
+
+    rows = pd.DataFrame(
+        [
+            {"pitcher_id": 11, "opponent_team": "BOS"},
+            {"pitcher_id": 22, "opponent_team": "LAD"},
+        ]
+    )
+    result = service.fetch(rows, datetime.now())
+    keyed = result.frame.set_index(["pitcher_id", "opponent_team"])
+
+    assert result.metadata["cache_status"] == "partial_stale_fallback"
+    assert "cache" in result.metadata["live_feature_sources"]
+    assert float(result.metadata["stale_cache_usage_pct"]) == 0.5
+    assert float(keyed.loc[(22, "LAD"), "humidity_pct"]) == 66.0
+    assert int(keyed.loc[(22, "LAD"), "is_stale"]) == 1
+
+
+def test_stale_cache_fallback_only_returns_requested_key_matches(tmp_path) -> None:
+    cache_path = tmp_path / "live_cache.parquet"
+    now = datetime.now(UTC)
+    cached = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 501,
+                "opponent_team": "BAL",
+                "game_temp_f": 64.0,
+                "humidity_pct": 62.0,
+                "wind_speed_mph": 8.0,
+                "wind_out_to_cf_flag": 0,
+                "roof_state": "open",
+                "fetched_at": now.isoformat(),
+            },
+            {
+                "pitcher_id": 999,
+                "opponent_team": "XXX",
+                "game_temp_f": 77.0,
+                "humidity_pct": 10.0,
+                "wind_speed_mph": 1.0,
+                "wind_out_to_cf_flag": 0,
+                "roof_state": "closed",
+                "fetched_at": now.isoformat(),
+            },
+        ]
+    )
+    cached.to_parquet(cache_path, index=False)
+
+    service = LiveContextService(
+        {
+            "enabled": True,
+            "cache_path": str(cache_path),
+            "cache_ttl_hours": 24,
+            "weather": {"enabled": True},
+        }
+    )
+    service._fetch_primary = lambda *_args, **_kwargs: pd.DataFrame()  # type: ignore[method-assign]
+    service._fetch_secondary = lambda *_args, **_kwargs: pd.DataFrame()  # type: ignore[method-assign]
+
+    rows = pd.DataFrame(
+        [
+            {"pitcher_id": 501, "opponent_team": "BAL"},
+            {"pitcher_id": 502, "opponent_team": "BOS"},
+        ]
+    )
+    result = service.fetch(rows, datetime.now())
+
+    assert result.metadata["cache_status"] == "stale_fallback"
+    assert float(result.metadata["stale_cache_usage_pct"]) == 0.5
+    assert len(result.frame) == 1
+    assert int(result.frame.loc[0, "pitcher_id"]) == 501
+    assert str(result.frame.loc[0, "opponent_team"]) == "BAL"
 
 
 def test_live_context_uses_secondary_only_for_missing_keys(tmp_path) -> None:
