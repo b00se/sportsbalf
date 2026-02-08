@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
+from urllib.parse import urlencode
 from urllib.request import urlopen
 
 import pandas as pd
@@ -26,6 +27,26 @@ except Exception:  # pragma: no cover - optional dependency
     schedule_and_record = None
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_schedule_date(value: object, year: int) -> pd.Timestamp:
+    """Parse pybaseball schedule date strings into timestamps."""
+
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.notna(parsed):
+        return parsed
+    return pd.to_datetime(f"{value} {year}", errors="coerce")
+
+
+def _extract_wind_components(raw_wind: object) -> tuple[object, object]:
+    """Split free-form wind text into speed and direction hints."""
+
+    if not isinstance(raw_wind, str):
+        return raw_wind, None
+    tokens = [part.strip() for part in raw_wind.split(",") if part.strip()]
+    if len(tokens) == 1:
+        return tokens[0], None
+    return tokens[0], tokens[1]
 
 
 @dataclass(slots=True)
@@ -217,15 +238,31 @@ class LiveContextService:
             try:
                 schedule = schedule_and_record(target_date.year, opponent)
                 if schedule is not None and not schedule.empty:
-                    weather_row = schedule.tail(1).iloc[0].to_dict()
+                    schedule = schedule.copy()
+                    if "Date" not in schedule.columns:
+                        continue
+                    schedule["game_date"] = schedule["Date"].map(
+                        lambda value: _coerce_schedule_date(value, target_date.year)
+                    )
+                    target_day = pd.Timestamp(target_date).normalize()
+                    same_day = schedule[
+                        schedule["game_date"].dt.normalize() == target_day
+                    ]
+                    if same_day.empty:
+                        continue
+                    weather_row = same_day.iloc[0].to_dict()
+                    wind_speed, wind_direction = _extract_wind_components(
+                        weather_row.get("Wind")
+                    )
                     weather = normalize_weather_payload({
                         "game_temp_f": weather_row.get("Temp")
                         or weather_row.get("temperature"),
-                        "wind_speed_mph": weather_row.get("Wind")
+                        "wind_speed_mph": wind_speed
                         or weather_row.get("wind_speed_mph"),
                         "humidity_pct": weather_row.get("Humidity")
                         or weather_row.get("humidity_pct"),
                         "wind_direction": weather_row.get("WindDir")
+                        or wind_direction
                         or weather_row.get("wind_direction"),
                     })
                     payload.update(weather)
@@ -259,39 +296,72 @@ class LiveContextService:
     ) -> pd.DataFrame:
         """Fetch supplemental weather/roof context from MLB StatsAPI game feed."""
 
-        _ = target_date
+        query = urlencode(
+            {
+                "sportId": 1,
+                "date": pd.Timestamp(target_date).date().isoformat(),
+            }
+        )
+        schedule_payload: dict[str, Any] | None = None
+        try:
+            with urlopen(  # noqa: S310
+                f"https://statsapi.mlb.com/api/v1/schedule?{query}"
+            ) as resp:
+                loaded = json.loads(resp.read().decode("utf-8"))
+                if isinstance(loaded, dict):
+                    schedule_payload = loaded
+        except (URLError, TimeoutError, ValueError, OSError):
+            return pd.DataFrame()
+
+        if not schedule_payload:
+            return pd.DataFrame()
+
+        team_to_game: dict[str, dict[str, Any]] = {}
+        dates = schedule_payload.get("dates")
+        if isinstance(dates, list):
+            for date_blob in dates:
+                games = date_blob.get("games") if isinstance(date_blob, dict) else []
+                if not isinstance(games, list):
+                    continue
+                for game in games:
+                    if not isinstance(game, dict):
+                        continue
+                    teams_blob = game.get("teams")
+                    if not isinstance(teams_blob, dict):
+                        continue
+                    for side in ("home", "away"):
+                        side_blob = teams_blob.get(side)
+                        if not isinstance(side_blob, dict):
+                            continue
+                        team_blob = side_blob.get("team")
+                        if not isinstance(team_blob, dict):
+                            continue
+                        abbr = team_blob.get("abbreviation")
+                        if isinstance(abbr, str) and abbr.strip():
+                            team_to_game[abbr.strip().upper()] = game
+
         records: list[dict[str, Any]] = []
         for row in rows.itertuples(index=False):
             team = str(getattr(row, "opponent_team", "")).strip()
             if not team:
                 continue
-            try:
-                with urlopen(  # noqa: S310
-                    "https://statsapi.mlb.com/api/v1/schedule?sportId=1"
-                ) as resp:
-                    payload = json.loads(resp.read().decode("utf-8"))
-            except (URLError, TimeoutError, ValueError, OSError):
+            game = team_to_game.get(team.upper())
+            if game is None:
                 continue
 
             roof_state = "unknown"
             weather: dict[str, Any] = {}
-            dates = payload.get("dates") if isinstance(payload, dict) else []
-            if dates:
-                first_date = dates[0]
-                games = first_date.get("games") if isinstance(first_date, dict) else []
-                if games:
-                    game = games[0]
-                    weather_blob = game.get("weather") if isinstance(game, dict) else {}
-                    if isinstance(weather_blob, dict):
-                        weather = {
-                            "game_temp_f": weather_blob.get("temp"),
-                            "wind_speed_mph": weather_blob.get("wind"),
-                            "humidity_pct": weather_blob.get("humidity"),
-                            "wind_direction": weather_blob.get("windDirection"),
-                        }
-                    venue_blob = game.get("venue") if isinstance(game, dict) else {}
-                    if isinstance(venue_blob, dict):
-                        roof_state = str(venue_blob.get("roofType") or "unknown")
+            weather_blob = game.get("weather") if isinstance(game, dict) else {}
+            if isinstance(weather_blob, dict):
+                weather = {
+                    "game_temp_f": weather_blob.get("temp"),
+                    "wind_speed_mph": weather_blob.get("wind"),
+                    "humidity_pct": weather_blob.get("humidity"),
+                    "wind_direction": weather_blob.get("windDirection"),
+                }
+            venue_blob = game.get("venue") if isinstance(game, dict) else {}
+            if isinstance(venue_blob, dict):
+                roof_state = str(venue_blob.get("roofType") or "unknown")
 
             normalized_weather = normalize_weather_payload(weather)
             normalized_venue = normalize_venue_payload({"roof_state": roof_state})

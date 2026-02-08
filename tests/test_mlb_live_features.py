@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pandas as pd
+import pytest
+import src.mlb.features.live_context as live_context_module
 from src.mlb.features.feature_store import (
     LIVE_CONTEXT_FEATURE_COLUMNS,
     build_historical_live_features,
@@ -134,3 +136,90 @@ def test_live_context_uses_secondary_only_for_missing_keys(tmp_path) -> None:
 
     assert "statsapi_game_feed" in result.metadata["live_feature_sources"]
     assert float(result.frame.loc[0, "humidity_pct"]) == 61.0
+
+
+def test_primary_fetch_uses_target_date_weather(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = LiveContextService({"enabled": True})
+    schedule = pd.DataFrame(
+        [
+            {"Date": "Sun, Apr 13", "Temp": 50, "Wind": "3, In"},
+            {"Date": "Mon, Apr 14", "Temp": 70, "Wind": "9, Out to CF"},
+        ]
+    )
+    monkeypatch.setattr(
+        live_context_module,
+        "schedule_and_record",
+        lambda _year, _team: schedule.copy(),
+    )
+
+    rows = pd.DataFrame([{"pitcher_id": 101, "opponent_team": "BOS"}])
+    result = service._fetch_primary(rows, datetime(2025, 4, 14))
+
+    assert not result.empty
+    assert float(result.loc[0, "game_temp_f"]) == 70.0
+    assert int(result.loc[0, "wind_out_to_cf_flag"]) == 1
+
+
+def test_secondary_fetch_matches_team_and_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = LiveContextService({"enabled": True})
+    payload = {
+        "dates": [
+            {
+                "games": [
+                    {
+                        "teams": {
+                            "home": {"team": {"abbreviation": "BOS"}},
+                            "away": {"team": {"abbreviation": "NYY"}},
+                        },
+                        "weather": {
+                            "temp": 63,
+                            "wind": 11,
+                            "humidity": 58,
+                            "windDirection": "Out to CF",
+                        },
+                        "venue": {"roofType": "Open"},
+                    },
+                    {
+                        "teams": {
+                            "home": {"team": {"abbreviation": "LAD"}},
+                            "away": {"team": {"abbreviation": "SF"}},
+                        },
+                        "weather": {
+                            "temp": 71,
+                            "wind": 5,
+                            "humidity": 44,
+                            "windDirection": "In from CF",
+                        },
+                        "venue": {"roofType": "Closed"},
+                    },
+                ]
+            }
+        ]
+    }
+
+    class _DummyResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self) -> bytes:
+            import json
+
+            return json.dumps(payload).encode("utf-8")
+
+    monkeypatch.setattr(
+        live_context_module,
+        "urlopen",
+        lambda _url: _DummyResponse(),
+    )
+
+    rows = pd.DataFrame([{"pitcher_id": 7, "opponent_team": "LAD"}])
+    result = service._fetch_secondary(rows, datetime(2025, 4, 14))
+
+    assert not result.empty
+    assert float(result.loc[0, "game_temp_f"]) == 71.0
+    assert str(result.loc[0, "roof_state"]).lower() == "closed"
