@@ -15,6 +15,22 @@ mlb:
       - data/processed/pitcher_game_data_2024.parquet
       - data/processed/pitcher_game_data_2025.parquet
     model_path: models/xgb_tuned_pitcher_k_model.joblib
+    model_selection:
+      enabled: true
+      candidates:
+        - xgboost
+        - random_forest
+        - hist_gradient_boosting
+        - elastic_net
+        - poisson
+      primary_metric: mae
+      tie_breakers:
+        - rmse
+        - r2
+      tie_epsilon: 1.0e-6
+      champion_model_path: models/mlb_strikeouts_champion.joblib
+      champion_metadata_path: models/mlb_strikeouts_champion_metadata.json
+      leaderboard_path: models/mlb_strikeouts_leaderboard.csv
     monte_carlo_simulations: 10000
     monte_carlo_seed: 42
     fallback_std: 1.0

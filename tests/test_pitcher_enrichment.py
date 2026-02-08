@@ -139,3 +139,21 @@ def test_enrich_pitcher_games_coerces_types(monkeypatch):
     assert pd.api.types.is_datetime64_any_dtype(enriched["game_date"])
     for column in numeric_columns + ["opponent_k_pct", "park_factor_K"]:
         assert pd.api.types.is_numeric_dtype(enriched[column])
+
+
+def test_aggregate_pitcher_games_dedupes_duplicate_pitches():
+    df = make_player_df()
+    duplicate = pd.concat([df, df.iloc[[0]]], ignore_index=True)
+
+    without_dupe = aggregate_pitcher_games(df)
+    with_dupe = aggregate_pitcher_games(duplicate)
+
+    base_row = without_dupe[
+        (without_dupe["pitcher"] == 1) & (without_dupe["game_date"] == "2023-04-01")
+    ].iloc[0]
+    dupe_row = with_dupe[
+        (with_dupe["pitcher"] == 1) & (with_dupe["game_date"] == "2023-04-01")
+    ].iloc[0]
+
+    assert dupe_row["pitch_count"] == base_row["pitch_count"]
+    assert dupe_row["strikeouts"] == base_row["strikeouts"]

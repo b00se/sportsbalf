@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
 import warnings
 from datetime import datetime
 from functools import lru_cache
+from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -32,6 +35,7 @@ from src.mlb.features.park_factors import (
     derive_park_factors_from_games,
 )
 from src.mlb.models.distributions import ResidualBootstrapper
+from src.mlb.models.evaluation import run_walk_forward_tournament, select_champion
 from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
 from src.mlb.models.predict import (
     DEFAULT_MODEL_PATH,
@@ -41,6 +45,11 @@ from src.mlb.models.predict import (
     residual_std,
     save_model,
     train_model,
+)
+from src.mlb.models.registry import (
+    SIMPLE_MODEL_PREFERENCE,
+    get_model_spec,
+    resolve_model_specs,
 )
 from src.utils.io import read_csv
 from src.utils.names import normalize_person_name, resolve_unique_name_match
@@ -301,7 +310,7 @@ def _build_prediction_rows(
 
     if missing_players:
         missing_list = ", ".join(sorted(set(missing_players)))
-        print(f"Warning: missing historical data for players: {missing_list}")
+        logger.warning("Missing historical data for players: %s", missing_list)
 
     return pd.DataFrame(rows)
 
@@ -325,6 +334,191 @@ def _normalize_opponent_feature_columns(frame: pd.DataFrame) -> pd.DataFrame:
     if "opponent_k_rate" not in normalized.columns:
         normalized["opponent_k_rate"] = normalized["opponent_k_pct"]
     return normalized
+
+
+def _log_strikeout_scale(frame: pd.DataFrame, *, label: str) -> None:
+    """Emit strikeout scale diagnostics for quick target-integrity checks."""
+
+    if "strikeouts" not in frame.columns or frame.empty:
+        return
+
+    strikeouts = pd.to_numeric(frame["strikeouts"], errors="coerce")
+    pitch_count = pd.to_numeric(frame.get("pitch_count"), errors="coerce")
+    summary = {
+        "rows": int(len(frame)),
+        "mean": float(strikeouts.mean(skipna=True)),
+        "p95": float(strikeouts.quantile(0.95)),
+        "max": float(strikeouts.max(skipna=True)),
+    }
+    logger.info("Strikeout scale for %s: %s", label, summary)
+
+    invalid = strikeouts < 0
+    if invalid.any():
+        logger.warning(
+            "Detected %d rows with negative strikeouts in %s.",
+            int(invalid.sum()),
+            label,
+        )
+
+    if pitch_count.notna().any():
+        impossible = (strikeouts > pitch_count).fillna(False)
+        if impossible.any():
+            logger.warning(
+                "Detected %d rows where strikeouts exceed pitch_count in %s.",
+                int(impossible.sum()),
+                label,
+            )
+
+
+def _feature_schema_hash(features: list[str]) -> str:
+    """Return deterministic hash for the active model feature schema."""
+
+    payload = ",".join(features).encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
+def _model_selection_config(section: dict[str, Any]) -> dict[str, Any]:
+    """Return normalized model-selection configuration with defaults."""
+
+    raw = section.get("model_selection")
+    if not isinstance(raw, dict):
+        raw = {}
+
+    return {
+        "enabled": bool(raw.get("enabled", False)),
+        "candidates": raw.get("candidates"),
+        "primary_metric": raw.get("primary_metric", "mae"),
+        "tie_breakers": raw.get("tie_breakers", ["rmse", "r2"]),
+        "tie_epsilon": float(raw.get("tie_epsilon", 1e-6)),
+        "champion_model_path": raw.get(
+            "champion_model_path", "models/mlb_strikeouts_champion.joblib"
+        ),
+        "champion_metadata_path": raw.get(
+            "champion_metadata_path", "models/mlb_strikeouts_champion_metadata.json"
+        ),
+        "leaderboard_path": raw.get(
+            "leaderboard_path", "models/mlb_strikeouts_leaderboard.csv"
+        ),
+    }
+
+
+def _persist_champion_metadata(metadata_path: Path, payload: dict[str, Any]) -> None:
+    """Persist champion metadata JSON to disk."""
+
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _train_or_load_serving_model(
+    model_frame: pd.DataFrame,
+    *,
+    section: dict[str, Any],
+    retrain: bool,
+) -> tuple[Any, str]:
+    """Resolve serving model, optionally running model selection tournament."""
+
+    selection = _model_selection_config(section)
+    model_path = Path(section.get("model_path") or str(DEFAULT_MODEL_PATH))
+
+    if not selection["enabled"]:
+        if retrain or not model_path.exists():
+            params = section.get("xgb_params")
+            logger.info(
+                "Training baseline XGBoost model on %d rows (path=%s).",
+                len(model_frame),
+                model_path,
+            )
+            model = train_model(model_frame, params=params, model_name="xgboost")
+            save_model(model, model_path)
+            return model, "xgboost"
+        logger.info("Loading existing baseline model from %s", model_path)
+        return load_model(model_path), "xgboost"
+
+    champion_model_path = Path(selection["champion_model_path"])
+    champion_metadata_path = Path(selection["champion_metadata_path"])
+    leaderboard_path = Path(selection["leaderboard_path"])
+    candidates = selection["candidates"]
+
+    should_retrain_champion = (
+        retrain
+        or not champion_model_path.exists()
+        or not champion_metadata_path.exists()
+    )
+
+    if should_retrain_champion:
+        try:
+            specs = resolve_model_specs(candidates)
+            fold_metrics, leaderboard = run_walk_forward_tournament(
+                model_frame,
+                specs=specs,
+                features=FEATURES,
+                target_col="strikeouts",
+                date_col="game_date",
+            )
+            winner = select_champion(
+                leaderboard,
+                primary_metric=str(selection["primary_metric"]),
+                tie_breakers=list(selection["tie_breakers"]),
+                epsilon=selection["tie_epsilon"],
+                simplicity_order=SIMPLE_MODEL_PREFERENCE,
+            )
+            winner_spec = get_model_spec(winner.model_name)
+            model = train_model(model_frame, model_name=winner_spec.name)
+            save_model(model, champion_model_path)
+
+            leaderboard_path.parent.mkdir(parents=True, exist_ok=True)
+            leaderboard.to_csv(leaderboard_path, index=False)
+
+            dated = pd.to_datetime(model_frame["game_date"], errors="coerce")
+            metadata_payload = {
+                "model_name": winner.model_name,
+                "training_window": {
+                    "start": str(dated.min().date()) if dated.notna().any() else None,
+                    "end": str(dated.max().date()) if dated.notna().any() else None,
+                    "rows": int(len(model_frame)),
+                },
+                "metrics_snapshot": {
+                    "primary_metric": selection["primary_metric"],
+                    "tie_breakers": selection["tie_breakers"],
+                    "mean_mae": winner.mean_mae,
+                    "mean_rmse": winner.mean_rmse,
+                    "mean_r2": winner.mean_r2,
+                },
+                "feature_schema_hash": _feature_schema_hash(FEATURES),
+                "leaderboard_path": str(leaderboard_path),
+                "fold_metrics": fold_metrics.to_dict(orient="records"),
+            }
+            _persist_champion_metadata(champion_metadata_path, metadata_payload)
+            logger.info(
+                "Selected champion model=%s with mean_mae=%.4f",
+                winner.model_name,
+                winner.mean_mae,
+            )
+            return model, winner.model_name
+        except Exception as exc:
+            logger.warning(
+                "Model tournament failed (%s); training baseline model instead.",
+                exc,
+            )
+            params = section.get("xgb_params")
+            model = train_model(model_frame, params=params, model_name="xgboost")
+            save_model(model, model_path)
+            return model, "xgboost"
+
+    try:
+        metadata = json.loads(champion_metadata_path.read_text(encoding="utf-8"))
+        champion_name = str(metadata.get("model_name", "xgboost"))
+        model = load_model(champion_model_path)
+        return model, champion_name
+    except Exception as exc:
+        logger.warning(
+            "Champion artifact missing/incompatible (%s); training baseline model.",
+            exc,
+        )
+        params = section.get("xgb_params")
+        model = train_model(model_frame, params=params, model_name="xgboost")
+        save_model(model, model_path)
+        return model, "xgboost"
 
 
 def run_strikeouts_pipeline(
@@ -378,51 +572,32 @@ def run_strikeouts_pipeline(
     training_games = training_games.drop_duplicates(
         subset=["pitcher_id", "game_date"], keep="last"
     )
+    _log_strikeout_scale(training_games, label="training_games")
 
     target_date = _infer_target_date(
         section["lines_path"], default=games["game_date"].max()
     )
 
-    model_path = section.get("model_path") or str(DEFAULT_MODEL_PATH)
-    model_path_obj = Path(model_path)
     model_frame = _clean_for_model(training_games)
-    if retrain:
-        params = section.get("xgb_params")
-        start = time.time()
-        print(
-            f"Retraining XGBoost model on {len(model_frame)} games "
-            f"(saving to {model_path_obj})..."
-        )
-        model = train_model(model_frame, params=params)
-        save_model(model, model_path_obj)
-        print(f"Model retrained in {time.time() - start:.2f}s")
-    else:
-        if not model_path_obj.exists():
-            params = section.get("xgb_params")
-            start = time.time()
-            print(
-                "Model file missing; training new XGBoost model "
-                f"on {len(model_frame)} games..."
-            )
-            model = train_model(model_frame, params=params)
-            save_model(model, model_path_obj)
-            print(f"Model trained in {time.time() - start:.2f}s")
-        else:
-            print(f"Loading existing model from {model_path_obj}")
-            model = load_model(model_path_obj)
+    start = time.time()
+    model, model_name = _train_or_load_serving_model(
+        model_frame,
+        section=section,
+        retrain=retrain,
+    )
+    logger.info("Resolved serving model=%s in %.2fs", model_name, time.time() - start)
 
     try:
         train_preds = predict_strikeouts(model_frame, model)
     except ValueError:
-        if retrain:
-            raise
-        print(
-            "Loaded model incompatible with current feature set; "
-            "retraining from scratch."
+        logger.warning(
+            "Loaded model incompatible with current features; "
+            "retraining XGBoost baseline."
         )
         params = section.get("xgb_params")
-        model = train_model(model_frame, params=params)
-        save_model(model, model_path_obj)
+        fallback_model_path = Path(section.get("model_path") or str(DEFAULT_MODEL_PATH))
+        model = train_model(model_frame, params=params, model_name="xgboost")
+        save_model(model, fallback_model_path)
         train_preds = predict_strikeouts(model_frame, model)
     sigma = residual_std(model_frame["strikeouts"], train_preds)
     model_frame = model_frame.copy()
