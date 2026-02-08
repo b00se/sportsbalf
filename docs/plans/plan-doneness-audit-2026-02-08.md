@@ -11,14 +11,16 @@ Note: This file is an audit artifact summarizing plan-completion evidence. It is
 - `docs/plans/implemented/nhl-pr1-architecture-baseline-canonical-docs-plan.md`
 - `docs/plans/planned/nhl-onboarding-sequenced-pr-plan.md`
 - `docs/plans/planned/nhl-pr2-contract-enforcement-tests-plan.md`
+- `docs/plans/planned/nhl-pr3-shared-simulation-interface-extraction-plan.md`
 
 ## Summary verdict
 - `mlb-multi-stat-expansion-plan.md`: **Implemented**.
 - `mlb-multistat-tournament-plan.md`: **Implemented** (acceptance criteria met by code + tests).
 - `mlb-pybaseball-live-features-plan.md`: **Partially implemented** (engineering scope implemented; strict MAE+ gate still not met).
 - `nhl-pr1-architecture-baseline-canonical-docs-plan.md`: **Implemented** (merged via PR #11).
-- `nhl-onboarding-sequenced-pr-plan.md`: **Partially implemented** (roadmap-level plan; PR1 done, PR2+ pending).
-- `nhl-pr2-contract-enforcement-tests-plan.md`: **Planned** (decision-complete implementation plan authored, not executed yet).
+- `nhl-onboarding-sequenced-pr-plan.md`: **Partially implemented** (roadmap-level plan; PR1/PR2 done, PR3+ pending).
+- `nhl-pr2-contract-enforcement-tests-plan.md`: **Implemented** (merged via PR #12).
+- `nhl-pr3-shared-simulation-interface-extraction-plan.md`: **Planned** (decision-complete implementation plan authored, not executed yet).
 
 ## Evidence
 
@@ -88,24 +90,40 @@ Status: **Partially implemented**
 
 Implemented evidence:
 - PR 1 track item completed and merged (`#11`).
+- PR 2 track item completed and merged (`#12`).
 
 Open gaps:
-- PR 2 through PR 10 are not implemented yet.
+- PR 3 through PR 10 are not implemented yet.
 
 ### 6) NHL PR#2 Contract Enforcement Tests Plan
+Status: **Implemented**
+
+Implemented evidence:
+- Enforcement test suite added at `tests/test_engine_contract_enforcement.py`:
+  - strict stage ordering
+  - stage handoff artifact/type invariants
+  - CLI override passthrough assertions
+  - default registration pair assertions
+  - simulate-only allowlist enforcement for temporary adapters
+- Contracts documentation updated with PR#2 enforcement note in `docs/contracts.md`.
+- Merged to `main` via PR #12:
+  - `https://github.com/b00se/sportsbalf/pull/12`
+
+### 7) NHL PR#3 Shared Simulation Interface Extraction Plan
 Status: **Planned**
 
 Current state:
 - Detailed execution plan exists at
-  `docs/plans/planned/nhl-pr2-contract-enforcement-tests-plan.md`.
-- Implementation not yet started in code/tests.
+  `docs/plans/planned/nhl-pr3-shared-simulation-interface-extraction-plan.md`.
+- No runtime extraction changes have been applied yet.
 
 ## Recommended folder placement
 - Move to `implemented/` now:
   - `mlb-multi-stat-expansion-plan.md`
   - `mlb-multistat-tournament-plan.md`
   - `nhl-pr1-architecture-baseline-canonical-docs-plan.md`
+  - `nhl-pr2-contract-enforcement-tests-plan.md`
 - Keep in `planned/` until deferred/gap items are closed:
   - `mlb-pybaseball-live-features-plan.md`
   - `nhl-onboarding-sequenced-pr-plan.md`
-  - `nhl-pr2-contract-enforcement-tests-plan.md`
+  - `nhl-pr3-shared-simulation-interface-extraction-plan.md`
