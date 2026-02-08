@@ -163,6 +163,12 @@ class LiveContextService:
                         if secondary_col in fetched.columns:
                             fetched[col] = fetched[col].fillna(fetched[secondary_col])
                             fetched.drop(columns=[secondary_col], inplace=True)
+                    fetched["weather_known_flag"] = (
+                        fetched[["game_temp_f", "humidity_pct", "wind_speed_mph"]]
+                        .notna()
+                        .all(axis=1)
+                        .astype(int)
+                    )
 
         if fetched.empty:
             cached = self._load_cache()
@@ -254,28 +260,33 @@ class LiveContextService:
                     wind_speed, wind_direction = _extract_wind_components(
                         weather_row.get("Wind")
                     )
-                    weather = normalize_weather_payload({
-                        "game_temp_f": weather_row.get("Temp")
-                        or weather_row.get("temperature"),
-                        "wind_speed_mph": wind_speed
-                        or weather_row.get("wind_speed_mph"),
-                        "humidity_pct": weather_row.get("Humidity")
-                        or weather_row.get("humidity_pct"),
-                        "wind_direction": weather_row.get("WindDir")
-                        or wind_direction
-                        or weather_row.get("wind_direction"),
-                    })
+                    weather = normalize_weather_payload(
+                        {
+                            "game_temp_f": weather_row.get("Temp")
+                            or weather_row.get("temperature"),
+                            "wind_speed_mph": wind_speed
+                            or weather_row.get("wind_speed_mph"),
+                            "humidity_pct": weather_row.get("Humidity")
+                            or weather_row.get("humidity_pct"),
+                            "wind_direction": weather_row.get("WindDir")
+                            or wind_direction
+                            or weather_row.get("wind_direction"),
+                        },
+                        use_defaults=False,
+                    )
                     payload.update(weather)
                 else:
-                    payload.update(normalize_weather_payload({}))
+                    payload.update(normalize_weather_payload({}, use_defaults=False))
 
                 venue = normalize_venue_payload({"roof_state": None})
                 payload.update(venue)
+                weather_values = [
+                    payload.get("game_temp_f"),
+                    payload.get("humidity_pct"),
+                    payload.get("wind_speed_mph"),
+                ]
                 payload["weather_known_flag"] = int(
-                    all(
-                        key in payload and payload[key] is not None
-                        for key in ["game_temp_f", "humidity_pct", "wind_speed_mph"]
-                    )
+                    all(pd.notna(value) for value in weather_values)
                 )
             except Exception:
                 logger.debug("Primary live feature fetch failed for team=%s", opponent)
@@ -363,7 +374,7 @@ class LiveContextService:
             if isinstance(venue_blob, dict):
                 roof_state = str(venue_blob.get("roofType") or "unknown")
 
-            normalized_weather = normalize_weather_payload(weather)
+            normalized_weather = normalize_weather_payload(weather, use_defaults=False)
             normalized_venue = normalize_venue_payload({"roof_state": roof_state})
             records.append(
                 {

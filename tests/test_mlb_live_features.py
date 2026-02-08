@@ -136,6 +136,25 @@ def test_live_context_uses_secondary_only_for_missing_keys(tmp_path) -> None:
 
     assert "statsapi_game_feed" in result.metadata["live_feature_sources"]
     assert float(result.frame.loc[0, "humidity_pct"]) == 61.0
+    assert int(result.frame.loc[0, "weather_known_flag"]) == 1
+
+
+def test_primary_missing_weather_stays_nan_for_secondary_fill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = LiveContextService({"enabled": True})
+    schedule = pd.DataFrame([{"Date": "Mon, Apr 14"}])
+    monkeypatch.setattr(
+        live_context_module,
+        "schedule_and_record",
+        lambda _year, _team: schedule.copy(),
+    )
+    rows = pd.DataFrame([{"pitcher_id": 200, "opponent_team": "BOS"}])
+
+    primary = service._fetch_primary(rows, datetime(2025, 4, 14))
+    assert primary["humidity_pct"].isna().all()
+    assert primary["wind_speed_mph"].isna().all()
+    assert int(primary.loc[0, "weather_known_flag"]) == 0
 
 
 def test_primary_fetch_uses_target_date_weather(

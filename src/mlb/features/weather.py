@@ -54,7 +54,11 @@ def _wind_out_flag(raw_direction: object) -> int:
     return int(normalized in out_tokens)
 
 
-def normalize_weather_payload(payload: Mapping[str, object]) -> dict[str, float | int]:
+def normalize_weather_payload(
+    payload: Mapping[str, object],
+    *,
+    use_defaults: bool = True,
+) -> dict[str, float | int | float]:
     """Normalize weather provider values into model feature keys.
 
     Args:
@@ -64,19 +68,37 @@ def normalize_weather_payload(payload: Mapping[str, object]) -> dict[str, float 
         Normalized weather features with stable defaults.
     """
 
-    game_temp_f = _coerce_float(payload.get("game_temp_f"), default=72.0)
-    humidity_pct = _coerce_float(payload.get("humidity_pct"), default=50.0)
-    wind_speed_mph = _coerce_float(payload.get("wind_speed_mph"), default=7.5)
+    temp_default = 72.0 if use_defaults else float("nan")
+    humidity_default = 50.0 if use_defaults else float("nan")
+    wind_default = 7.5 if use_defaults else float("nan")
+
+    game_temp_f = _coerce_float(payload.get("game_temp_f"), default=temp_default)
+    humidity_pct = _coerce_float(payload.get("humidity_pct"), default=humidity_default)
+    wind_speed_mph = _coerce_float(payload.get("wind_speed_mph"), default=wind_default)
     wind_out_to_cf_flag = _wind_out_flag(payload.get("wind_direction"))
-    if "wind_out_to_cf_flag" in payload:
+    has_explicit_wind_flag = (
+        "wind_out_to_cf_flag" in payload
+        and payload.get("wind_out_to_cf_flag") is not None
+    )
+    if has_explicit_wind_flag:
         wind_out_to_cf_flag = int(
             _coerce_float(payload.get("wind_out_to_cf_flag"), default=0.0) > 0
         )
+    elif not use_defaults and pd.isna(wind_speed_mph):
+        wind_out_to_cf_flag = 0
 
     return {
         "game_temp_f": game_temp_f,
-        "humidity_pct": max(0.0, min(humidity_pct, 100.0)),
-        "wind_speed_mph": max(0.0, wind_speed_mph),
+        "humidity_pct": (
+            max(0.0, min(humidity_pct, 100.0))
+            if pd.notna(humidity_pct)
+            else float("nan")
+        ),
+        "wind_speed_mph": (
+            max(0.0, wind_speed_mph)
+            if pd.notna(wind_speed_mph)
+            else float("nan")
+        ),
         "wind_out_to_cf_flag": int(wind_out_to_cf_flag),
     }
 
