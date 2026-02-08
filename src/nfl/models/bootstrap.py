@@ -59,19 +59,16 @@ class QBResidualBootstrapper:
 
     def can_bootstrap(
         self,
-        qb_id: Optional[str] = None,
-        pitcher_id: Optional[str] = None,
+        entity_id: Optional[str] = None,
     ) -> bool:
-        if qb_id is None and pitcher_id is not None:
-            qb_id = str(pitcher_id)
-        if qb_id is None:
+        if entity_id is None:
             return False
-        pool = self.qb_residuals.get(str(qb_id))
+        pool = self.qb_residuals.get(str(entity_id))
         return (pool is not None) and (pool.size >= self.min_history)
 
-    def _pool(self, qb_id: Optional[str]) -> np.ndarray:
-        if qb_id is not None:
-            pool = self.qb_residuals.get(str(qb_id))
+    def _pool(self, entity_id: Optional[str]) -> np.ndarray:
+        if entity_id is not None:
+            pool = self.qb_residuals.get(str(entity_id))
             if pool is not None and pool.size >= self.min_history:
                 return pool
         return self.global_residuals
@@ -79,14 +76,11 @@ class QBResidualBootstrapper:
     def sample_counts(
         self,
         mean: float,
-        qb_id: Optional[str] = None,
+        entity_id: Optional[str] = None,
         simulations: int = 0,
         rng: np.random.Generator | None = None,
-        pitcher_id: Optional[str] = None,
     ) -> np.ndarray:
-        if qb_id is None and pitcher_id is not None:
-            qb_id = str(pitcher_id)
-        residual_pool = self._pool(qb_id)
+        residual_pool = self._pool(entity_id)
         if residual_pool.size == 0 and self.global_residuals.size:
             residual_pool = self.global_residuals
 
@@ -109,4 +103,3 @@ class QBResidualBootstrapper:
         samples = mean + draws
         samples = np.clip(np.rint(samples), 0.0, None)
         return samples
-

@@ -67,3 +67,9 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
   `MonteCarloConfig`, `simulate_row(...)`, and `apply_simulations(...)`.
 - MLB compatibility imports remain supported via `src/mlb/models/monte_carlo.py`
   as thin re-exports to preserve existing callsites.
+
+## PR#4 neutral simulation naming + NFL shim removal
+- Shared simulation interfaces use sport-neutral argument names (`line`, `entity_id`).
+- `apply_simulations(...)` uses explicit `line_col` and `id_col` mappings from callers.
+- NFL pass-attempt orchestration no longer aliases `ud_line -> k_line` or `qb_id -> pitcher_id`.
+- MLB/NFL output column commitments above remain unchanged.

@@ -323,8 +323,6 @@ def run_pass_attempts_pipeline(
     )
 
     sim_input = inference_df.copy()
-    sim_input["k_line"] = sim_input["ud_line"]
-    sim_input["pitcher_id"] = sim_input["qb_id"]
     sim_input["simulation_sigma"] = sigma_series
 
     simulated = apply_simulations(
@@ -333,6 +331,8 @@ def run_pass_attempts_pipeline(
         std_dev="simulation_sigma",
         config=sim_config,
         sampler=bootstrapper,
+        line_col="ud_line",
+        id_col="qb_id",
     )
 
     simulated.rename(
@@ -347,8 +347,6 @@ def run_pass_attempts_pipeline(
     simulated["training_rmse"] = train_metrics["rmse"]
     simulated["training_mae"] = train_metrics["mae"]
     simulated["training_r2"] = train_metrics["r2"]
-
-    simulated.drop(columns=["k_line", "pitcher_id"], inplace=True, errors="ignore")
 
     return simulated
 

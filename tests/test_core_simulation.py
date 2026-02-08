@@ -10,7 +10,7 @@ class DummySampler:
     def sample_counts(
         self,
         mean: float,
-        pitcher_id: str | None,
+        entity_id: str | None,
         simulations: int,
         rng: np.random.Generator,
     ) -> np.ndarray:
@@ -25,7 +25,7 @@ def test_simulate_row_keys_and_nan_mean_behavior() -> None:
     result = simulate_row(
         mean=np.nan,
         std_dev=1.5,
-        strikeout_line=9.5,
+        line=9.5,
         config=config,
         rng=rng,
     )
@@ -50,11 +50,11 @@ def test_simulate_row_uses_sampler_when_provided() -> None:
     result = simulate_row(
         mean=10.0,
         std_dev=1.5,
-        strikeout_line=9.5,
+        line=9.5,
         config=config,
         rng=rng,
         sampler=sampler,
-        pitcher_id="p-1",
+        entity_id="p-1",
     )
 
     assert sampler.calls == 1
@@ -66,11 +66,11 @@ def test_apply_simulations_accepts_std_dev_column_name() -> None:
         [
             {
                 "prediction": 30.0,
-                "k_line": 29.5,
+                "ud_line": 29.5,
                 "simulation_sigma": 1.2,
                 "over_decimal_price": 1.9,
                 "under_decimal_price": 1.9,
-                "pitcher_id": "QB1",
+                "qb_id": "QB1",
             }
         ]
     )
@@ -79,6 +79,8 @@ def test_apply_simulations_accepts_std_dev_column_name() -> None:
         mean_col="prediction",
         std_dev="simulation_sigma",
         config=MonteCarloConfig(simulations=200, random_seed=42),
+        line_col="ud_line",
+        id_col="qb_id",
     )
 
     assert {"prob_over", "prob_under", "prob_push"}.issubset(result.columns)

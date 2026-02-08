@@ -84,3 +84,5 @@ def test_pipeline_run_returns_enriched_frame(tmp_path, monkeypatch):
         "predicted_pass_attempts",
         "attempts_line",
     }.issubset(result.columns)
+    assert "k_line" not in result.columns
+    assert "pitcher_id" not in result.columns

@@ -1092,6 +1092,7 @@ def run_mlb_pitcher_prop_pipeline(
         config=sim_cfg,
         sampler=sampler,
         line_col=descriptor.line_col,
+        id_col="pitcher_id",
     )
     simulated["model_residual_std"] = sigma
     simulated["run_mode"] = "prediction"
