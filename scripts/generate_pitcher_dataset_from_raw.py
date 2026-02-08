@@ -134,13 +134,14 @@ def generate_dataset_from_raw(season):
             player_df, name, mlbam_id, opponent_k_df, park_df
         )
         if enriched is not None:
-            all_games.append(build_historical_live_features(enriched))
+            all_games.append(enriched)
 
     if not all_games:
         print("❌ No pitcher games generated.")
         return
 
     full_df = pd.concat(all_games, ignore_index=True)
+    full_df = build_historical_live_features(full_df)
     full_df.to_parquet(output_file, index=False)
     print(f"✅ Saved {len(full_df)} rows to {output_file}")
 

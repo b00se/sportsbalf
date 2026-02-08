@@ -174,7 +174,6 @@ def update_pitcher_dataset(season):
 
         games = add_park_factor(games, park_df)
         games = add_rolling_features(games)
-        games = build_historical_live_features(games)
         games["pitcher_name"] = name
         games["pitcher_id"] = mlbam_id
         all_games.append(games)
@@ -186,6 +185,7 @@ def update_pitcher_dataset(season):
     new_games = pd.concat(all_games, ignore_index=True)
     full_df = pd.read_parquet(processed_file)
     updated_df = pd.concat([full_df, new_games], ignore_index=True).drop_duplicates()
+    updated_df = build_historical_live_features(updated_df)
     updated_df.to_parquet(processed_file, index=False)
     print(f"✅ Appended {len(new_games)} new rows. Total rows: {len(updated_df)}")
 
