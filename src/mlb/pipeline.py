@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import logging
 import re
 import time
-import unicodedata
+import warnings
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,6 @@ try:  # pragma: no cover - optional network dependency
 except Exception:  # pragma: no cover - optional dependency missing
     schedule_and_record = None
 
-from src.utils.io import load_config, read_csv
 from src.mlb.data.load_props import load_strikeout_lines
 from src.mlb.features import (
     add_opponent_k_rate,
@@ -33,29 +32,22 @@ from src.mlb.features.park_factors import (
 from src.mlb.models.distributions import ResidualBootstrapper
 from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
 from src.mlb.models.predict import (
-    FEATURES,
     DEFAULT_MODEL_PATH,
+    FEATURES,
     load_model,
     predict_strikeouts,
     residual_std,
-    train_model,
     save_model,
+    train_model,
 )
-
+from src.utils.io import load_config, read_csv
+from src.utils.names import normalize_person_name, resolve_unique_name_match
 
 logger = logging.getLogger(__name__)
 
 
 def _normalize_name(name: str) -> str:
-    if not isinstance(name, str):
-        return ""
-    ascii_name = (
-        unicodedata.normalize("NFKD", name)
-        .encode("ascii", "ignore")
-        .decode("ascii")
-    )
-    cleaned = re.sub(r"[^a-zA-Z\s]", "", ascii_name).strip().lower()
-    return re.sub(r"\s+", " ", cleaned)
+    return normalize_person_name(name)
 
 
 def _latest_games(games: pd.DataFrame) -> pd.DataFrame:
@@ -84,7 +76,13 @@ def _team_schedule(team_abbr: str, year: int) -> pd.DataFrame | None:
     if schedule_and_record is None:
         return None
     try:
-        df = schedule_and_record(year, team_abbr)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="A value is trying to be set on a copy of a DataFrame",
+                category=FutureWarning,
+            )
+            df = schedule_and_record(year, team_abbr)
     except Exception:
         return None
     if df is None or df.empty:
@@ -140,12 +138,12 @@ def _opponent_metrics(frame: pd.DataFrame, target_date: datetime) -> tuple[dict,
     )
     team_lookup = metrics.to_dict("index")
     fallback = {
-        "opponent_k_pct": float(filtered["opponent_k_pct"].mean())
-        if not filtered.empty
-        else 0.0,
-        "opponent_k_rate": float(filtered["opponent_k_rate"].mean())
-        if not filtered.empty
-        else 0.0,
+        "opponent_k_pct": (
+            float(filtered["opponent_k_pct"].mean()) if not filtered.empty else 0.0
+        ),
+        "opponent_k_rate": (
+            float(filtered["opponent_k_rate"].mean()) if not filtered.empty else 0.0
+        ),
     }
     return team_lookup, fallback
 
@@ -209,7 +207,8 @@ def _load_or_create_park_factors(
 
         if not unique_teams:
             raise FileNotFoundError(
-                "Unable to derive park factors from pitch data and no cached file present."
+                "Unable to derive park factors from pitch data "
+                "and no cached file present."
             )
 
         logger.warning(
@@ -236,6 +235,19 @@ def _build_prediction_rows(
     fallback_opponent: dict,
 ) -> pd.DataFrame:
     latest_indexed = latest_games.set_index("name_key", drop=False)
+    latest_by_name: dict[str, pd.Series] = {}
+    duplicate_names: set[str] = set()
+    for row in latest_games.itertuples(index=False):
+        key = str(getattr(row, "name_key", ""))
+        if not key:
+            continue
+        if key in latest_by_name:
+            duplicate_names.add(key)
+            continue
+        latest_by_name[key] = pd.Series(row._asdict())
+    for key in duplicate_names:
+        latest_by_name.pop(key, None)
+
     rows = []
     missing_players = []
 
@@ -243,8 +255,10 @@ def _build_prediction_rows(
         try:
             latest = latest_indexed.loc[line.name_key]
         except KeyError:
-            missing_players.append(line.player)
-            continue
+            latest = resolve_unique_name_match(line.name_key, latest_by_name)
+            if latest is None:
+                missing_players.append(line.player)
+                continue
 
         if isinstance(latest, pd.DataFrame):
             latest = latest.iloc[0]
@@ -292,7 +306,7 @@ def _clean_for_model(games: pd.DataFrame) -> pd.DataFrame:
 
 
 def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
-    """Execute the MLB strikeout prediction workflow and return lines with probabilities."""
+    """Execute the MLB strikeout workflow and return lines with probabilities."""
 
     config = load_config(config_path) if config_path else load_config()
     lines = load_strikeout_lines(config["lines_path"])
@@ -350,7 +364,8 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
             params = config.get("xgb_params")
             start = time.time()
             print(
-                f"Model file missing; training new XGBoost model on {len(model_frame)} games..."
+                "Model file missing; training new XGBoost model "
+                f"on {len(model_frame)} games..."
             )
             model = train_model(model_frame, params=params)
             save_model(model, model_path_obj)
@@ -365,7 +380,8 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
         if retrain:
             raise
         print(
-            "Loaded model incompatible with current feature set; retraining from scratch."
+            "Loaded model incompatible with current feature set; "
+            "retraining from scratch."
         )
         params = config.get("xgb_params")
         model = train_model(model_frame, params=params)
