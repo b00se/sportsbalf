@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -14,7 +13,7 @@ from .distributions import ResidualBootstrapper
 @dataclass
 class MonteCarloConfig:
     simulations: int = 10_000
-    random_seed: Optional[int] = None
+    random_seed: int | None = None
 
 
 def _ev_from_decimal(
@@ -37,8 +36,8 @@ def simulate_row(
     strikeout_line: float,
     config: MonteCarloConfig,
     rng: np.random.Generator,
-    sampler: Optional[ResidualBootstrapper] = None,
-    pitcher_id: Optional[float] = None,
+    sampler: ResidualBootstrapper | None = None,
+    pitcher_id: float | None = None,
 ) -> dict[str, float]:
     """Simulate strikeout distribution for a single pitcher line."""
     if np.isnan(mean):
@@ -79,19 +78,30 @@ def simulate_row(
 def apply_simulations(
     lines: pd.DataFrame,
     mean_col: str,
-    std_dev: float,
+    std_dev: float | str | pd.Series,
     config: MonteCarloConfig | None = None,
-    sampler: Optional[ResidualBootstrapper] = None,
+    sampler: ResidualBootstrapper | None = None,
 ) -> pd.DataFrame:
     """Run Monte Carlo simulations for each pitcher line."""
     config = config or MonteCarloConfig()
     rng = np.random.default_rng(config.random_seed)
 
+    if isinstance(std_dev, str):
+        if std_dev not in lines.columns:
+            raise KeyError(f"Missing std-dev column '{std_dev}' in simulation frame.")
+        std_values = pd.to_numeric(lines[std_dev], errors="coerce").to_numpy()
+    elif isinstance(std_dev, pd.Series):
+        std_values = pd.to_numeric(
+            std_dev.reindex(lines.index), errors="coerce"
+        ).to_numpy()
+    else:
+        std_values = np.full(len(lines), float(std_dev), dtype=float)
+
     results = []
-    for row in lines.itertuples(index=False):
+    for i, row in enumerate(lines.itertuples(index=False)):
         stats = simulate_row(
             mean=getattr(row, mean_col),
-            std_dev=std_dev,
+            std_dev=std_values[i],
             strikeout_line=row.k_line,
             config=config,
             rng=rng,

@@ -53,8 +53,14 @@ def _normalize_name(name: str) -> str:
 
 
 def _latest_games(games: pd.DataFrame) -> pd.DataFrame:
+    normalized = games.copy()
+    if "pitcher_id" not in normalized.columns and "pitcher" in normalized.columns:
+        normalized["pitcher_id"] = normalized["pitcher"]
+    if "pitcher_name" not in normalized.columns:
+        normalized["pitcher_name"] = normalized["pitcher_id"].astype(str)
+
     latest = (
-        games.sort_values(["pitcher_id", "game_date"])
+        normalized.sort_values(["pitcher_id", "game_date"])
         .drop_duplicates("pitcher_id", keep="last")
         .copy()
     )
@@ -307,6 +313,20 @@ def _clean_for_model(games: pd.DataFrame) -> pd.DataFrame:
     return filtered
 
 
+def _normalize_opponent_feature_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Ensure both opponent K feature columns are present for model parity."""
+
+    normalized = frame.copy()
+    if "opponent_k_pct" not in normalized.columns:
+        if "opponent_k_rate" in normalized.columns:
+            normalized["opponent_k_pct"] = normalized["opponent_k_rate"]
+        else:
+            normalized["opponent_k_pct"] = np.nan
+    if "opponent_k_rate" not in normalized.columns:
+        normalized["opponent_k_rate"] = normalized["opponent_k_pct"]
+    return normalized
+
+
 def run_strikeouts_pipeline(
     config: PipelineConfig, retrain: bool = False
 ) -> pd.DataFrame:
@@ -322,9 +342,14 @@ def run_strikeouts_pipeline(
     )
 
     games = aggregate_pitcher_games(pitch_df)
+    if "pitcher_id" not in games.columns and "pitcher" in games.columns:
+        games["pitcher_id"] = games["pitcher"]
+    if "pitcher_name" not in games.columns:
+        games["pitcher_name"] = games["pitcher_id"].astype(str)
     games = add_rolling_features(games)
     games = add_park_factor(games, park_df)
     games = add_opponent_k_rate(games)
+    games = _normalize_opponent_feature_columns(games)
 
     training_games_list = []
     training_paths = section.get("training_data_paths") or [section["pitch_data_path"]]
@@ -338,9 +363,17 @@ def run_strikeouts_pipeline(
         hist_games = add_rolling_features(hist_games)
         hist_games = add_park_factor(hist_games, park_df)
         hist_games = add_opponent_k_rate(hist_games)
+        hist_games = _normalize_opponent_feature_columns(hist_games)
         training_games_list.append(hist_games)
 
     training_games = pd.concat(training_games_list, ignore_index=True)
+    training_games = _normalize_opponent_feature_columns(training_games)
+    if (
+        "pitcher_id" not in training_games.columns
+        and "pitcher" in training_games.columns
+    ):
+        training_games["pitcher_id"] = training_games["pitcher"]
+
     training_games.sort_values(["pitcher_id", "game_date"], inplace=True)
     training_games = training_games.drop_duplicates(
         subset=["pitcher_id", "game_date"], keep="last"
@@ -420,6 +453,7 @@ def run_strikeouts_pipeline(
         lines_enriched["rest_days"] = np.nan
     else:
         prediction_rows = prediction_rows.reset_index(drop=True)
+        prediction_rows = _normalize_opponent_feature_columns(prediction_rows)
         prediction_rows["prediction"] = np.nan
         valid_mask = prediction_rows[FEATURES].notna().all(axis=1)
         if valid_mask.any():

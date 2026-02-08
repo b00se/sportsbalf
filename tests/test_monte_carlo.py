@@ -1,5 +1,6 @@
 import numpy as np
-from src.mlb.models.monte_carlo import MonteCarloConfig, simulate_row
+import pandas as pd
+from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations, simulate_row
 
 
 class DummySampler:
@@ -48,3 +49,28 @@ def test_simulate_row_uses_sampler_when_allowed():
     assert sampler.calls == 1
     # Deterministic because DummySampler always returns a constant array.
     assert result["prob_over"] in (0.0, 1.0)
+
+
+def test_apply_simulations_accepts_std_dev_column_name():
+    lines = pd.DataFrame(
+        [
+            {
+                "prediction": 30.0,
+                "k_line": 29.5,
+                "simulation_sigma": 1.2,
+                "over_decimal_price": 1.9,
+                "under_decimal_price": 1.9,
+                "pitcher_id": "QB1",
+            }
+        ]
+    )
+    result = apply_simulations(
+        lines=lines,
+        mean_col="prediction",
+        std_dev="simulation_sigma",
+        config=MonteCarloConfig(simulations=200, random_seed=42),
+        sampler=None,
+    )
+
+    assert {"prob_over", "prob_under", "prob_push"}.issubset(result.columns)
+    assert result["prob_over"].notna().all()
