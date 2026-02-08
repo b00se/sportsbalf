@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+from hashlib import sha256
 from pathlib import Path
 
 import joblib
@@ -18,10 +20,22 @@ from src.mlb.features.feature_store import (
     ensure_live_feature_defaults,
 )
 from src.mlb.features.rolling import add_rolling_features
+from src.mlb.models.buckets import segmentation_config_from_model_selection
 from src.mlb.models.distributions import ResidualBootstrapper
+from src.mlb.models.evaluation import run_walk_forward_tournament, select_champion
 from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
-from src.mlb.models.registry import get_model_spec
-from src.mlb.models.trainers import fit_estimator, predict_estimator
+from src.mlb.models.registry import (
+    SIMPLE_MODEL_PREFERENCE,
+    get_model_spec,
+    resolve_model_specs,
+)
+from src.mlb.models.strategy import (
+    predict_with_strategy_artifact,
+    strategy_candidates_from_config,
+    strategy_metadata,
+    train_strategy_artifact,
+)
+from src.mlb.models.trainers import fit_estimator
 from src.mlb.pitcher_props.data import persist_reusable_tables
 from src.mlb.pitcher_props.descriptors import StatDescriptor, get_stat_descriptor
 from src.mlb.pitcher_props.park_factors import (
@@ -69,6 +83,55 @@ def _model_features(descriptor: StatDescriptor) -> list[str]:
     """
 
     return BASE_FEATURES + [descriptor.opponent_feature_col, descriptor.park_factor_col]
+
+
+def _feature_schema_hash(features: list[str]) -> str:
+    """Return deterministic hash for a feature schema."""
+
+    payload = ",".join(features).encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
+def _model_selection_config(
+    section: dict[str, object],
+    descriptor: StatDescriptor,
+) -> dict[str, object]:
+    """Return normalized model-selection configuration with defaults."""
+
+    raw = section.get("model_selection")
+    if not isinstance(raw, dict):
+        raw = {}
+
+    stat_tag = descriptor.stat
+    return {
+        "enabled": bool(raw.get("enabled", False)),
+        "candidates": raw.get("candidates"),
+        "primary_metric": raw.get("primary_metric", "mae"),
+        "tie_breakers": raw.get("tie_breakers", ["rmse", "r2"]),
+        "tie_epsilon": float(raw.get("tie_epsilon", 1e-6)),
+        "runtime_budget_minutes": int(raw.get("runtime_budget_minutes", 30)),
+        "tuning": raw.get("tuning", {}),
+        "segmentation": raw.get("segmentation", {}),
+        "champion_model_path": raw.get(
+            "champion_model_path",
+            f"models/mlb_{stat_tag}_champion.joblib",
+        ),
+        "champion_metadata_path": raw.get(
+            "champion_metadata_path",
+            f"models/mlb_{stat_tag}_champion_metadata.json",
+        ),
+        "leaderboard_path": raw.get(
+            "leaderboard_path",
+            f"models/mlb_{stat_tag}_leaderboard.csv",
+        ),
+    }
+
+
+def _persist_champion_metadata(metadata_path: Path, payload: dict[str, object]) -> None:
+    """Persist champion metadata JSON to disk."""
+
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _add_rolling_pressure_features(games: pd.DataFrame) -> pd.DataFrame:
@@ -211,30 +274,149 @@ def _train_or_load(
     section: dict[str, object],
     descriptor: StatDescriptor,
     retrain: bool,
-):
+) -> tuple[object, str, str]:
     """Train or load a model artifact for the supplied stat."""
 
     model_path = Path(str(section["model_path"]))
     features = _model_features(descriptor)
+    selection = _model_selection_config(section, descriptor)
 
-    if model_path.exists() and not retrain:
+    if not bool(selection["enabled"]):
+        if model_path.exists() and not retrain:
+            try:
+                return joblib.load(model_path), "xgboost", "global"
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                logger.warning(
+                    "Failed to load model '%s': %s. Retraining.", model_path, exc
+                )
+
+        spec = get_model_spec("xgboost")
+        model = fit_estimator(
+            frame,
+            spec=spec,
+            features=features,
+            target_col=descriptor.target_col,
+        )
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(model, model_path)
+        return model, "xgboost", "global"
+
+    champion_model_path = Path(str(selection["champion_model_path"]))
+    champion_metadata_path = Path(str(selection["champion_metadata_path"]))
+    leaderboard_path = Path(str(selection["leaderboard_path"]))
+    candidates = selection["candidates"]
+    tuning_cfg = selection["tuning"] if isinstance(selection["tuning"], dict) else {}
+    tuning_enabled = bool(tuning_cfg.get("enabled", False))
+    max_trials = int(tuning_cfg.get("max_trials_per_model", 1)) if tuning_enabled else 1
+    segmentation = segmentation_config_from_model_selection(selection)
+    strategies = strategy_candidates_from_config(segmentation)
+
+    should_retrain_champion = (
+        retrain
+        or not champion_model_path.exists()
+        or not champion_metadata_path.exists()
+    )
+    if should_retrain_champion:
         try:
-            return joblib.load(model_path)
-        except Exception as exc:  # pragma: no cover - defensive fallback
+            specs = resolve_model_specs(candidates)
+            fold_metrics, leaderboard = run_walk_forward_tournament(
+                frame,
+                specs=specs,
+                features=features,
+                target_col=descriptor.target_col,
+                date_col="game_date",
+                strategies=strategies,
+                segmentation=segmentation,
+                max_trials_per_model=max_trials,
+            )
+            winner = select_champion(
+                leaderboard,
+                primary_metric=str(selection["primary_metric"]),
+                tie_breakers=list(selection["tie_breakers"]),
+                epsilon=float(selection["tie_epsilon"]),
+                simplicity_order=SIMPLE_MODEL_PREFERENCE,
+            )
+            winner_spec = get_model_spec(winner.model_name)
+            artifact = train_strategy_artifact(
+                frame,
+                spec=winner_spec,
+                features=features,
+                target_col=descriptor.target_col,
+                strategy_name=winner.strategy_name,
+                segmentation=segmentation,
+                model_params=winner.params,
+            )
+            champion_model_path.parent.mkdir(parents=True, exist_ok=True)
+            joblib.dump(artifact, champion_model_path)
+
+            leaderboard_path.parent.mkdir(parents=True, exist_ok=True)
+            leaderboard.to_csv(leaderboard_path, index=False)
+
+            dated = pd.to_datetime(frame["game_date"], errors="coerce")
+            metadata_payload: dict[str, object] = {
+                "model_name": winner.model_name,
+                "strategy_name": winner.strategy_name,
+                "stat": descriptor.stat,
+                "target_col": descriptor.target_col,
+                "training_window": {
+                    "start": str(dated.min().date()) if dated.notna().any() else None,
+                    "end": str(dated.max().date()) if dated.notna().any() else None,
+                    "rows": int(len(frame)),
+                },
+                "metrics_snapshot": {
+                    "primary_metric": selection["primary_metric"],
+                    "tie_breakers": selection["tie_breakers"],
+                    "trial_id": winner.trial_id,
+                    "trial_params": winner.params or {},
+                    "mean_mae": winner.mean_mae,
+                    "mean_rmse": winner.mean_rmse,
+                    "mean_r2": winner.mean_r2,
+                },
+                "selection_runtime_budget_minutes": selection["runtime_budget_minutes"],
+                "segmentation": strategy_metadata(artifact),
+                "feature_schema_hash": _feature_schema_hash(features),
+                "leaderboard_path": str(leaderboard_path),
+                "fold_metrics": fold_metrics.to_dict(orient="records"),
+            }
+            _persist_champion_metadata(champion_metadata_path, metadata_payload)
+            logger.info(
+                "Selected %s champion strategy=%s model=%s with mean_mae=%.4f",
+                descriptor.stat,
+                winner.strategy_name,
+                winner.model_name,
+                winner.mean_mae,
+            )
+            return artifact, winner.model_name, winner.strategy_name
+        except Exception as exc:
             logger.warning(
-                "Failed to load model '%s': %s. Retraining.", model_path, exc
+                "Model tournament failed for '%s' (%s); training baseline model.",
+                descriptor.stat,
+                exc,
             )
 
-    spec = get_model_spec("xgboost")
-    model = fit_estimator(
-        frame,
-        spec=spec,
-        features=features,
-        target_col=descriptor.target_col,
-    )
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, model_path)
-    return model
+    try:
+        metadata = json.loads(champion_metadata_path.read_text(encoding="utf-8"))
+        champion_name = str(metadata.get("model_name", "xgboost"))
+        champion_strategy = str(metadata.get("strategy_name", "global"))
+        model = joblib.load(champion_model_path)
+        return model, champion_name, champion_strategy
+    except Exception as exc:
+        logger.warning(
+            "Champion artifact missing/incompatible for '%s' (%s); "
+            "training baseline model.",
+            descriptor.stat,
+            exc,
+        )
+        spec = get_model_spec("xgboost")
+        model = fit_estimator(
+            frame,
+            spec=spec,
+            features=features,
+            target_col=descriptor.target_col,
+        )
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(model, model_path)
+        return model, "xgboost", "global"
 
 
 def _build_prediction_rows(
@@ -361,18 +543,24 @@ def run_mlb_pitcher_prop_pipeline(
     if model_frame.empty:
         raise ValueError(f"No model-ready rows for stat '{descriptor.stat}'.")
 
-    model = _train_or_load(
+    model, model_name, strategy_name = _train_or_load(
         model_frame,
         section=section,
         descriptor=descriptor,
         retrain=retrain,
     )
+    logger.info(
+        "Using %s model artifact for stat '%s' with strategy '%s'.",
+        model_name,
+        descriptor.stat,
+        strategy_name,
+    )
 
-    train_preds = predict_estimator(
+    train_preds = predict_with_strategy_artifact(
         model_frame,
-        model=model,
         features=_model_features(descriptor),
         name="prediction",
+        artifact=model,
     )
 
     residuals = pd.to_numeric(
@@ -423,11 +611,11 @@ def run_mlb_pitcher_prop_pipeline(
         result["lines_status"] = lines_status
         return result
 
-    prediction_rows["prediction"] = predict_estimator(
+    prediction_rows["prediction"] = predict_with_strategy_artifact(
         prediction_rows,
-        model=model,
         features=_model_features(descriptor),
         name="prediction",
+        artifact=model,
     )
 
     sim_cfg = MonteCarloConfig(

@@ -29,10 +29,17 @@
    - target derivation tests
    - park-factor fallback tests
    - integration tests for `outs_recorded`, `earned_runs`, `hits_allowed`, `bb_allowed` in lines-present and lines-missing modes
+8. Brought shared-core model selection behavior to parity with legacy strikeouts path:
+   - optional walk-forward tournament + champion selection for pitcher-prop shared core
+   - strategy-aware champion artifact training/persistence/metadata
+   - strategy-aware inference parity in prediction path
+9. Expanded multi-stat data-integrity/leakage guard tests:
+   - leakage-safe opponent tendency assertions
+   - duplicate terminal plate-appearance collision coverage
+   - earned-runs fallback integrity checks
 
 ### In Progress
-1. Bring shared-core model selection/tournament behavior to parity with legacy strikeouts path.
-2. Expand data-integrity/leakage guard tests for multi-stat datasets.
+1. None.
 
 ### Deferred / Not Yet Implemented
 1. High-fidelity earned-runs label join from external game-log/event sources (current ER label is derived from available event/score context with fallback logic).
