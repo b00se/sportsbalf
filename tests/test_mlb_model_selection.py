@@ -99,6 +99,36 @@ def test_walk_forward_includes_quantile_and_kmeans_strategy_rows() -> None:
     assert "effective_strategy" in fold_metrics.columns
 
 
+def test_leaderboard_uses_effective_strategy_after_fallback(monkeypatch) -> None:
+    frame = _synthetic_training_frame()
+    specs = resolve_model_specs(["poisson"])
+    segmentation = SegmentationConfig(enabled=True, min_bucket_size=2)
+
+    original_fit = fit_bucket_model
+
+    def _fake_fit(
+        method: str,
+        frame_arg: pd.DataFrame,
+        *,
+        settings: SegmentationConfig,
+    ):
+        if method == "kmeans":
+            raise ValueError("forced kmeans failure")
+        return original_fit(method, frame_arg, settings=settings)
+
+    monkeypatch.setattr("src.mlb.models.evaluation.fit_bucket_model", _fake_fit)
+
+    _, leaderboard = run_walk_forward_tournament(
+        frame,
+        specs=specs,
+        features=FEATURES,
+        strategies=["kmeans"],
+        segmentation=segmentation,
+    )
+
+    assert set(leaderboard["strategy"]) == {"quantile3"}
+
+
 def test_walk_forward_respects_max_trials_per_model() -> None:
     frame = _synthetic_training_frame()
     specs = resolve_model_specs(["poisson"])

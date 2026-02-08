@@ -99,13 +99,13 @@ def _resolve_strategy_labels(
             # Decision-locked fallback: kmeans failures degrade to quantile buckets.
             fallback = fit_bucket_model("quantile3", train_df, settings=segmentation)
             return (
-                "kmeans->quantile3",
+                "quantile3",
                 fallback.assign(train_df),
                 fallback.assign(test_df),
                 fallback,
             )
         return (
-            f"{strategy}->global",
+            "global",
             pd.Series("global", index=train_df.index),
             pd.Series("global", index=test_df.index),
             None,
@@ -230,7 +230,7 @@ def run_walk_forward_tournament(
                     scores = _score_predictions(test_df[target_col], preds)
                     fold_rows.append(
                         {
-                            "strategy": strategy,
+                            "requested_strategy": strategy,
                             "effective_strategy": effective_strategy,
                             "model": spec.name,
                             "trial_id": int(trial_id),
@@ -247,7 +247,7 @@ def run_walk_forward_tournament(
     fold_metrics = pd.DataFrame(fold_rows)
     leaderboard = (
         fold_metrics.groupby(
-            ["strategy", "model", "trial_id", "params_json"], as_index=False
+            ["effective_strategy", "model", "trial_id", "params_json"], as_index=False
         )
         .agg(
             mean_mae=("mae", "mean"),
@@ -263,6 +263,7 @@ def run_walk_forward_tournament(
         )
         .reset_index(drop=True)
     )
+    leaderboard.rename(columns={"effective_strategy": "strategy"}, inplace=True)
     leaderboard["std_mae"] = leaderboard["std_mae"].fillna(0.0)
     return fold_metrics, leaderboard
 
