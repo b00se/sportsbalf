@@ -12,15 +12,17 @@ Note: This file is an audit artifact summarizing plan-completion evidence. It is
 - `docs/plans/planned/nhl-onboarding-sequenced-pr-plan.md`
 - `docs/plans/planned/nhl-pr2-contract-enforcement-tests-plan.md`
 - `docs/plans/planned/nhl-pr3-shared-simulation-interface-extraction-plan.md`
+- `docs/plans/planned/nhl-pr4-nfl-decoupling-cleanup-plan.md`
 
 ## Summary verdict
 - `mlb-multi-stat-expansion-plan.md`: **Implemented**.
 - `mlb-multistat-tournament-plan.md`: **Implemented** (acceptance criteria met by code + tests).
 - `mlb-pybaseball-live-features-plan.md`: **Partially implemented** (engineering scope implemented; strict MAE+ gate still not met).
 - `nhl-pr1-architecture-baseline-canonical-docs-plan.md`: **Implemented** (merged via PR #11).
-- `nhl-onboarding-sequenced-pr-plan.md`: **Partially implemented** (roadmap-level plan; PR1/PR2 done, PR3+ pending).
+- `nhl-onboarding-sequenced-pr-plan.md`: **Partially implemented** (roadmap-level plan; PR1/PR2/PR3 done, PR4+ pending).
 - `nhl-pr2-contract-enforcement-tests-plan.md`: **Implemented** (merged via PR #12).
-- `nhl-pr3-shared-simulation-interface-extraction-plan.md`: **Planned** (decision-complete implementation plan authored, not executed yet).
+- `nhl-pr3-shared-simulation-interface-extraction-plan.md`: **Implemented** (merged via PR #13).
+- `nhl-pr4-nfl-decoupling-cleanup-plan.md`: **Planned (Approved)** (decision-complete execution plan approved; not yet implemented).
 
 ## Evidence
 
@@ -91,9 +93,10 @@ Status: **Partially implemented**
 Implemented evidence:
 - PR 1 track item completed and merged (`#11`).
 - PR 2 track item completed and merged (`#12`).
+- PR 3 track item completed and merged (`#13`).
 
 Open gaps:
-- PR 3 through PR 10 are not implemented yet.
+- PR 4 through PR 10 are not implemented yet.
 
 ### 6) NHL PR#2 Contract Enforcement Tests Plan
 Status: **Implemented**
@@ -110,12 +113,26 @@ Implemented evidence:
   - `https://github.com/b00se/sportsbalf/pull/12`
 
 ### 7) NHL PR#3 Shared Simulation Interface Extraction Plan
-Status: **Planned**
+Status: **Implemented**
+
+Implemented evidence:
+- Shared simulation module added at `src/core/simulation.py`.
+- MLB compatibility re-export kept in `src/mlb/models/monte_carlo.py`.
+- NFL import boundary updated in `src/nfl/pipeline.py` to shared simulation core.
+- Validation coverage includes:
+  - `tests/test_core_simulation.py`
+  - `tests/test_monte_carlo.py`
+  - NFL pipeline integration coverage.
+- Merged to `main` via PR #13:
+  - `https://github.com/b00se/sportsbalf/pull/13`
+
+### 8) NHL PR#4 NFL Decoupling Cleanup Plan
+Status: **Planned (Approved)**
 
 Current state:
-- Detailed execution plan exists at
-  `docs/plans/planned/nhl-pr3-shared-simulation-interface-extraction-plan.md`.
-- No runtime extraction changes have been applied yet.
+- Decision-complete execution plan approved at
+  `docs/plans/planned/nhl-pr4-nfl-decoupling-cleanup-plan.md`.
+- Implementation has not been started yet.
 
 ## Recommended folder placement
 - Move to `implemented/` now:
@@ -123,7 +140,8 @@ Current state:
   - `mlb-multistat-tournament-plan.md`
   - `nhl-pr1-architecture-baseline-canonical-docs-plan.md`
   - `nhl-pr2-contract-enforcement-tests-plan.md`
+  - `nhl-pr3-shared-simulation-interface-extraction-plan.md`
 - Keep in `planned/` until deferred/gap items are closed:
   - `mlb-pybaseball-live-features-plan.md`
   - `nhl-onboarding-sequenced-pr-plan.md`
-  - `nhl-pr3-shared-simulation-interface-extraction-plan.md`
+  - `nhl-pr4-nfl-decoupling-cleanup-plan.md`
