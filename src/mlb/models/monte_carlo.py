@@ -81,6 +81,7 @@ def apply_simulations(
     std_dev: float | str | pd.Series,
     config: MonteCarloConfig | None = None,
     sampler: ResidualBootstrapper | None = None,
+    line_col: str = "k_line",
 ) -> pd.DataFrame:
     """Run Monte Carlo simulations for each pitcher line."""
     config = config or MonteCarloConfig()
@@ -99,10 +100,16 @@ def apply_simulations(
 
     results = []
     for i, row in enumerate(lines.itertuples(index=False)):
+        try:
+            line_value = getattr(row, line_col)
+        except AttributeError as exc:
+            raise KeyError(
+                f"Missing line column '{line_col}' in simulation frame."
+            ) from exc
         stats = simulate_row(
             mean=getattr(row, mean_col),
             std_dev=std_values[i],
-            strikeout_line=row.k_line,
+            strikeout_line=line_value,
             config=config,
             rng=rng,
             sampler=sampler,
@@ -126,4 +133,5 @@ def apply_simulations(
         )
         results.append(stats)
 
-    return lines.join(pd.DataFrame(results))
+    sim_frame = pd.DataFrame(results)
+    return pd.concat([lines.reset_index(drop=True), sim_frame], axis=1)

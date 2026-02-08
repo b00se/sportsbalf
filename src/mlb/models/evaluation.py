@@ -74,6 +74,94 @@ def _score_predictions(actual: pd.Series, predicted: pd.Series) -> dict[str, flo
     return {"mae": mae, "rmse": rmse, "r2": r2}
 
 
+def probability_calibration_report(
+    frame: pd.DataFrame,
+    *,
+    actual_col: str,
+    probability_col: str,
+    bins: int = 10,
+) -> tuple[dict[str, float], pd.DataFrame]:
+    """Compute probability calibration summary and reliability table.
+
+    Args:
+        frame: Input rows with actual outcomes and model probabilities.
+        actual_col: Binary outcome column (0/1).
+        probability_col: Predicted probability column in [0, 1].
+        bins: Number of equal-width bins for reliability table.
+
+    Returns:
+        Tuple of ``(summary, by_bin)`` where summary contains brier score,
+        log loss, expected calibration error (ece), and row count.
+    """
+
+    clipped_bins = max(2, int(bins))
+    subset = frame[[actual_col, probability_col]].copy()
+    subset[actual_col] = pd.to_numeric(subset[actual_col], errors="coerce")
+    subset[probability_col] = pd.to_numeric(subset[probability_col], errors="coerce")
+    subset = subset.dropna(subset=[actual_col, probability_col]).copy()
+    subset = subset[
+        subset[actual_col].isin([0.0, 1.0])
+        & subset[probability_col].between(0.0, 1.0, inclusive="both")
+    ].copy()
+
+    if subset.empty:
+        empty = pd.DataFrame(
+            columns=[
+                "bin",
+                "count",
+                "mean_probability",
+                "observed_rate",
+                "abs_calibration_gap",
+            ]
+        )
+        return {
+            "rows": 0.0,
+            "brier_score": np.nan,
+            "log_loss": np.nan,
+            "ece": np.nan,
+        }, empty
+
+    y = subset[actual_col].to_numpy(dtype=float)
+    p = subset[probability_col].to_numpy(dtype=float)
+    p_clip = np.clip(p, 1e-6, 1.0 - 1e-6)
+
+    brier = float(np.mean((p - y) ** 2))
+    log_loss = float(-(y * np.log(p_clip) + (1.0 - y) * np.log(1.0 - p_clip)).mean())
+
+    subset["bin"] = pd.cut(
+        subset[probability_col],
+        bins=np.linspace(0.0, 1.0, clipped_bins + 1),
+        include_lowest=True,
+        labels=False,
+    )
+    by_bin = (
+        subset.groupby("bin", as_index=False)
+        .agg(
+            count=(actual_col, "size"),
+            mean_probability=(probability_col, "mean"),
+            observed_rate=(actual_col, "mean"),
+        )
+        .sort_values("bin", kind="stable")
+    )
+    by_bin["abs_calibration_gap"] = (
+        by_bin["mean_probability"] - by_bin["observed_rate"]
+    ).abs()
+    ece = float(
+        (
+            by_bin["abs_calibration_gap"]
+            * (by_bin["count"] / max(float(by_bin["count"].sum()), 1.0))
+        ).sum()
+    )
+
+    summary = {
+        "rows": float(len(subset)),
+        "brier_score": brier,
+        "log_loss": log_loss,
+        "ece": ece,
+    }
+    return summary, by_bin.reset_index(drop=True)
+
+
 def _resolve_strategy_labels(
     strategy: str,
     train_df: pd.DataFrame,

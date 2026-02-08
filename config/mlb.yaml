@@ -57,3 +57,163 @@ mlb:
         enabled: true
         primary_source: pybaseball_team_game_logs
         secondary_source: statsapi_game_feed
+  outs_recorded:
+    lines_path: data/lines/outs_recorded_2025-09-22.csv
+    pitch_data_path: data/raw/statcast/statcast_raw_2025.parquet
+    training_data_paths:
+      - data/raw/statcast/statcast_raw_2021.parquet
+      - data/raw/statcast/statcast_raw_2022.parquet
+      - data/raw/statcast/statcast_raw_2023.parquet
+      - data/raw/statcast/statcast_raw_2024.parquet
+      - data/raw/statcast/statcast_raw_2025.parquet
+    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2025.parquet
+    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2025.parquet
+    model_path: models/mlb_outs_recorded_xgb.joblib
+    model_selection:
+      enabled: true
+      runtime_budget_minutes: 30
+      random_seed: 42
+      candidates:
+        - hist_gradient_boosting
+      primary_metric: mae
+      tie_breakers:
+        - rmse
+        - r2
+      tie_epsilon: 1.0e-6
+      tuning:
+        enabled: false
+        max_trials_per_model: 1
+      segmentation:
+        enabled: false
+        bucket_methods:
+          - global
+        min_bucket_size: 150
+      champion_model_path: models/mlb_outs_recorded_champion.joblib
+      champion_metadata_path: models/mlb_outs_recorded_champion_metadata.json
+      leaderboard_path: models/mlb_outs_recorded_leaderboard.csv
+    monte_carlo_simulations: 10000
+    monte_carlo_seed: 42
+    fallback_std: 1.0
+    allow_missing_lines: true
+    park_factor_min_samples: 20
+    park_factor_half_life_games: 60
+  earned_runs:
+    lines_path: data/lines/earned_runs_2025-09-22.csv
+    pitch_data_path: data/raw/statcast/statcast_raw_2025.parquet
+    training_data_paths:
+      - data/raw/statcast/statcast_raw_2021.parquet
+      - data/raw/statcast/statcast_raw_2022.parquet
+      - data/raw/statcast/statcast_raw_2023.parquet
+      - data/raw/statcast/statcast_raw_2024.parquet
+      - data/raw/statcast/statcast_raw_2025.parquet
+    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2025.parquet
+    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2025.parquet
+    model_path: models/mlb_earned_runs_xgb.joblib
+    model_selection:
+      enabled: true
+      runtime_budget_minutes: 30
+      random_seed: 42
+      candidates:
+        - random_forest
+      primary_metric: mae
+      tie_breakers:
+        - rmse
+        - r2
+      tie_epsilon: 1.0e-6
+      tuning:
+        enabled: false
+        max_trials_per_model: 1
+      segmentation:
+        enabled: false
+        bucket_methods:
+          - global
+        min_bucket_size: 150
+      champion_model_path: models/mlb_earned_runs_champion.joblib
+      champion_metadata_path: models/mlb_earned_runs_champion_metadata.json
+      leaderboard_path: models/mlb_earned_runs_leaderboard.csv
+    monte_carlo_simulations: 10000
+    monte_carlo_seed: 42
+    fallback_std: 0.8
+    allow_missing_lines: true
+    park_factor_min_samples: 20
+    park_factor_half_life_games: 60
+  hits_allowed:
+    lines_path: data/lines/hits_allowed_2025-09-22.csv
+    pitch_data_path: data/raw/statcast/statcast_raw_2025.parquet
+    training_data_paths:
+      - data/raw/statcast/statcast_raw_2021.parquet
+      - data/raw/statcast/statcast_raw_2022.parquet
+      - data/raw/statcast/statcast_raw_2023.parquet
+      - data/raw/statcast/statcast_raw_2024.parquet
+      - data/raw/statcast/statcast_raw_2025.parquet
+    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2025.parquet
+    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2025.parquet
+    model_path: models/mlb_hits_allowed_xgb.joblib
+    model_selection:
+      enabled: true
+      runtime_budget_minutes: 30
+      random_seed: 42
+      candidates:
+        - hist_gradient_boosting
+      primary_metric: mae
+      tie_breakers:
+        - rmse
+        - r2
+      tie_epsilon: 1.0e-6
+      tuning:
+        enabled: false
+        max_trials_per_model: 1
+      segmentation:
+        enabled: false
+        bucket_methods:
+          - global
+        min_bucket_size: 150
+      champion_model_path: models/mlb_hits_allowed_champion.joblib
+      champion_metadata_path: models/mlb_hits_allowed_champion_metadata.json
+      leaderboard_path: models/mlb_hits_allowed_leaderboard.csv
+    monte_carlo_simulations: 10000
+    monte_carlo_seed: 42
+    fallback_std: 1.0
+    allow_missing_lines: true
+    park_factor_min_samples: 20
+    park_factor_half_life_games: 60
+  bb_allowed:
+    lines_path: data/lines/bb_allowed_2025-09-22.csv
+    pitch_data_path: data/raw/statcast/statcast_raw_2025.parquet
+    training_data_paths:
+      - data/raw/statcast/statcast_raw_2021.parquet
+      - data/raw/statcast/statcast_raw_2022.parquet
+      - data/raw/statcast/statcast_raw_2023.parquet
+      - data/raw/statcast/statcast_raw_2024.parquet
+      - data/raw/statcast/statcast_raw_2025.parquet
+    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2025.parquet
+    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2025.parquet
+    model_path: models/mlb_bb_allowed_xgb.joblib
+    model_selection:
+      enabled: true
+      runtime_budget_minutes: 30
+      random_seed: 42
+      candidates:
+        - random_forest
+      primary_metric: mae
+      tie_breakers:
+        - rmse
+        - r2
+      tie_epsilon: 1.0e-6
+      tuning:
+        enabled: false
+        max_trials_per_model: 1
+      segmentation:
+        enabled: false
+        bucket_methods:
+          - global
+        min_bucket_size: 150
+      champion_model_path: models/mlb_bb_allowed_champion.joblib
+      champion_metadata_path: models/mlb_bb_allowed_champion_metadata.json
+      leaderboard_path: models/mlb_bb_allowed_leaderboard.csv
+    monte_carlo_simulations: 10000
+    monte_carlo_seed: 42
+    fallback_std: 0.7
+    allow_missing_lines: true
+    park_factor_min_samples: 20
+    park_factor_half_life_games: 60
