@@ -864,12 +864,31 @@ def run_mlb_pitcher_prop_pipeline(
         strategy_name,
     )
 
-    train_preds = predict_with_strategy_artifact(
-        model_frame,
-        features=_model_features(descriptor),
-        name="prediction",
-        artifact=model,
-    )
+    try:
+        train_preds = predict_with_strategy_artifact(
+            model_frame,
+            features=_model_features(descriptor),
+            name="prediction",
+            artifact=model,
+        )
+    except ValueError:
+        logger.warning(
+            "Loaded model artifact incompatible with current features for '%s'; "
+            "retraining baseline artifact.",
+            descriptor.stat,
+        )
+        model, model_name, strategy_name = _train_or_load(
+            model_frame,
+            section=section,
+            descriptor=descriptor,
+            retrain=True,
+        )
+        train_preds = predict_with_strategy_artifact(
+            model_frame,
+            features=_model_features(descriptor),
+            name="prediction",
+            artifact=model,
+        )
 
     residuals = pd.to_numeric(
         model_frame[descriptor.target_col], errors="coerce"

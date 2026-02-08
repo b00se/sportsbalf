@@ -84,8 +84,7 @@ def add_rolling_park_factor(
     )
     park_daily["park_samples"] = (
         park_daily.groupby("home_team", sort=False)["day_games"]
-        .cumsum()
-        .shift(1)
+        .transform(lambda s: s.cumsum().shift(1))
         .fillna(0.0)
         .astype(float)
     )

@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+from src.core.contracts import PipelineConfig
 from src.mlb.models.strategy import predict_with_strategy_artifact
 from src.mlb.pitcher_props.descriptors import get_stat_descriptor
 from src.mlb.pitcher_props.pipeline import (
     _model_features,
     _persist_label_quality_report,
     _train_or_load,
+    run_mlb_pitcher_prop_pipeline,
 )
 
 
@@ -137,3 +140,100 @@ def test_label_quality_report_tracks_earned_runs_fallback_share(tmp_path: Path) 
     report = pd.read_csv(output).sort_values("season").reset_index(drop=True)
     assert report["fallback_rows"].tolist() == [1, 1]
     assert report["rows"].tolist() == [2, 1]
+
+
+def test_pipeline_retrains_when_loaded_artifact_is_incompatible(monkeypatch) -> None:
+    descriptor = get_stat_descriptor("outs_recorded")
+    model_frame = _synthetic_pitcher_prop_frame(descriptor.target_col).copy()
+    model_frame["game_date"] = pd.to_datetime(model_frame["game_date"])
+    features = _model_features(descriptor)
+    for column in features:
+        if column not in model_frame.columns:
+            model_frame[column] = 0.0
+
+    train_or_load_calls: list[bool] = []
+
+    def _fake_train_or_load(frame, *, section, descriptor, retrain):
+        train_or_load_calls.append(bool(retrain))
+        if len(train_or_load_calls) == 1:
+            return "incompatible", "xgboost", "global"
+        return "compatible", "xgboost", "global"
+
+    def _fake_predict(frame, *, artifact, features, name="prediction"):
+        if artifact == "incompatible":
+            raise ValueError("feature mismatch")
+        return pd.Series(np.full(len(frame), 10.0), index=frame.index, name=name)
+
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._build_training_games",
+        lambda section, descriptor: model_frame.copy(),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._persist_label_quality_report",
+        lambda games, descriptor, report_path: None,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._train_or_load",
+        _fake_train_or_load,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.predict_with_strategy_artifact",
+        _fake_predict,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.load_pitcher_prop_lines",
+        lambda _path, line_col: pd.DataFrame(
+            [
+                {
+                    "player": "123",
+                    line_col: 15.5,
+                    "over_decimal_price": 1.9,
+                    "under_decimal_price": 1.9,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._build_prediction_rows",
+        lambda lines, games, descriptor, target_date: pd.DataFrame(
+            [
+                {
+                    "player": "123",
+                    "pitcher_id": 123,
+                    descriptor.line_col: 15.5,
+                    "prediction": np.nan,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.apply_simulations",
+        lambda lines, **kwargs: lines.assign(
+            prob_over=0.5,
+            prob_under=0.5,
+            prob_push=0.0,
+            ev_over=0.0,
+            ev_under=0.0,
+            edge_over=0.0,
+            edge_under=0.0,
+            simulated_mean=10.0,
+            simulated_std=1.0,
+            simulated_median=10.0,
+        ),
+    )
+
+    config = PipelineConfig(
+        config_path=Path("config/mlb.yaml"),
+        sport="mlb",
+        stat="outs_recorded",
+        raw={},
+        section={
+            "model_path": "models/tmp.joblib",
+            "lines_path": "tests/testdata/outs_lines.csv",
+            "fallback_std": 1.0,
+        },
+    )
+    result = run_mlb_pitcher_prop_pipeline(config, retrain=False)
+
+    assert train_or_load_calls == [False, True]
+    assert "predicted_outs_recorded" in result.columns
