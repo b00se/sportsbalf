@@ -28,13 +28,44 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 - Config-driven paths: Read locations from `config/*.yaml`; do not hardcode file paths in code.
 
 ## Codebase Overview (for orientation)
-- Pipeline entry: `pipeline/main.py` calls `src/mlb/pipeline.run(config_path, retrain)`.
-- MLB pipeline core: `src/mlb/pipeline.py` (feature assembly, model load/train, Monte Carlo, outputs).
+- Pipeline entry: `pipeline/main.py` routes via `src/pipeline/engine.py` using `--sport` and `--stat`.
+- Core modular layers:
+  - `src/core/contracts.py` (sport/stat protocol)
+  - `src/core/registry.py` (pipeline registry)
+  - `src/core/config.py` (typed config + migration fallback)
+- MLB pipeline core: `src/mlb/pipeline.py` (compat shim + strikeouts orchestration helpers).
+- NFL pipeline core: `src/nfl/pipeline.py` (compat shim + pass attempts orchestration helpers).
 - Features: `src/mlb/features/` (aggregation, rolling, park/opponent context).
-- Modeling utils: `src/mlb/models/` (feature list, XGBoost, residual bootstrap, Monte Carlo helpers).
+- Modeling utils:
+  - `src/mlb/models/` (feature list, XGBoost, residual bootstrap, Monte Carlo helpers)
+  - `src/nfl/models/` (NFL feature/model/bootstrap helpers)
 - Utilities: `src/utils/io.py` (CSV/Parquet I/O, config loading).
 - CLI: `cli/` (lightweight; expand as needed without breaking `pipeline/main.py`).
 - Tests: `tests/` plus fixtures in `tests/testdata/`.
+
+## Autonomy Defaults (Codex)
+- Worktree-first: For substantial changes, create and use a dedicated git worktree branch (`*-wt`) before editing.
+- Real e2e policy:
+  - Default: use offline fixtures and `/tmp` outputs.
+  - If user explicitly requests real ingestion/e2e, it is allowed to write transient artifacts under `data/` in the active worktree.
+- Safety: Never delete or reset generated `data/` artifacts automatically; leave cleanup to explicit user request.
+- After dependency changes, re-run `pytest -q` and `ruff check .` before reporting completion.
+
+## Suggested Approval Prefixes
+- For smoother autonomous operation, pre-approve these command prefixes when possible:
+  - `["ruff", "check", "."]`
+  - `["black"]`
+  - `["git", "push"]`
+  - `["gh", "pr", "create"]`
+  - `["gh", "pr", "edit"]`
+  - `["/Users/jbrys/sportsbalf/.venv/bin/pip", "install"]`
+  - `["/Users/jbrys/sportsbalf/.venv/bin/python", "-m", "pipeline.main"]`
+  - `["/Users/jbrys/sportsbalf/.venv/bin/python", "scripts/fetch_statcast_raw.py"]`
+  - `["/Users/jbrys/sportsbalf/.venv/bin/python", "scripts/build_qb_attempts_dataset.py"]`
+
+## Local Skill & Runbook
+- Autonomy runbook: `instructions/codex_autonomy_runbook.md`
+- Local skill: `instructions/skills/repo-autonomy/SKILL.md`
 
 ## Modeling & Pipeline Changes
 - Feature columns: Centralized in `src/mlb/models/predict.py::FEATURES`. If adding/removing features, update this list and ensure:
@@ -56,7 +87,7 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 ## Minimal Commands (reference)
 - Install deps: `pip install -r requirements.txt`
 - Run tests (offline): `pytest`
-- Run pipeline (online allowed): `python -m pipeline.main [--retrain]`
+- Run pipeline (online allowed): `python -m pipeline.main --sport <sport> --stat <stat> --config <path> [--retrain]`
 - Format: `black .`
 - Lint: `ruff check .`
 
