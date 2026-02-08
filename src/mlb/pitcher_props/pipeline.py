@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import joblib
@@ -41,6 +42,20 @@ BASE_FEATURES: list[str] = [
     "rolling_on_base_events_allowed_5",
     "rolling_hard_contact_allowed_5",
 ] + [col for col in LIVE_CONTEXT_FEATURE_COLUMNS if col != "roof_state"]
+
+
+SIMULATION_COLUMNS: tuple[str, ...] = (
+    "prob_over",
+    "prob_under",
+    "prob_push",
+    "ev_over",
+    "ev_under",
+    "edge_over",
+    "edge_under",
+    "simulated_mean",
+    "simulated_std",
+    "simulated_median",
+)
 
 
 def _model_features(descriptor: StatDescriptor) -> list[str]:
@@ -226,6 +241,7 @@ def _build_prediction_rows(
     lines: pd.DataFrame,
     games: pd.DataFrame,
     descriptor: StatDescriptor,
+    target_date: pd.Timestamp,
 ) -> pd.DataFrame:
     """Build inference rows by resolving each line to a latest pitcher row."""
 
@@ -267,7 +283,7 @@ def _build_prediction_rows(
         record["under_decimal_price"] = getattr(line, "under_decimal_price", np.nan)
         if pd.notna(record.get("game_date")):
             rest_days = (
-                pd.Timestamp.now().normalize()
+                target_date.normalize()
                 - pd.Timestamp(record["game_date"]).normalize()
             ).days
             record["rest_days"] = max(rest_days, 0)
@@ -286,6 +302,25 @@ def _build_prediction_rows(
     return prediction_rows
 
 
+def _infer_target_date(lines_path: str, fallback: pd.Timestamp) -> pd.Timestamp:
+    """Infer a prediction target date from a dated lines path.
+
+    Args:
+        lines_path: Configured lines file path.
+        fallback: Default date when path does not include an ISO date.
+
+    Returns:
+        Target date used for slate-relative feature engineering.
+    """
+
+    match = re.search(r"(20\d{2}-\d{2}-\d{2})", lines_path)
+    if match:
+        parsed = pd.to_datetime(match.group(1), errors="coerce")
+        if pd.notna(parsed):
+            return pd.Timestamp(parsed)
+    return pd.Timestamp(fallback)
+
+
 def _empty_result(
     descriptor: StatDescriptor, *, run_mode: str, lines_status: str
 ) -> pd.DataFrame:
@@ -296,13 +331,7 @@ def _empty_result(
             "player",
             descriptor.line_col,
             descriptor.prediction_col,
-            "prob_over",
-            "prob_under",
-            "prob_push",
-            "ev_over",
-            "ev_under",
-            "edge_over",
-            "edge_under",
+            *SIMULATION_COLUMNS,
             "model_residual_std",
             "run_mode",
             "lines_status",
@@ -358,7 +387,8 @@ def run_mlb_pitcher_prop_pipeline(
         sigma = float(section.get("fallback_std", 1.0))
 
     try:
-        lines = load_pitcher_prop_lines(str(section["lines_path"]), descriptor.line_col)
+        lines_path = str(section["lines_path"])
+        lines = load_pitcher_prop_lines(lines_path, descriptor.line_col)
         lines_status = "present"
     except FileNotFoundError:
         if not bool(section.get("allow_missing_lines", False)):
@@ -373,10 +403,21 @@ def run_mlb_pitcher_prop_pipeline(
             lines_status="missing",
         )
 
-    prediction_rows = _build_prediction_rows(lines, training_games, descriptor)
+    target_date = _infer_target_date(
+        lines_path,
+        fallback=pd.Timestamp(training_games["game_date"].max()),
+    )
+    prediction_rows = _build_prediction_rows(
+        lines,
+        training_games,
+        descriptor,
+        target_date=target_date,
+    )
     if prediction_rows.empty:
         result = lines.copy()
         result[descriptor.prediction_col] = np.nan
+        for col in SIMULATION_COLUMNS:
+            result[col] = np.nan
         result["model_residual_std"] = sigma
         result["run_mode"] = "prediction"
         result["lines_status"] = lines_status
