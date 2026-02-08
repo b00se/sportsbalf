@@ -10,6 +10,18 @@ Locked decisions:
 5. Source policy is pybaseball-first (allow one secondary source only if a key field is missing).
 6. Success gate is any MAE improvement vs current baseline.
 
+## Validation Status (Updated: 2026-02-08)
+1. Current strict gate status: **not met**.
+2. Latest measured comparison on current config:
+   - baseline MAE: `1.467579`
+   - enriched MAE: `1.491491`
+   - MAE improvement (`baseline - enriched`): `-0.023912`
+3. Rebuild/recheck status:
+   - historical feature-engineering datasets were rebuilt for 2021–2025
+   - MAE comparison remained negative after rebuild
+4. Reference evidence:
+   - `docs/reports/mlb-live-features-mae-validation-2026-02-08.md`
+
 ## Current State (Grounded)
 1. Existing model features are still only:
    - `rolling_K_avg_3`, `rolling_K_avg_5`, `rolling_pitch_count_5`, `rolling_K_rate`, `opponent_k_pct`, `opponent_k_rate`, `park_factor_K`, `rest_days`.
@@ -138,6 +150,14 @@ Responsibilities:
    - MAE delta vs baseline
    - feature availability coverage
    - slice metrics by roof state (open vs closed/unknown).
+3. Add explicit ablation outputs to identify feature drag:
+   - baseline only (8 core features)
+   - baseline + handedness only
+   - baseline + umpire only
+   - baseline + weather only
+   - baseline + roof interactions only
+   - baseline + weather + roof
+   - full enriched set
 
 ### 5) Caching and Fallback Policy (Live)
 Cache schema:
@@ -184,6 +204,30 @@ Behavior:
 4. Coverage guard:
    - if humidity/roof availability too low, report and automatically degrade to neutralized interactions.
 
+### MAE Recovery Experiments (Required Before Closing Plan)
+1. Ablation sweep:
+   - run the feature-set matrix above on identical folds/seeds and rank by MAE.
+   - identify at least one subset with non-negative MAE delta.
+2. Distribution/quality diagnostics:
+   - compare train vs inference distributions for weather/roof/umpire features.
+   - flag features with extreme missingness, low variance, or unstable scaling.
+3. Temporal robustness checks:
+   - compute MAE deltas by season and by month.
+   - ensure no single-season artifact is hiding broad degradation.
+4. Segment diagnostics:
+   - MAE by `roof_state` (`open`, `closed`, `unknown`).
+   - MAE by weather-known vs default-imputed rows.
+   - MAE by stale-cache vs fresh/live rows (where applicable).
+5. Leakage sanity checks:
+   - confirm all historical expanding features are shifted and do not use same-game outcomes.
+6. Feature transformation tuning:
+   - test clipped/scaled variants of weather composites (`weather_run_env_idx`, interactions).
+   - test removing weakest contributors identified by ablation.
+7. Model-spec robustness:
+   - rerun winning ablation on multiple model candidates to avoid model-specific overfitting.
+8. Promotion criterion:
+   - close plan only when chosen enriched subset shows positive MAE lift on locked comparison protocol.
+
 ## Rollout and Monitoring
 1. Phase 1 (shadow):
    - compute live features and log coverage/fallback without affecting model.
@@ -196,6 +240,11 @@ Behavior:
    - `stale_cache_usage_pct`
    - `neutral_default_usage_pct`
    - `mae_delta_vs_baseline`
+4. Add model-debug metrics to backtest artifacts:
+   - `mae_delta_by_season`
+   - `mae_delta_by_roof_state`
+   - `mae_delta_weather_known_vs_default`
+   - ablation leaderboard CSV (variant-level).
 
 ## Assumptions and Defaults
 1. Pybaseball provides most daily context; one secondary source may be needed for consistent humidity/roof fields.
