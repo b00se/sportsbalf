@@ -14,7 +14,7 @@ from xgboost import XGBRegressor
 
 from src.core.config import load_pipeline_config
 from src.core.contracts import PipelineConfig
-from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
+from src.core.simulation import MonteCarloConfig, apply_simulations
 from src.nfl.data.providers import get_provider
 from src.nfl.data.qb_attempts import build_qb_attempts_dataset
 from src.nfl.data.underdog import PASS_ATTEMPTS_ALGOLIA_ID, import_ud_pass_attempt_lines
