@@ -15,9 +15,11 @@ from src.mlb.features import (
     add_rolling_features,
     aggregate_pitcher_games,
 )
+from src.mlb.models.buckets import segmentation_config_from_model_selection
 from src.mlb.models.evaluation import run_walk_forward_tournament, select_champion
 from src.mlb.models.predict import FEATURES
 from src.mlb.models.registry import SIMPLE_MODEL_PREFERENCE, resolve_model_specs
+from src.mlb.models.strategy import strategy_candidates_from_config
 from src.mlb.pipeline import (
     _clean_for_model,
     _load_or_create_park_factors,
@@ -65,7 +67,9 @@ def _prepare_training_frame(section: dict[str, object]) -> pd.DataFrame:
     return _clean_for_model(full)
 
 
-def run_backtest(config_path: str) -> tuple[pd.DataFrame, dict[str, object]]:
+def run_backtest(
+    config_path: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, object]]:
     """Execute tournament and return leaderboard + champion metadata payload."""
 
     config = load_pipeline_config(
@@ -80,6 +84,11 @@ def run_backtest(config_path: str) -> tuple[pd.DataFrame, dict[str, object]]:
     primary_metric = str(selection_cfg.get("primary_metric", "mae"))
     tie_breakers = list(selection_cfg.get("tie_breakers", ["rmse", "r2"]))
     tie_epsilon = float(selection_cfg.get("tie_epsilon", 1e-6))
+    tuning_cfg = selection_cfg.get("tuning") or {}
+    tuning_enabled = bool(tuning_cfg.get("enabled", False))
+    max_trials = int(tuning_cfg.get("max_trials_per_model", 1)) if tuning_enabled else 1
+    segmentation = segmentation_config_from_model_selection(selection_cfg)
+    strategies = strategy_candidates_from_config(segmentation)
 
     frame = _prepare_training_frame(section)
     specs = resolve_model_specs(candidates)
@@ -87,6 +96,9 @@ def run_backtest(config_path: str) -> tuple[pd.DataFrame, dict[str, object]]:
         frame,
         specs=specs,
         features=FEATURES,
+        strategies=strategies,
+        segmentation=segmentation,
+        max_trials_per_model=max_trials,
     )
     champion = select_champion(
         leaderboard,
@@ -98,14 +110,17 @@ def run_backtest(config_path: str) -> tuple[pd.DataFrame, dict[str, object]]:
 
     metadata: dict[str, object] = {
         "config_path": config_path,
+        "champion_strategy": champion.strategy_name,
         "champion_model": champion.model_name,
         "mean_mae": champion.mean_mae,
         "mean_rmse": champion.mean_rmse,
         "mean_r2": champion.mean_r2,
+        "trial_id": champion.trial_id,
+        "trial_params": champion.params or {},
         "features": FEATURES,
         "fold_metrics": fold_metrics.to_dict(orient="records"),
     }
-    return leaderboard, metadata
+    return fold_metrics, leaderboard, metadata
 
 
 def main() -> None:
@@ -123,6 +138,11 @@ def main() -> None:
         default="runtime/mlb_strikeouts_champion.json",
         help="JSON output path for champion metadata",
     )
+    parser.add_argument(
+        "--fold-metrics-out",
+        default="runtime/mlb_strikeouts_fold_metrics.csv",
+        help="CSV output path for fold-level metrics",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -130,19 +150,26 @@ def main() -> None:
         format="%(levelname)s %(name)s - %(message)s",
     )
 
-    leaderboard, metadata = run_backtest(args.config)
+    fold_metrics, leaderboard, metadata = run_backtest(args.config)
 
+    fold_metrics_out = Path(args.fold_metrics_out)
     leaderboard_out = Path(args.leaderboard_out)
     champion_out = Path(args.champion_out)
+    fold_metrics_out.parent.mkdir(parents=True, exist_ok=True)
     leaderboard_out.parent.mkdir(parents=True, exist_ok=True)
     champion_out.parent.mkdir(parents=True, exist_ok=True)
 
+    fold_metrics.to_csv(fold_metrics_out, index=False)
     leaderboard.to_csv(leaderboard_out, index=False)
     champion_out.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
     print("MLB Strikeouts Model Tournament")
     print(leaderboard.to_string(index=False))
-    print(f"\nChampion: {metadata['champion_model']}")
+    print(
+        f"\nChampion: strategy={metadata['champion_strategy']} "
+        f"model={metadata['champion_model']}"
+    )
+    print(f"Fold Metrics CSV: {fold_metrics_out}")
     print(f"Leaderboard CSV: {leaderboard_out}")
     print(f"Champion JSON: {champion_out}")
 

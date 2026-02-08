@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -9,7 +10,13 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from src.mlb.models.registry import SIMPLE_MODEL_PREFERENCE, ModelSpec
+from src.core.model_selection import SelectionPolicy, apply_metric_filters
+from src.mlb.models.buckets import SegmentationConfig, fit_bucket_model
+from src.mlb.models.registry import (
+    SIMPLE_MODEL_PREFERENCE,
+    ModelSpec,
+    resolve_trial_params,
+)
 from src.mlb.models.trainers import fit_estimator, predict_estimator
 
 
@@ -21,6 +28,9 @@ class ChampionSelection:
     mean_mae: float
     mean_rmse: float
     mean_r2: float
+    strategy_name: str = "global"
+    trial_id: int = 0
+    params: dict[str, float | int] | None = None
 
 
 def build_walk_forward_splits(
@@ -31,13 +41,6 @@ def build_walk_forward_splits(
     """Build season-based walk-forward splits.
 
     Each split trains on all seasons <= N-1 and tests on season N.
-
-    Args:
-        frame: Dataset containing historical games.
-        date_col: Date column used to derive season year.
-
-    Returns:
-        List of ``(test_season, train_index, test_index)`` tuples.
     """
 
     if frame.empty:
@@ -71,6 +74,107 @@ def _score_predictions(actual: pd.Series, predicted: pd.Series) -> dict[str, flo
     return {"mae": mae, "rmse": rmse, "r2": r2}
 
 
+def _resolve_strategy_labels(
+    strategy: str,
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    *,
+    segmentation: SegmentationConfig,
+) -> tuple[str, pd.Series, pd.Series, object | None]:
+    """Return effective strategy name and bucket labels for train/test rows."""
+
+    if strategy == "global":
+        return (
+            "global",
+            pd.Series("global", index=train_df.index),
+            pd.Series("global", index=test_df.index),
+            None,
+        )
+
+    try:
+        model = fit_bucket_model(strategy, train_df, settings=segmentation)
+        return strategy, model.assign(train_df), model.assign(test_df), model
+    except ValueError:
+        if strategy == "kmeans":
+            # Decision-locked fallback: kmeans failures degrade to quantile buckets.
+            fallback = fit_bucket_model("quantile3", train_df, settings=segmentation)
+            return (
+                "quantile3",
+                fallback.assign(train_df),
+                fallback.assign(test_df),
+                fallback,
+            )
+        return (
+            "global",
+            pd.Series("global", index=train_df.index),
+            pd.Series("global", index=test_df.index),
+            None,
+        )
+
+
+def _predict_for_strategy(
+    *,
+    spec: ModelSpec,
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    features: list[str],
+    target_col: str,
+    train_labels: pd.Series,
+    test_labels: pd.Series,
+    min_bucket_size: int,
+    params: dict[str, float | int] | None = None,
+) -> pd.Series:
+    """Fit/predict for one model under one strategy assignment."""
+
+    if (train_labels == "global").all() and (test_labels == "global").all():
+        model = fit_estimator(
+            train_df,
+            spec=spec,
+            features=features,
+            target_col=target_col,
+            params=params,
+        )
+        return predict_estimator(test_df, model=model, features=features)
+
+    preds = pd.Series(index=test_df.index, dtype=float)
+    global_model = fit_estimator(
+        train_df,
+        spec=spec,
+        features=features,
+        target_col=target_col,
+        params=params,
+    )
+
+    for bucket in sorted(test_labels.unique()):
+        bucket_test_idx = test_labels[test_labels == bucket].index
+        bucket_train_idx = train_labels[train_labels == bucket].index
+
+        if len(bucket_train_idx) < min_bucket_size:
+            bucket_preds = predict_estimator(
+                test_df.loc[bucket_test_idx],
+                model=global_model,
+                features=features,
+            )
+            preds.loc[bucket_test_idx] = bucket_preds.values
+            continue
+
+        bucket_model = fit_estimator(
+            train_df.loc[bucket_train_idx],
+            spec=spec,
+            features=features,
+            target_col=target_col,
+            params=params,
+        )
+        bucket_preds = predict_estimator(
+            test_df.loc[bucket_test_idx],
+            model=bucket_model,
+            features=features,
+        )
+        preds.loc[bucket_test_idx] = bucket_preds.values
+
+    return preds
+
+
 def run_walk_forward_tournament(
     frame: pd.DataFrame,
     *,
@@ -78,53 +182,73 @@ def run_walk_forward_tournament(
     features: list[str],
     target_col: str = "strikeouts",
     date_col: str = "game_date",
+    strategies: Sequence[str] | None = None,
+    segmentation: SegmentationConfig | None = None,
+    max_trials_per_model: int = 1,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Run a model tournament across identical walk-forward splits.
 
-    Args:
-        frame: Modeling frame.
-        specs: Candidate model specs.
-        features: Ordered features used by all candidates.
-        target_col: Target column name.
-        date_col: Date column used to derive split seasons.
-
-    Returns:
-        Tuple of ``(fold_metrics, leaderboard)`` dataframes.
+    Returns ``(fold_metrics, leaderboard)`` where leaderboard aggregates by
+    strategy+model when segmented strategies are enabled.
     """
 
     splits = build_walk_forward_splits(frame, date_col=date_col)
     if not splits:
         raise ValueError("Not enough seasonal history to build walk-forward splits.")
 
+    segmentation_cfg = segmentation or SegmentationConfig(enabled=False)
+    strategy_list = list(strategies or ["global"])
+
     fold_rows: list[dict[str, float | int | str]] = []
     for season, train_idx, test_idx in splits:
         train_df = frame.loc[train_idx]
         test_df = frame.loc[test_idx]
 
-        for spec in specs:
-            model = fit_estimator(
+        for strategy in strategy_list:
+            effective_strategy, train_labels, test_labels, _ = _resolve_strategy_labels(
+                strategy,
                 train_df,
-                spec=spec,
-                features=features,
-                target_col=target_col,
+                test_df,
+                segmentation=segmentation_cfg,
             )
-            preds = predict_estimator(test_df, model=model, features=features)
-            scores = _score_predictions(test_df[target_col], preds)
-            fold_rows.append(
-                {
-                    "model": spec.name,
-                    "test_season": season,
-                    "mae": scores["mae"],
-                    "rmse": scores["rmse"],
-                    "r2": scores["r2"],
-                    "train_size": int(len(train_df)),
-                    "test_size": int(len(test_df)),
-                }
-            )
+
+            for spec in specs:
+                for trial_id, params in enumerate(
+                    resolve_trial_params(spec, max_trials=max_trials_per_model)
+                ):
+                    preds = _predict_for_strategy(
+                        spec=spec,
+                        train_df=train_df,
+                        test_df=test_df,
+                        features=features,
+                        target_col=target_col,
+                        train_labels=train_labels,
+                        test_labels=test_labels,
+                        min_bucket_size=segmentation_cfg.min_bucket_size,
+                        params=params,
+                    )
+                    scores = _score_predictions(test_df[target_col], preds)
+                    fold_rows.append(
+                        {
+                            "requested_strategy": strategy,
+                            "effective_strategy": effective_strategy,
+                            "model": spec.name,
+                            "trial_id": int(trial_id),
+                            "params_json": json.dumps(params, sort_keys=True),
+                            "test_season": season,
+                            "mae": scores["mae"],
+                            "rmse": scores["rmse"],
+                            "r2": scores["r2"],
+                            "train_size": int(len(train_df)),
+                            "test_size": int(len(test_df)),
+                        }
+                    )
 
     fold_metrics = pd.DataFrame(fold_rows)
     leaderboard = (
-        fold_metrics.groupby("model", as_index=False)
+        fold_metrics.groupby(
+            ["effective_strategy", "model", "trial_id", "params_json"], as_index=False
+        )
         .agg(
             mean_mae=("mae", "mean"),
             median_mae=("mae", "median"),
@@ -139,6 +263,7 @@ def run_walk_forward_tournament(
         )
         .reset_index(drop=True)
     )
+    leaderboard.rename(columns={"effective_strategy": "strategy"}, inplace=True)
     leaderboard["std_mae"] = leaderboard["std_mae"].fillna(0.0)
     return fold_metrics, leaderboard
 
@@ -151,54 +276,21 @@ def select_champion(
     epsilon: float = 1e-6,
     simplicity_order: Sequence[str] | None = None,
 ) -> ChampionSelection:
-    """Select champion model using deterministic tie-break rules.
-
-    Rules:
-    1. Best value for primary metric
-    2. Within epsilon: best value for each tie-break metric in order
-    3. Within epsilon: simpler model using fixed preference order
-
-    Args:
-        leaderboard: Aggregated model leaderboard.
-        primary_metric: Primary metric name (``mae``, ``rmse``, or ``r2``).
-        tie_breakers: Ordered tie-break metrics.
-        epsilon: Tolerance for tie comparisons.
-        simplicity_order: Ordered model preference from simplest to most complex.
-
-    Returns:
-        Champion selection payload.
-    """
+    """Select champion model/strategy using deterministic tie-break rules."""
 
     if leaderboard.empty:
         raise ValueError("Cannot select champion from empty leaderboard.")
 
-    metric_col_map = {
-        "mae": "mean_mae",
-        "rmse": "mean_rmse",
-        "r2": "mean_r2",
-    }
-    maximize_metrics = {"r2"}
-    tie_break_metric_names = list(tie_breakers) if tie_breakers else ["rmse", "r2"]
-    metric_priority = [primary_metric, *tie_break_metric_names]
-
-    unknown_metrics = [m for m in metric_priority if m not in metric_col_map]
-    if unknown_metrics:
-        raise ValueError(
-            f"Unsupported metric(s) in champion selection: {unknown_metrics}"
-        )
-
-    candidates = leaderboard.copy()
-    for metric_name in metric_priority:
-        column = metric_col_map[metric_name]
-        if metric_name in maximize_metrics:
-            best = float(candidates[column].max())
-            candidates = candidates[candidates[column] >= best - epsilon]
-        else:
-            best = float(candidates[column].min())
-            candidates = candidates[candidates[column] <= best + epsilon]
+    policy = SelectionPolicy(
+        primary_metric=primary_metric,
+        tie_breakers=tuple(tie_breakers or ["rmse", "r2"]),
+        epsilon=epsilon,
+    )
+    candidates = apply_metric_filters(leaderboard, policy=policy)
 
     ranking = list(simplicity_order) if simplicity_order else SIMPLE_MODEL_PREFERENCE
     rank_map = {name: idx for idx, name in enumerate(ranking)}
+    candidates = candidates.copy()
     candidates["simplicity_rank"] = candidates["model"].map(
         lambda name: rank_map.get(str(name), len(rank_map) + 1)
     )
@@ -206,6 +298,9 @@ def select_champion(
     winner = candidates.sort_values("simplicity_rank", ascending=True).iloc[0]
     return ChampionSelection(
         model_name=str(winner["model"]),
+        strategy_name=str(winner.get("strategy", "global")),
+        trial_id=int(winner.get("trial_id", 0)),
+        params=json.loads(str(winner.get("params_json", "{}"))),
         mean_mae=float(winner["mean_mae"]),
         mean_rmse=float(winner["mean_rmse"]),
         mean_r2=float(winner["mean_r2"]),
