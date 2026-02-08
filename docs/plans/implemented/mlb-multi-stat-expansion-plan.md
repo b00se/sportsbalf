@@ -37,13 +37,17 @@
    - leakage-safe opponent tendency assertions
    - duplicate terminal plate-appearance collision coverage
    - earned-runs fallback integrity checks
+10. Completed deferred ER and strikeouts follow-through:
+   - added optional high-fidelity earned-runs label source integration (primary when available)
+   - persisted high-fidelity vs fallback label-quality diagnostics
+   - migrated strikeouts routing to the shared pitcher-prop core path via engine registration
+   - retained compatibility wrapper (`src/mlb/pipeline.py::run_strikeouts_pipeline`)
 
 ### In Progress
 1. None.
 
 ### Deferred / Not Yet Implemented
-1. High-fidelity earned-runs label join from external game-log/event sources (current ER label is derived from available event/score context with fallback logic).
-2. Full strikeouts migration onto shared core while preserving strict backward parity.
+1. None.
 
 ## Summary
 Extend the MLB pipeline to support new pitcher stats in order: `outs_recorded`, `earned_runs`, `hits_allowed`, `bb_allowed`, while simultaneously building a full Statcast-based batter data foundation for future batter props.

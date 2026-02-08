@@ -1,19 +1,19 @@
 # Plan Doneness Audit (2026-02-08)
 
 ## Scope audited
-- `docs/plans/planned/mlb-multi-stat-expansion-plan.md`
-- `docs/plans/planned/mlb-multistat-tournament-plan.md`
+- `docs/plans/implemented/mlb-multi-stat-expansion-plan.md`
+- `docs/plans/implemented/mlb-multistat-tournament-plan.md`
 - `docs/plans/planned/mlb-pybaseball-live-features-plan.md`
 
 ## Summary verdict
-- `mlb-multi-stat-expansion-plan.md`: **Partially implemented** (major scope complete; deferred items remain).
+- `mlb-multi-stat-expansion-plan.md`: **Implemented**.
 - `mlb-multistat-tournament-plan.md`: **Implemented** (acceptance criteria met by code + tests).
-- `mlb-pybaseball-live-features-plan.md`: **Partially implemented** (engineering scope implemented; MAE-lift gate evidence not captured in repo docs/artifacts).
+- `mlb-pybaseball-live-features-plan.md`: **Partially implemented** (engineering scope implemented; strict MAE+ gate still not met).
 
 ## Evidence
 
 ### 1) MLB Multi-Stat Expansion Plan
-Status: **Partially implemented**
+Status: **Implemented**
 
 Implemented evidence:
 - Multi-stat registration in `src/pipeline/engine.py`.
@@ -23,9 +23,14 @@ Implemented evidence:
 - Integration coverage in `tests/integration/test_mlb_outs_recorded_pipeline.py` and `tests/integration/test_mlb_multi_stat_pitcher_props_pipeline.py`.
 - Data integrity and ER fallback tests in `tests/test_mlb_pitcher_prop_data_integrity.py`.
 
-Open/deferred evidence:
-- Plan explicitly lists deferred items, including high-fidelity ER label join and strikeouts migration into shared core.
-- Current ER logic still includes fallback mechanism in `src/mlb/pitcher_props/data.py` (`earned_runs_fallback_used`).
+Completion evidence:
+- Optional high-fidelity ER source integration and precedence in
+  `src/mlb/pitcher_props/data.py`.
+- High-fidelity/fallback label-quality reporting in
+  `src/mlb/pitcher_props/pipeline.py`.
+- Strikeouts now routed through shared pitcher-prop adapter in
+  `src/pipeline/engine.py`.
+- Strikeouts compatibility shim still exposed in `src/mlb/pipeline.py`.
 
 ### 2) Reusable Multi-Stat Tournament Plan
 Status: **Implemented**
@@ -51,11 +56,13 @@ Implemented evidence:
 - Strong unit/integration tests in `tests/test_mlb_live_features.py`, `tests/test_mlb_lookahead_guards.py`, `tests/test_historical_live_feature_parity.py`.
 
 Open gap:
-- Plan acceptance gate requires positive MAE improvement vs baseline; no committed artifact/report in `docs/` or `runtime/` proving that gate.
+- Plan acceptance gate requires positive MAE improvement vs baseline.
+- Current validation report (`docs/reports/mlb-live-features-mae-validation-2026-02-08.md`)
+  shows no tested candidate set meeting positive MAE lift.
 
 ## Recommended folder placement
 - Move to `implemented/` now:
+  - `mlb-multi-stat-expansion-plan.md`
   - `mlb-multistat-tournament-plan.md`
 - Keep in `planned/` until deferred/gap items are closed:
-  - `mlb-multi-stat-expansion-plan.md`
   - `mlb-pybaseball-live-features-plan.md`

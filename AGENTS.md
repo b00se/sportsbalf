@@ -92,6 +92,11 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 - Runner: `.venv/bin/pytest`
 - Keep tests deterministic and fast; avoid network/file downloads.
 - Use/extend `tests/testdata/` for small fixture files. Do not change large input/output directories.
+- TDD default for behavior changes:
+  - Write or update a failing test first (RED) before editing production code.
+  - Implement the smallest code change to pass the test (GREEN), then refactor if needed.
+  - For bug fixes, add a regression test that fails before the fix and passes after.
+  - In completion notes, include RED/GREEN evidence (commands + brief outcomes) unless the change is docs-only or purely non-behavioral refactor.
 
 ## Minimal Commands (reference)
 - Install deps: `.venv/bin/pip install -r requirements.txt`

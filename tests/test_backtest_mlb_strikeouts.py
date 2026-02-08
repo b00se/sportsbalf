@@ -88,3 +88,63 @@ def test_prepare_training_frame_rebuilds_historical_live_features_globally(
     sample_sizes = result.sort_values("game_date")["umpire_sample_size"].tolist()
 
     assert sample_sizes == [0.0, 1.0]
+
+
+def test_run_feature_set_comparison_reports_positive_mae_improvement(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        backtest_script,
+        "load_pipeline_config",
+        lambda *_args, **_kwargs: type(
+            "Cfg",
+            (),
+            {
+                "section": {
+                    "model_selection": {
+                        "candidates": ["random_forest"],
+                    }
+                }
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        backtest_script,
+        "_prepare_training_frame",
+        lambda _section: pd.DataFrame(
+            {
+                "game_date": pd.to_datetime(["2024-04-01", "2024-04-02"]),
+                "weather_known_flag": [1, 0],
+                "roof_state": ["open", "unknown"],
+                "umpire_known_flag": [1, 1],
+            }
+        ),
+    )
+
+    def _fake_run_tournament(frame, *, selection_cfg, features):
+        del frame, selection_cfg
+        mae = 1.5 if len(features) == len(backtest_script.BASELINE_FEATURES) else 1.2
+        fold = pd.DataFrame([{"fold": 0, "mae": mae}])
+        leaderboard = pd.DataFrame(
+            [{"model": "random_forest", "strategy": "global", "mean_mae": mae}]
+        )
+        champion = type(
+            "Winner",
+            (),
+            {
+                "model_name": "random_forest",
+                "strategy_name": "global",
+                "mean_mae": mae,
+                "mean_rmse": mae + 0.2,
+                "mean_r2": 0.1,
+            },
+        )()
+        return fold, leaderboard, champion
+
+    monkeypatch.setattr(backtest_script, "_run_tournament", _fake_run_tournament)
+
+    comparison, summary = backtest_script.run_feature_set_comparison("config/mlb.yaml")
+
+    assert set(comparison["variant"]) == {"baseline", "enriched"}
+    assert summary["mae_gate_passed"] is True
+    assert float(summary["mae_improvement_vs_baseline"]) > 0.0
