@@ -101,6 +101,7 @@ def load_pitcher_ids(starter_csv: str, raw_df: pd.DataFrame) -> list[tuple[str, 
 def update_pitcher_dataset(season):
     from src.mlb.features.dynamic_opponent import compute_opponent_k_pct_dynamic
     from src.mlb.features.enrichments import add_park_factor
+    from src.mlb.features.feature_store import build_historical_live_features
     from src.mlb.features.mlb_features import aggregate_pitcher_games
     from src.mlb.features.park_factors import compute_k_park_factors
     from src.mlb.features.rolling import add_rolling_features
@@ -173,6 +174,7 @@ def update_pitcher_dataset(season):
 
         games = add_park_factor(games, park_df)
         games = add_rolling_features(games)
+        games = build_historical_live_features(games)
         games["pitcher_name"] = name
         games["pitcher_id"] = mlbam_id
         all_games.append(games)

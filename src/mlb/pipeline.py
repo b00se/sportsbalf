@@ -25,10 +25,15 @@ from src.core.config import load_pipeline_config
 from src.core.contracts import PipelineConfig
 from src.mlb.data.load_props import load_strikeout_lines
 from src.mlb.features import (
+    LiveContextService,
     add_opponent_k_rate,
     add_park_factor,
     add_rolling_features,
     aggregate_pitcher_games,
+    build_historical_live_features,
+    coverage_metrics,
+    ensure_live_feature_defaults,
+    merge_live_feature_frame,
 )
 from src.mlb.features.park_factors import (
     compute_k_park_factors,
@@ -322,7 +327,7 @@ def _build_prediction_rows(
 
 
 def _clean_for_model(games: pd.DataFrame) -> pd.DataFrame:
-    filtered = games.replace([np.inf, -np.inf], np.nan)
+    filtered = ensure_live_feature_defaults(games.replace([np.inf, -np.inf], np.nan))
     required = FEATURES + ["strikeouts"]
     filtered = filtered.dropna(subset=required)
     return filtered
@@ -340,6 +345,40 @@ def _normalize_opponent_feature_columns(frame: pd.DataFrame) -> pd.DataFrame:
     if "opponent_k_rate" not in normalized.columns:
         normalized["opponent_k_rate"] = normalized["opponent_k_pct"]
     return normalized
+
+
+def _resolve_live_features_config(section: dict[str, Any]) -> dict[str, Any]:
+    """Return non-breaking live-feature config with defaults."""
+
+    raw = section.get("live_features")
+    if not isinstance(raw, dict):
+        raw = {}
+
+    weather_raw = raw.get("weather")
+    if not isinstance(weather_raw, dict):
+        weather_raw = {}
+
+    return {
+        "enabled": bool(raw.get("enabled", True)),
+        "source_policy": str(raw.get("source_policy", "pybaseball_first")),
+        "fallback_policy": str(raw.get("fallback_policy", "stale_cache")),
+        "cache_path": str(
+            raw.get("cache_path", "data/cache/mlb_live_features.parquet")
+        ),
+        "cache_ttl_hours": int(raw.get("cache_ttl_hours", 24)),
+        "weather": {
+            "enabled": bool(weather_raw.get("enabled", True)),
+            "primary_source": str(
+                weather_raw.get(
+                    "primary_source",
+                    "pybaseball_team_game_logs",
+                )
+            ),
+            "secondary_source": str(
+                weather_raw.get("secondary_source", "statsapi_game_feed")
+            ),
+        },
+    }
 
 
 def _log_strikeout_scale(frame: pd.DataFrame, *, label: str) -> None:
@@ -459,6 +498,7 @@ def _train_or_load_serving_model(
         or not champion_model_path.exists()
         or not champion_metadata_path.exists()
     )
+    live_cfg = _resolve_live_features_config(section)
 
     if should_retrain_champion:
         try:
@@ -516,6 +556,13 @@ def _train_or_load_serving_model(
                 "selection_runtime_budget_minutes": selection["runtime_budget_minutes"],
                 "segmentation": strategy_metadata(artifact),
                 "feature_schema_hash": _feature_schema_hash(FEATURES),
+                "live_feature_set_version": "v1",
+                "live_feature_sources": [
+                    live_cfg["weather"]["primary_source"],
+                    live_cfg["weather"]["secondary_source"],
+                ],
+                "live_fetch_timestamp": None,
+                "cache_age_hours": None,
                 "leaderboard_path": str(leaderboard_path),
                 "fold_metrics": fold_metrics.to_dict(orient="records"),
             }
@@ -577,6 +624,7 @@ def run_strikeouts_pipeline(
     games = add_park_factor(games, park_df)
     games = add_opponent_k_rate(games)
     games = _normalize_opponent_feature_columns(games)
+    games = build_historical_live_features(games)
 
     training_games_list = []
     training_paths = section.get("training_data_paths") or [section["pitch_data_path"]]
@@ -591,10 +639,12 @@ def run_strikeouts_pipeline(
         hist_games = add_park_factor(hist_games, park_df)
         hist_games = add_opponent_k_rate(hist_games)
         hist_games = _normalize_opponent_feature_columns(hist_games)
+        hist_games = build_historical_live_features(hist_games)
         training_games_list.append(hist_games)
 
     training_games = pd.concat(training_games_list, ignore_index=True)
     training_games = _normalize_opponent_feature_columns(training_games)
+    training_games = build_historical_live_features(training_games)
     if (
         "pitcher_id" not in training_games.columns
         and "pitcher" in training_games.columns
@@ -675,6 +725,27 @@ def run_strikeouts_pipeline(
     else:
         prediction_rows = prediction_rows.reset_index(drop=True)
         prediction_rows = _normalize_opponent_feature_columns(prediction_rows)
+        prediction_rows = ensure_live_feature_defaults(prediction_rows)
+        live_cfg = _resolve_live_features_config(section)
+        live_service = LiveContextService(config=live_cfg)
+        live_result = live_service.fetch(prediction_rows, target_date)
+        prediction_rows = merge_live_feature_frame(
+            prediction_rows,
+            live_result.frame,
+            join_keys=("pitcher_id", "opponent_team"),
+        )
+        coverage = coverage_metrics(prediction_rows)
+        logger.info(
+            (
+                "Live feature coverage weather=%.1f%% roof=%.1f%% "
+                "umpire=%.1f%% handedness=%.1f%% cache=%s"
+            ),
+            100.0 * coverage["weather_known_pct"],
+            100.0 * coverage["roof_known_pct"],
+            100.0 * coverage["umpire_known_pct"],
+            100.0 * coverage["handedness_known_pct"],
+            live_result.metadata.get("cache_status"),
+        )
         prediction_rows["prediction"] = np.nan
         valid_mask = prediction_rows[FEATURES].notna().all(axis=1)
         if valid_mask.any():
@@ -704,6 +775,20 @@ def run_strikeouts_pipeline(
             how="left",
         )
         lines_enriched.drop(columns=["player_key"], inplace=True, errors="ignore")
+        lines_enriched["live_feature_set_version"] = live_result.metadata.get(
+            "live_feature_set_version"
+        )
+        live_sources = live_result.metadata.get("live_feature_sources") or []
+        lines_enriched["live_feature_sources"] = ",".join(
+            str(source) for source in live_sources
+        )
+        lines_enriched["live_fetch_timestamp"] = live_result.metadata.get(
+            "live_fetch_timestamp"
+        )
+        lines_enriched["cache_age_hours"] = live_result.metadata.get("cache_age_hours")
+        lines_enriched["stale_cache_usage_pct"] = live_result.metadata.get(
+            "stale_cache_usage_pct"
+        )
 
     if not sigma or pd.isna(sigma) or sigma <= 0:
         sigma = float(section.get("fallback_std", 1.0))

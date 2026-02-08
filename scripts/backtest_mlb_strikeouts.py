@@ -14,6 +14,7 @@ from src.mlb.features import (
     add_park_factor,
     add_rolling_features,
     aggregate_pitcher_games,
+    build_historical_live_features,
 )
 from src.mlb.models.buckets import segmentation_config_from_model_selection
 from src.mlb.models.evaluation import run_walk_forward_tournament, select_champion
@@ -44,6 +45,7 @@ def _prepare_training_frame(section: dict[str, object]) -> pd.DataFrame:
     current_games = add_park_factor(current_games, park_df)
     current_games = add_opponent_k_rate(current_games)
     current_games = _normalize_opponent_feature_columns(current_games)
+    current_games = build_historical_live_features(current_games)
 
     training_paths = section.get("training_data_paths") or [pitch_path]
     frames: list[pd.DataFrame] = []
@@ -57,6 +59,7 @@ def _prepare_training_frame(section: dict[str, object]) -> pd.DataFrame:
         hist_games = add_park_factor(hist_games, park_df)
         hist_games = add_opponent_k_rate(hist_games)
         hist_games = _normalize_opponent_feature_columns(hist_games)
+        hist_games = build_historical_live_features(hist_games)
         frames.append(hist_games)
 
     full = pd.concat(frames, ignore_index=True)

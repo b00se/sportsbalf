@@ -92,6 +92,7 @@ def load_pitcher_ids(csv_path: str, raw_df: pd.DataFrame) -> list[tuple[str, int
 
 def generate_dataset_from_raw(season):
     from src.mlb.features.dynamic_opponent import compute_opponent_k_pct_dynamic
+    from src.mlb.features.feature_store import build_historical_live_features
     from src.mlb.features.park_factors import compute_k_park_factors
     from src.mlb.features.pitcher_enrichment import enrich_pitcher_games
 
@@ -133,7 +134,7 @@ def generate_dataset_from_raw(season):
             player_df, name, mlbam_id, opponent_k_df, park_df
         )
         if enriched is not None:
-            all_games.append(enriched)
+            all_games.append(build_historical_live_features(enriched))
 
     if not all_games:
         print("❌ No pitcher games generated.")
