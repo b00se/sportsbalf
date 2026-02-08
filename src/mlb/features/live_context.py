@@ -135,9 +135,28 @@ class LiveContextService:
                     if col in fetched.columns
                 ]
             ].isna().any(axis=1)
-            if missing_weather.any():
+            needs_roof_fill = (
+                fetched["roof_state"].isna()
+                | fetched["roof_state"]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .isin({"", "unknown", "none", "nan"})
+            ) if "roof_state" in fetched.columns else pd.Series(
+                False, index=fetched.index
+            )
+            needs_secondary = missing_weather | needs_roof_fill
+            if needs_secondary.any():
                 secondary = self._fetch_secondary(
-                    base_frame.loc[missing_weather], target_date
+                    fetched.loc[
+                        needs_secondary,
+                        [
+                            col
+                            for col in ("pitcher_id", "opponent_team")
+                            if col in fetched.columns
+                        ],
+                    ],
+                    target_date,
                 )
                 if not secondary.empty:
                     used_secondary = True
@@ -157,12 +176,22 @@ class LiveContextService:
                         "humidity_pct",
                         "wind_speed_mph",
                         "wind_out_to_cf_flag",
-                        "roof_state",
                     ]:
                         secondary_col = f"{col}_secondary"
                         if secondary_col in fetched.columns:
                             fetched[col] = fetched[col].fillna(fetched[secondary_col])
                             fetched.drop(columns=[secondary_col], inplace=True)
+                    roof_secondary_col = "roof_state_secondary"
+                    if roof_secondary_col in fetched.columns:
+                        roof_fill_mask = fetched["roof_state"].isna() | fetched[
+                            "roof_state"
+                        ].astype(str).str.strip().str.lower().isin(
+                            {"", "unknown", "none", "nan"}
+                        )
+                        fetched.loc[roof_fill_mask, "roof_state"] = fetched.loc[
+                            roof_fill_mask, roof_secondary_col
+                        ]
+                        fetched.drop(columns=[roof_secondary_col], inplace=True)
                     fetched["weather_known_flag"] = (
                         fetched[["game_temp_f", "humidity_pct", "wind_speed_mph"]]
                         .notna()

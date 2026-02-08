@@ -139,6 +139,56 @@ def test_live_context_uses_secondary_only_for_missing_keys(tmp_path) -> None:
     assert int(result.frame.loc[0, "weather_known_flag"]) == 1
 
 
+def test_live_context_uses_secondary_when_only_roof_state_missing(tmp_path) -> None:
+    cache_path = tmp_path / "live_cache.parquet"
+    service = LiveContextService(
+        {
+            "enabled": True,
+            "cache_path": str(cache_path),
+            "cache_ttl_hours": 24,
+            "weather": {
+                "enabled": True,
+                "primary_source": "pybaseball_team_game_logs",
+                "secondary_source": "statsapi_game_feed",
+            },
+        }
+    )
+
+    primary = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 21,
+                "opponent_team": "TEX",
+                "game_temp_f": 72.0,
+                "humidity_pct": 45.0,
+                "wind_speed_mph": 7.0,
+                "wind_out_to_cf_flag": 0,
+                "roof_state": "unknown",
+                "weather_known_flag": 1,
+            }
+        ]
+    )
+    secondary = pd.DataFrame(
+        [
+            {
+                "pitcher_id": 21,
+                "opponent_team": "TEX",
+                "roof_state": "closed",
+            }
+        ]
+    )
+
+    service._fetch_primary = lambda *_args, **_kwargs: primary.copy()  # type: ignore[method-assign]
+    service._fetch_secondary = lambda *_args, **_kwargs: secondary.copy()  # type: ignore[method-assign]
+
+    rows = pd.DataFrame([{"pitcher_id": 21, "opponent_team": "TEX"}])
+    result = service.fetch(rows, datetime.now())
+
+    assert "statsapi_game_feed" in result.metadata["live_feature_sources"]
+    assert str(result.frame.loc[0, "roof_state"]).lower() == "closed"
+    assert float(result.frame.loc[0, "game_temp_f"]) == 72.0
+
+
 def test_primary_missing_weather_stays_nan_for_secondary_fill(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
