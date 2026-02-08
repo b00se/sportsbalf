@@ -1,0 +1,46 @@
+# Architecture Baseline (Current Runtime Reality)
+
+Status: Canonical (Current State)
+
+Date: 2026-02-08
+
+## Authoritative entrypoints
+- CLI entry: `pipeline/main.py`
+- Engine orchestration: `src/pipeline/engine.py`
+- Sport/stat registry: `src/core/registry.py`
+- Config loading + identity resolution: `src/core/config.py`
+
+## Runtime lifecycle (actual engine order)
+`run_pipeline(...)` and `run_pipeline_with_overrides(...)` in `src/pipeline/engine.py` run this fixed sequence:
+1. `load_inputs(config)`
+2. `build_training_frame(inputs, config)`
+3. `train_or_load_model(training_frame, config, retrain)`
+4. `predict_lines(inputs, model_bundle, config)`
+5. `simulate(predictions, model_bundle, config)` and return final output
+
+## Current adapter pass-through behavior
+- MLB adapter `src/mlb/pitcher_props/adapter.py` and NFL adapter `src/nfl/pass_attempts/pipeline.py` implement the `SportStatPipeline` protocol.
+- In both adapters, the first four contract stages are compatibility no-ops.
+- The full sport workflow is delegated in `simulate(...)`:
+  - MLB: `run_mlb_pitcher_prop_pipeline(...)` from `src/mlb/pitcher_props/pipeline.py`
+  - NFL: `run_pass_attempts_pipeline(...)` from `src/nfl/pipeline.py`
+- This is intentional compatibility behavior for current MLB/NFL integrations, not a long-term protocol guarantee for future sports.
+
+## Module relationship map
+- Core layer
+  - `src/core/contracts.py`: shared protocol and typed dataclasses
+  - `src/core/config.py`: config schema resolution (sectioned + legacy fallback)
+  - `src/core/registry.py`: pipeline factory registration and lookup
+- Engine layer
+  - `src/pipeline/engine.py`: default registrations + stage sequencing
+- Sport adapters
+  - `src/mlb/pitcher_props/adapter.py`
+  - `src/nfl/pass_attempts/pipeline.py`
+- Sport orchestration modules
+  - `src/mlb/pipeline.py`: MLB compatibility shim
+  - `src/mlb/pitcher_props/pipeline.py`: shared MLB pitcher-prop orchestration
+  - `src/nfl/pipeline.py`: NFL pass-attempts orchestration
+
+## Known architecture debt
+- Stage semantics are not yet enforced by dedicated contract tests (planned follow-up: PR#2 in NHL onboarding sequence).
+- Cross-sport simulation reuse boundary is still mixed (NFL imports Monte Carlo types/functions from MLB modules), planned follow-up in PR#3/PR#4.

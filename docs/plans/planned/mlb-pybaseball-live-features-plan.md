@@ -1,5 +1,7 @@
 # Plan: Mine Pybaseball Live Features (Handedness, Umpire, Weather, Humidity, Roof State) and Validate MAE Lift
 
+Status: Planned (Partially Implemented)
+
 ## Summary
 Implement a new MLB feature-mining layer that pulls pregame context from pybaseball-first sources (with optional secondary fallback), caches it for live daily scoring, and integrates these features into the existing multi-model tournament framework.  
 Locked decisions:
