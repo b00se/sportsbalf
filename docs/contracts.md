@@ -61,3 +61,9 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
   strict stage order, stage handoff artifacts, CLI override passthrough, and default registration pairs.
 - Temporary simulate-only adapter behavior is explicitly allowlisted in that test module via fully qualified class names.
 - Any new simulate-only adapter must be intentionally added to the allowlist; silent introduction of new no-op adapters is a test failure.
+
+## PR#3 shared simulation extraction note
+- Shared simulation primitives now live in `src/core/simulation.py`:
+  `MonteCarloConfig`, `simulate_row(...)`, and `apply_simulations(...)`.
+- MLB compatibility imports remain supported via `src/mlb/models/monte_carlo.py`
+  as thin re-exports to preserve existing callsites.

@@ -31,6 +31,7 @@ Date: 2026-02-08
   - `src/core/contracts.py`: shared protocol and typed dataclasses
   - `src/core/config.py`: config schema resolution (sectioned + legacy fallback)
   - `src/core/registry.py`: pipeline factory registration and lookup
+  - `src/core/simulation.py`: shared Monte Carlo simulation primitives
 - Engine layer
   - `src/pipeline/engine.py`: default registrations + stage sequencing
 - Sport adapters
@@ -43,4 +44,4 @@ Date: 2026-02-08
 
 ## Known architecture debt
 - Stage semantics are not yet enforced by dedicated contract tests (planned follow-up: PR#2 in NHL onboarding sequence).
-- Cross-sport simulation reuse boundary is still mixed (NFL imports Monte Carlo types/functions from MLB modules), planned follow-up in PR#3/PR#4.
+- NFL alias cleanup debt remains (`ud_line`/`qb_id` simulation aliases), planned follow-up in PR#4.

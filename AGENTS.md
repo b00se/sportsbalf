@@ -75,6 +75,7 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 ## Local Skill & Runbook
 - Autonomy runbook: `instructions/codex_autonomy_runbook.md`
 - Local skill: `instructions/skills/repo-autonomy/SKILL.md`
+- Local skill: `instructions/skills/plan-ops/SKILL.md`
 
 ## Modeling & Pipeline Changes
 - Feature columns: Centralized in `src/mlb/models/predict.py::FEATURES`. If adding/removing features, update this list and ensure:
