@@ -28,7 +28,8 @@ def load_historic_park_factors(csv_path: str) -> pd.DataFrame:
     """
     Load a manually downloaded park factor CSV from FanGraphs Guts! page.
 
-    Expects ``Team`` and ``SO`` columns where ``SO`` is a percent (e.g. ``105`` → ``1.05``).
+    Expects ``Team`` and ``SO`` columns where ``SO`` is a percent
+    (e.g. ``105`` → ``1.05``).
     Returns a DataFrame with columns ["Team_abbr", "K_park_factor"].
     """
     df = pd.read_csv(csv_path)
@@ -94,7 +95,9 @@ def compute_k_park_factors(start_date, end_date, source_df=None):
     df = df[df["pitch_type"].notnull()]
     df["is_k"] = df["events"] == "strikeout"
 
-    k_by_park = df.groupby("home_team").agg({"is_k": "sum", "batter": "count"}).reset_index()
+    k_by_park = (
+        df.groupby("home_team").agg({"is_k": "sum", "batter": "count"}).reset_index()
+    )
 
     k_by_park["K_pct"] = k_by_park["is_k"] / k_by_park["batter"]
     league_avg = df["is_k"].sum() / df["batter"].count()
@@ -109,5 +112,7 @@ def compute_k_park_factors(start_date, end_date, source_df=None):
 def adjust_for_park_factors(games: pd.DataFrame, park_df: pd.DataFrame) -> pd.DataFrame:
     """Merge park factor multipliers onto MLB pitcher game logs."""
     df = games.merge(park_df, left_on="home_team", right_on="Team_abbr", how="left")
-    df = df.rename(columns={"K_park_factor": "park_factor_K"}).drop(columns=["Team_abbr"])
+    df = df.rename(columns={"K_park_factor": "park_factor_K"}).drop(
+        columns=["Team_abbr"]
+    )
     return df

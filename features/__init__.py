@@ -18,4 +18,3 @@ sys.modules.setdefault("features.pitcher_enrichment", _real_mod)
 
 # Also make it accessible as an attribute on the package for getattr() lookups
 pitcher_enrichment = _real_mod
-

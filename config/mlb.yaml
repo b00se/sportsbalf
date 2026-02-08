@@ -1,13 +1,20 @@
-lines_path: data/lines/strikeouts_2025-09-22.csv
-game_logs_path: tests/testdata/game_logs.csv
-park_factors_path: data/raw/park_factors_2025.csv
-pitch_data_path: data/processed/pitcher_game_data_2025.parquet
-training_data_paths:
-  - data/processed/pitcher_game_data_2021.parquet
-  - data/processed/pitcher_game_data_2022.parquet
-  - data/processed/pitcher_game_data_2023.parquet
-  - data/processed/pitcher_game_data_2024.parquet
-  - data/processed/pitcher_game_data_2025.parquet
-model_path: models/xgb_tuned_pitcher_k_model.joblib
-monte_carlo_simulations: 10000
-fallback_std: 1.0
+pipeline:
+  sport: mlb
+  stat: strikeouts
+
+mlb:
+  strikeouts:
+    lines_path: data/lines/strikeouts_2025-09-22.csv
+    game_logs_path: tests/testdata/game_logs.csv
+    park_factors_path: data/raw/park_factors_2025.csv
+    pitch_data_path: data/processed/pitcher_game_data_2025.parquet
+    training_data_paths:
+      - data/processed/pitcher_game_data_2021.parquet
+      - data/processed/pitcher_game_data_2022.parquet
+      - data/processed/pitcher_game_data_2023.parquet
+      - data/processed/pitcher_game_data_2024.parquet
+      - data/processed/pitcher_game_data_2025.parquet
+    model_path: models/xgb_tuned_pitcher_k_model.joblib
+    monte_carlo_simulations: 10000
+    monte_carlo_seed: 42
+    fallback_std: 1.0

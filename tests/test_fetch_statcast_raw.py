@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-
 import scripts.fetch_statcast_raw as fetch_script
 
 

@@ -6,8 +6,8 @@ from typing import Literal, Protocol, Sequence, runtime_checkable
 
 import pandas as pd
 
-ProviderName = Literal["nflreadpy"]
-DEFAULT_PROVIDER_NAME: ProviderName = "nflreadpy"
+ProviderName = Literal["nfl_data_py", "nflreadpy"]
+DEFAULT_PROVIDER_NAME: ProviderName = "nfl_data_py"
 
 
 @dataclass(slots=True)
@@ -59,6 +59,10 @@ def get_provider(name: str | ProviderName | None = None) -> NFLDataProvider:
     """
 
     normalized = str(name or DEFAULT_PROVIDER_NAME).lower()
+    if normalized == "nfl_data_py":
+        from .nfl_data_py_provider import NflDataPyProvider
+
+        return NflDataPyProvider()
     if normalized == "nflreadpy":
         from .readpy import NFLReadPyProvider
 

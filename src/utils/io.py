@@ -1,12 +1,13 @@
-import yaml
-import pandas as pd
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
+
+import pandas as pd
+import yaml
 
 
-def load_config(path: str = "config/mlb.yaml") -> Dict[str, Any]:
+def load_config(path: str = "config/mlb.yaml") -> dict[str, Any]:
     """Load YAML configuration file."""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

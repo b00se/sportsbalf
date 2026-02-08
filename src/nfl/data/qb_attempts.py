@@ -14,7 +14,7 @@ except Exception:  # pragma: no cover - optional dependency missing
     pa = None  # type: ignore
     pq = None  # type: ignore
 
-from src.nfl.data.providers import NFLDataProvider, NFLReadPyProvider
+from src.nfl.data.providers import DEFAULT_PROVIDER_NAME, NFLDataProvider, get_provider
 from src.nfl.features import (
     compute_game_context_features,
     compute_ngs_passing_features,
@@ -62,13 +62,10 @@ def _cache_path(prefix: str, years: Sequence[int]) -> Path:
     return RAW_DATA_DIR / f"{prefix}_{start}_{end}.parquet"
 
 
-_DEFAULT_PROVIDER = NFLReadPyProvider()
-
-
 def _get_provider(provider: NFLDataProvider | None) -> NFLDataProvider:
-    """Return a provider instance, defaulting to nflreadpy."""
+    """Return a provider instance, defaulting to configured provider."""
 
-    return provider or _DEFAULT_PROVIDER
+    return provider or get_provider(DEFAULT_PROVIDER_NAME)
 
 
 def load_weekly_data(

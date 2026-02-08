@@ -18,6 +18,8 @@ try:  # pragma: no cover - optional network dependency
 except Exception:  # pragma: no cover - optional dependency missing
     schedule_and_record = None
 
+from src.core.config import load_pipeline_config
+from src.core.contracts import PipelineConfig
 from src.mlb.data.load_props import load_strikeout_lines
 from src.mlb.features import (
     add_opponent_k_rate,
@@ -40,7 +42,7 @@ from src.mlb.models.predict import (
     save_model,
     train_model,
 )
-from src.utils.io import load_config, read_csv
+from src.utils.io import read_csv
 from src.utils.names import normalize_person_name, resolve_unique_name_match
 
 logger = logging.getLogger(__name__)
@@ -51,8 +53,14 @@ def _normalize_name(name: str) -> str:
 
 
 def _latest_games(games: pd.DataFrame) -> pd.DataFrame:
+    normalized = games.copy()
+    if "pitcher_id" not in normalized.columns and "pitcher" in normalized.columns:
+        normalized["pitcher_id"] = normalized["pitcher"]
+    if "pitcher_name" not in normalized.columns:
+        normalized["pitcher_name"] = normalized["pitcher_id"].astype(str)
+
     latest = (
-        games.sort_values(["pitcher_id", "game_date"])
+        normalized.sort_values(["pitcher_id", "game_date"])
         .drop_duplicates("pitcher_id", keep="last")
         .copy()
     )
@@ -305,27 +313,48 @@ def _clean_for_model(games: pd.DataFrame) -> pd.DataFrame:
     return filtered
 
 
-def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
+def _normalize_opponent_feature_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Ensure both opponent K feature columns are present for model parity."""
+
+    normalized = frame.copy()
+    if "opponent_k_pct" not in normalized.columns:
+        if "opponent_k_rate" in normalized.columns:
+            normalized["opponent_k_pct"] = normalized["opponent_k_rate"]
+        else:
+            normalized["opponent_k_pct"] = np.nan
+    if "opponent_k_rate" not in normalized.columns:
+        normalized["opponent_k_rate"] = normalized["opponent_k_pct"]
+    return normalized
+
+
+def run_strikeouts_pipeline(
+    config: PipelineConfig, retrain: bool = False
+) -> pd.DataFrame:
     """Execute the MLB strikeout workflow and return lines with probabilities."""
 
-    config = load_config(config_path) if config_path else load_config()
-    lines = load_strikeout_lines(config["lines_path"])
+    section = config.section
+    lines = load_strikeout_lines(section["lines_path"])
     lines = lines.copy()
     lines["name_key"] = lines["player"].map(_normalize_name)
-    pitch_df = read_csv(config["pitch_data_path"])
+    pitch_df = read_csv(section["pitch_data_path"])
     park_df = _load_or_create_park_factors(
-        pitch_df, config["park_factors_path"], retrain
+        pitch_df, section["park_factors_path"], retrain
     )
 
     games = aggregate_pitcher_games(pitch_df)
+    if "pitcher_id" not in games.columns and "pitcher" in games.columns:
+        games["pitcher_id"] = games["pitcher"]
+    if "pitcher_name" not in games.columns:
+        games["pitcher_name"] = games["pitcher_id"].astype(str)
     games = add_rolling_features(games)
     games = add_park_factor(games, park_df)
     games = add_opponent_k_rate(games)
+    games = _normalize_opponent_feature_columns(games)
 
     training_games_list = []
-    training_paths = config.get("training_data_paths") or [config["pitch_data_path"]]
+    training_paths = section.get("training_data_paths") or [section["pitch_data_path"]]
     for path in training_paths:
-        if Path(path).resolve() == Path(config["pitch_data_path"]).resolve():
+        if Path(path).resolve() == Path(section["pitch_data_path"]).resolve():
             training_games_list.append(games)
             continue
 
@@ -334,23 +363,31 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
         hist_games = add_rolling_features(hist_games)
         hist_games = add_park_factor(hist_games, park_df)
         hist_games = add_opponent_k_rate(hist_games)
+        hist_games = _normalize_opponent_feature_columns(hist_games)
         training_games_list.append(hist_games)
 
     training_games = pd.concat(training_games_list, ignore_index=True)
+    training_games = _normalize_opponent_feature_columns(training_games)
+    if (
+        "pitcher_id" not in training_games.columns
+        and "pitcher" in training_games.columns
+    ):
+        training_games["pitcher_id"] = training_games["pitcher"]
+
     training_games.sort_values(["pitcher_id", "game_date"], inplace=True)
     training_games = training_games.drop_duplicates(
         subset=["pitcher_id", "game_date"], keep="last"
     )
 
     target_date = _infer_target_date(
-        config["lines_path"], default=games["game_date"].max()
+        section["lines_path"], default=games["game_date"].max()
     )
 
-    model_path = config.get("model_path") or str(DEFAULT_MODEL_PATH)
+    model_path = section.get("model_path") or str(DEFAULT_MODEL_PATH)
     model_path_obj = Path(model_path)
     model_frame = _clean_for_model(training_games)
     if retrain:
-        params = config.get("xgb_params")
+        params = section.get("xgb_params")
         start = time.time()
         print(
             f"Retraining XGBoost model on {len(model_frame)} games "
@@ -361,7 +398,7 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
         print(f"Model retrained in {time.time() - start:.2f}s")
     else:
         if not model_path_obj.exists():
-            params = config.get("xgb_params")
+            params = section.get("xgb_params")
             start = time.time()
             print(
                 "Model file missing; training new XGBoost model "
@@ -383,7 +420,7 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
             "Loaded model incompatible with current feature set; "
             "retraining from scratch."
         )
-        params = config.get("xgb_params")
+        params = section.get("xgb_params")
         model = train_model(model_frame, params=params)
         save_model(model, model_path_obj)
         train_preds = predict_strikeouts(model_frame, model)
@@ -416,6 +453,7 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
         lines_enriched["rest_days"] = np.nan
     else:
         prediction_rows = prediction_rows.reset_index(drop=True)
+        prediction_rows = _normalize_opponent_feature_columns(prediction_rows)
         prediction_rows["prediction"] = np.nan
         valid_mask = prediction_rows[FEATURES].notna().all(axis=1)
         if valid_mask.any():
@@ -443,17 +481,17 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
         lines_enriched.drop(columns=["player_key"], inplace=True, errors="ignore")
 
     if not sigma or pd.isna(sigma) or sigma <= 0:
-        sigma = float(config.get("fallback_std", 1.0))
+        sigma = float(section.get("fallback_std", 1.0))
     bootstrapper = None
     try:
         bootstrapper = ResidualBootstrapper.from_games(model_frame)
     except ValueError:
         bootstrapper = None
 
-    sim_count = config.get("monte_carlo_simulations", 10_000) or 10_000
+    sim_count = section.get("monte_carlo_simulations", 10_000) or 10_000
     mc_config = MonteCarloConfig(
         simulations=int(sim_count),
-        random_seed=config.get("monte_carlo_seed"),
+        random_seed=section.get("monte_carlo_seed"),
     )
 
     enriched = apply_simulations(
@@ -476,3 +514,14 @@ def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
     enriched.drop(columns=["name_key"], inplace=True, errors="ignore")
 
     return enriched
+
+
+def run(config_path: str | None = None, retrain: bool = False) -> pd.DataFrame:
+    """Compatibility shim for callers still importing ``src.mlb.pipeline.run``."""
+
+    config = load_pipeline_config(
+        config_path or "config/mlb.yaml",
+        sport_override="mlb",
+        stat_override="strikeouts",
+    )
+    return run_strikeouts_pipeline(config=config, retrain=retrain)

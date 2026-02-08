@@ -1,34 +1,35 @@
 """NFL QB pass attempt prediction pipeline."""
+
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Mapping
-
 import re
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from xgboost import XGBRegressor
 
+from src.core.config import load_pipeline_config
+from src.core.contracts import PipelineConfig
 from src.mlb.models.monte_carlo import MonteCarloConfig, apply_simulations
+from src.nfl.data.providers import get_provider
 from src.nfl.data.qb_attempts import build_qb_attempts_dataset
 from src.nfl.data.underdog import PASS_ATTEMPTS_ALGOLIA_ID, import_ud_pass_attempt_lines
 from src.nfl.models import (
-    QBResidualBootstrapper,
-
     DEFAULT_MODEL_PATH,
     NFL_FEATURES,
+    QBResidualBootstrapper,
     load_model,
     predict_attempts,
     residual_std,
     save_model,
     train_model,
 )
-from src.utils.io import load_config
 
 DEFAULT_CONFIG_PATH = Path("config/nfl.yaml")
-
 
 
 def _normalize_name(value: str | None) -> str:
@@ -36,6 +37,7 @@ def _normalize_name(value: str | None) -> str:
         return ""
     cleaned = re.sub(r"[^a-zA-Z\s]", " ", value).lower()
     return " ".join(cleaned.split())
+
 
 def _maybe_build_dataset(config: Mapping[str, Any]) -> Path:
     dataset_path = Path(config.get("dataset_path", "data/qb_attempts_dataset.parquet"))
@@ -53,6 +55,7 @@ def _maybe_build_dataset(config: Mapping[str, Any]) -> Path:
     build_qb_attempts_dataset(
         years=years,
         output_path=dataset_path,
+        provider=get_provider(config.get("provider")),
     )
     return dataset_path
 
@@ -71,7 +74,14 @@ def _train_if_needed(
     dataset: pd.DataFrame,
     config: Mapping[str, Any],
     retrain: bool,
-) -> tuple[pd.DataFrame, pd.Series, XGBRegressor, dict[str, float], pd.Series, QBResidualBootstrapper | None]:
+) -> tuple[
+    pd.DataFrame,
+    pd.Series,
+    XGBRegressor,
+    dict[str, float],
+    pd.Series,
+    QBResidualBootstrapper | None,
+]:
     train_years = list(config.get("training_years", []))
     if not train_years:
         raise ValueError("Config must define training_years")
@@ -93,7 +103,9 @@ def _train_if_needed(
 
     train_preds = predict_attempts(train_df, model)
     metrics = {
-        "rmse": float(np.sqrt(mean_squared_error(train_df["pass_attempts"], train_preds))),
+        "rmse": float(
+            np.sqrt(mean_squared_error(train_df["pass_attempts"], train_preds))
+        ),
         "mae": float(mean_absolute_error(train_df["pass_attempts"], train_preds)),
         "r2": float(r2_score(train_df["pass_attempts"], train_preds)),
     }
@@ -106,7 +118,9 @@ def _train_if_needed(
         .dropna(subset=["std"])
     )
     sigma_min_history = int(config.get("sigma_min_history", 4))
-    sigma_by_qb = residual_stats.loc[residual_stats["count"] >= sigma_min_history, "std"]
+    sigma_by_qb = residual_stats.loc[
+        residual_stats["count"] >= sigma_min_history, "std"
+    ]
     sigma_by_qb = sigma_by_qb.astype(float)
 
     bootstrapper = None
@@ -185,10 +199,9 @@ def _attach_live_ud_lines(
     live_lines["ud_line"] = pd.to_numeric(live_lines["ud_line"], errors="coerce")
     live_lines["game_id"] = live_lines["game_id"].astype(str)
 
-    latest_lines = (
-        live_lines.sort_values(["qb_id", "scheduled_at"], na_position="last")
-        .drop_duplicates("qb_id", keep="last")
-    )
+    latest_lines = live_lines.sort_values(
+        ["qb_id", "scheduled_at"], na_position="last"
+    ).drop_duplicates("qb_id", keep="last")
     latest_lines.rename(columns={"game_id": "ud_game_id"}, inplace=True)
 
     merge_columns = [
@@ -204,7 +217,9 @@ def _attach_live_ud_lines(
         "under_payout_multiplier",
         "under_american_price",
     ]
-    available_merge_columns = [col for col in merge_columns if col in latest_lines.columns]
+    available_merge_columns = [
+        col for col in merge_columns if col in latest_lines.columns
+    ]
 
     merged = inference_df.merge(
         latest_lines[available_merge_columns],
@@ -256,16 +271,21 @@ def _attach_live_ud_lines(
     return merged
 
 
-def run(config_path: str | Path | None = None, retrain: bool = False) -> pd.DataFrame:
+def run_pass_attempts_pipeline(
+    config: PipelineConfig,
+    retrain: bool = False,
+) -> pd.DataFrame:
     """Execute the NFL pass-attempt workflow and return enriched lines."""
-    config = load_config(config_path or DEFAULT_CONFIG_PATH)
-    dataset_path = _maybe_build_dataset(config)
+    section = config.section
+    dataset_path = _maybe_build_dataset(section)
     dataset = _load_dataset(dataset_path)
 
-    train_df, train_preds, model, train_metrics, sigma_by_qb, bootstrapper = _train_if_needed(dataset, config, retrain=retrain)
+    train_df, train_preds, model, train_metrics, sigma_by_qb, bootstrapper = (
+        _train_if_needed(dataset, section, retrain=retrain)
+    )
 
-    inference_df = _prepare_inference_frame(dataset, config)
-    inference_df = _attach_live_ud_lines(inference_df, config)
+    inference_df = _prepare_inference_frame(dataset, section)
+    inference_df = _attach_live_ud_lines(inference_df, section)
     inference_df = inference_df[inference_df["ud_line"].notna()]
 
     inference_df = inference_df[inference_df[NFL_FEATURES].notna().all(axis=1)].copy()
@@ -276,7 +296,7 @@ def run(config_path: str | Path | None = None, retrain: bool = False) -> pd.Data
     inference_df["prediction"] = predictions
 
     global_sigma = residual_std(train_df["pass_attempts"], train_preds)
-    fallback_sigma = float(config.get("fallback_std", 1.0))
+    fallback_sigma = float(section.get("fallback_std", 1.0))
     if not global_sigma or np.isnan(global_sigma) or global_sigma <= 0:
         global_sigma = fallback_sigma
 
@@ -287,10 +307,10 @@ def run(config_path: str | Path | None = None, retrain: bool = False) -> pd.Data
     sigma_series = pd.to_numeric(sigma_series, errors="coerce")
     sigma_series = sigma_series.fillna(global_sigma)
 
-    min_sigma = float(config.get("min_sigma", 1.5))
+    min_sigma = float(section.get("min_sigma", 1.5))
     if min_sigma > 0:
         sigma_series = sigma_series.clip(lower=min_sigma)
-    max_sigma = config.get("max_sigma")
+    max_sigma = section.get("max_sigma")
     if max_sigma is not None:
         try:
             sigma_series = sigma_series.clip(upper=float(max_sigma))
@@ -298,8 +318,8 @@ def run(config_path: str | Path | None = None, retrain: bool = False) -> pd.Data
             pass
 
     sim_config = MonteCarloConfig(
-        simulations=int(config.get("monte_carlo_simulations", 10_000)),
-        random_seed=config.get("monte_carlo_seed"),
+        simulations=int(section.get("monte_carlo_simulations", 10_000)),
+        random_seed=section.get("monte_carlo_seed"),
     )
 
     sim_input = inference_df.copy()
@@ -317,12 +337,8 @@ def run(config_path: str | Path | None = None, retrain: bool = False) -> pd.Data
 
     simulated.rename(
         columns={
-            "prob_over": "prob_higher",
-            "prob_under": "prob_lower",
-            "ev_over": "ev_higher",
-            "ev_under": "ev_lower",
-            "edge_over": "edge_higher",
-            "edge_under": "edge_lower",
+            "ud_line": "attempts_line",
+            "prediction": "predicted_pass_attempts",
         },
         inplace=True,
     )
@@ -335,6 +351,16 @@ def run(config_path: str | Path | None = None, retrain: bool = False) -> pd.Data
     simulated.drop(columns=["k_line", "pitcher_id"], inplace=True, errors="ignore")
 
     return simulated
+
+
+def run(config_path: str | Path | None = None, retrain: bool = False) -> pd.DataFrame:
+    """Compatibility shim for callers still importing ``src.nfl.pipeline.run``."""
+    config = load_pipeline_config(
+        str(config_path or DEFAULT_CONFIG_PATH),
+        sport_override="nfl",
+        stat_override="pass_attempts",
+    )
+    return run_pass_attempts_pipeline(config=config, retrain=retrain)
 
 
 __all__ = ["run"]

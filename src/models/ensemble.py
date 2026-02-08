@@ -2,7 +2,13 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
 
-FEATURES = ["rolling_K_avg_3", "rolling_pitch_count_5", "park_factor_K", "opponent_k_rate"]
+FEATURES = [
+    "rolling_K_avg_3",
+    "rolling_pitch_count_5",
+    "park_factor_K",
+    "opponent_k_rate",
+]
+
 
 def train_ensemble(df: pd.DataFrame) -> RandomForestRegressor:
     """Train an ensemble regression model."""

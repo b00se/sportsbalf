@@ -1,7 +1,6 @@
 """Feature engineering helpers for NFL QB attempts."""
-from __future__ import annotations
 
-from typing import Tuple
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -54,13 +53,16 @@ def compute_player_passing_features(weekly: pd.DataFrame) -> pd.DataFrame:
     use_game_id = "game_id" in weekly.columns
     columns = base_columns + (["game_id"] if use_game_id else [])
     if weekly is None or weekly.empty:
-        return pd.DataFrame(columns=columns + [
-            "season_avg_attempts",
-            "career_avg_attempts",
-            "season_attempts_to_date",
-            "season_games_played",
-            "season_avg_attempts_to_date",
-        ])
+        return pd.DataFrame(
+            columns=columns
+            + [
+                "season_avg_attempts",
+                "career_avg_attempts",
+                "season_attempts_to_date",
+                "season_games_played",
+                "season_avg_attempts_to_date",
+            ]
+        )
 
     missing = [col for col in base_columns if col not in weekly.columns]
     if missing:
@@ -81,7 +83,9 @@ def compute_player_passing_features(weekly: pd.DataFrame) -> pd.DataFrame:
     )
     qbs["season_games_played"] = qbs.groupby(["player_id", "season"]).cumcount()
 
-    qbs["season_avg_attempts"] = qbs.groupby(["player_id", "season"])["attempts"].transform("mean")
+    qbs["season_avg_attempts"] = qbs.groupby(["player_id", "season"])[
+        "attempts"
+    ].transform("mean")
     qbs["career_avg_attempts"] = qbs.groupby("player_id")["attempts"].transform("mean")
 
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -132,15 +136,17 @@ def compute_qb_pbp_metrics(pbp: pd.DataFrame) -> pd.DataFrame:
     frame["season"] = _to_numeric(frame.get("season")).astype("Int64")
     frame["week"] = _to_numeric(frame.get("week")).astype("Int64")
 
-    qb_group = frame.groupby(
-        ["season", "week", "game_id", "passer_player_id"], dropna=False
-    ).agg(
-        qb_dropbacks=("qb_dropback", "sum"),
-        pass_attempts=("pass_attempt", "sum"),
-        epa_sum=("epa", "sum"),
-        avg_cpoe=("cpoe", "mean"),
-        air_yards_per_attempt=("air_yards", "mean"),
-    ).reset_index()
+    qb_group = (
+        frame.groupby(["season", "week", "game_id", "passer_player_id"], dropna=False)
+        .agg(
+            qb_dropbacks=("qb_dropback", "sum"),
+            pass_attempts=("pass_attempt", "sum"),
+            epa_sum=("epa", "sum"),
+            avg_cpoe=("cpoe", "mean"),
+            air_yards_per_attempt=("air_yards", "mean"),
+        )
+        .reset_index()
+    )
 
     rush_group = (
         frame.loc[frame["rusher_player_id"].notna()]
@@ -159,7 +165,9 @@ def compute_qb_pbp_metrics(pbp: pd.DataFrame) -> pd.DataFrame:
     merged.drop(columns=["rusher_player_id"], inplace=True)
     merged["qb_rush_attempts"] = merged["qb_rush_attempts"].fillna(0)
 
-    merged["epa_per_dropback"] = merged["epa_sum"] / merged["qb_dropbacks"].replace(0, np.nan)
+    merged["epa_per_dropback"] = merged["epa_sum"] / merged["qb_dropbacks"].replace(
+        0, np.nan
+    )
 
     merged["game_id"] = merged["game_id"].astype(str)
     merged.rename(columns={"passer_player_id": "qb_id"}, inplace=True)
@@ -180,7 +188,7 @@ def compute_qb_pbp_metrics(pbp: pd.DataFrame) -> pd.DataFrame:
 
 def compute_team_and_opponent_features(
     pbp: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return offensive and defensive team rates derived from play-by-play."""
     columns_team = [
         "season",
@@ -221,26 +229,42 @@ def compute_team_and_opponent_features(
     ).astype(int)
     frame["neutral_pass"] = frame["pass_attempt"] * frame["neutral_play"]
 
-    team_group = frame.groupby(
-        ["season", "week", "game_id", "posteam"], dropna=False
-    ).agg(
-        plays_per_game=("play_count", "sum"),
-        pass_attempts=("pass_attempt", "sum"),
-        neutral_plays=("neutral_play", "sum"),
-        neutral_pass_attempts=("neutral_pass", "sum"),
-    ).reset_index()
+    team_group = (
+        frame.groupby(["season", "week", "game_id", "posteam"], dropna=False)
+        .agg(
+            plays_per_game=("play_count", "sum"),
+            pass_attempts=("pass_attempt", "sum"),
+            neutral_plays=("neutral_play", "sum"),
+            neutral_pass_attempts=("neutral_pass", "sum"),
+        )
+        .reset_index()
+    )
 
-    team_group["pass_rate"] = team_group["pass_attempts"] / team_group["plays_per_game"].replace(0, np.nan)
-    team_group["neutral_pass_rate"] = team_group["neutral_pass_attempts"] / team_group["neutral_plays"].replace(0, np.nan)
+    team_group["pass_rate"] = team_group["pass_attempts"] / team_group[
+        "plays_per_game"
+    ].replace(0, np.nan)
+    team_group["neutral_pass_rate"] = team_group["neutral_pass_attempts"] / team_group[
+        "neutral_plays"
+    ].replace(0, np.nan)
 
-    league = frame.groupby("season").agg(
-        league_neutral_pass_attempts=("neutral_pass", "sum"),
-        league_neutral_plays=("neutral_play", "sum"),
-    ).reset_index()
-    league["league_neutral_pass_rate"] = league["league_neutral_pass_attempts"] / league["league_neutral_plays"].replace(0, np.nan)
+    league = (
+        frame.groupby("season")
+        .agg(
+            league_neutral_pass_attempts=("neutral_pass", "sum"),
+            league_neutral_plays=("neutral_play", "sum"),
+        )
+        .reset_index()
+    )
+    league["league_neutral_pass_rate"] = league[
+        "league_neutral_pass_attempts"
+    ] / league["league_neutral_plays"].replace(0, np.nan)
 
-    team_group = team_group.merge(league[["season", "league_neutral_pass_rate"]], on="season", how="left")
-    team_group["pass_rate_over_expected"] = team_group["neutral_pass_rate"] - team_group["league_neutral_pass_rate"]
+    team_group = team_group.merge(
+        league[["season", "league_neutral_pass_rate"]], on="season", how="left"
+    )
+    team_group["pass_rate_over_expected"] = (
+        team_group["neutral_pass_rate"] - team_group["league_neutral_pass_rate"]
+    )
 
     team_group.rename(columns={"posteam": "team"}, inplace=True)
     team_group["game_id"] = team_group["game_id"].astype(str)
@@ -257,17 +281,23 @@ def compute_team_and_opponent_features(
         ]
     ]
 
-    opponent_group = frame.groupby(
-        ["season", "week", "game_id", "defteam"], dropna=False
-    ).agg(
-        plays_faced=("play_count", "sum"),
-        opponent_pass_attempts=("pass_attempt", "sum"),
-        neutral_plays=("neutral_play", "sum"),
-        neutral_pass_attempts=("neutral_pass", "sum"),
-    ).reset_index()
+    opponent_group = (
+        frame.groupby(["season", "week", "game_id", "defteam"], dropna=False)
+        .agg(
+            plays_faced=("play_count", "sum"),
+            opponent_pass_attempts=("pass_attempt", "sum"),
+            neutral_plays=("neutral_play", "sum"),
+            neutral_pass_attempts=("neutral_pass", "sum"),
+        )
+        .reset_index()
+    )
 
-    opponent_group["opponent_pass_rate_allowed"] = opponent_group["opponent_pass_attempts"] / opponent_group["plays_faced"].replace(0, np.nan)
-    opponent_group["opponent_neutral_pass_rate"] = opponent_group["neutral_pass_attempts"] / opponent_group["neutral_plays"].replace(0, np.nan)
+    opponent_group["opponent_pass_rate_allowed"] = opponent_group[
+        "opponent_pass_attempts"
+    ] / opponent_group["plays_faced"].replace(0, np.nan)
+    opponent_group["opponent_neutral_pass_rate"] = opponent_group[
+        "neutral_pass_attempts"
+    ] / opponent_group["neutral_plays"].replace(0, np.nan)
 
     opponent_group.rename(columns={"defteam": "opponent"}, inplace=True)
     opponent_group["game_id"] = opponent_group["game_id"].astype(str)
@@ -316,24 +346,41 @@ def compute_ngs_passing_features(ngs: pd.DataFrame) -> pd.DataFrame:
     if "qb_id" not in frame.columns or frame["qb_id"].isna().all():
         frame["qb_id"] = frame.get("player_display_name", "").astype(str)
 
-    return frame[["season", "week", "qb_id", "ngs_avg_time_to_throw", "ngs_avg_air_yards", "ngs_cpoe"]]
+    return frame[
+        [
+            "season",
+            "week",
+            "qb_id",
+            "ngs_avg_time_to_throw",
+            "ngs_avg_air_yards",
+            "ngs_cpoe",
+        ]
+    ]
 
 
 def compute_game_context_features(schedule: pd.DataFrame) -> pd.DataFrame:
     """Derive rest and divisional context from the NFL schedule."""
     columns = [
         "season",
-            "week",
-            "game_id",
-            "team",
-            "rest_days",
-            "short_week",
-            "is_divisional",
+        "week",
+        "game_id",
+        "team",
+        "rest_days",
+        "short_week",
+        "is_divisional",
     ]
     if schedule is None or schedule.empty:
         return pd.DataFrame(columns=columns)
 
-    required = ["game_id", "season", "week", "gameday", "home_team", "away_team", "div_game"]
+    required = [
+        "game_id",
+        "season",
+        "week",
+        "gameday",
+        "home_team",
+        "away_team",
+        "div_game",
+    ]
     missing = [col for col in required if col not in schedule.columns]
     if missing:
         raise KeyError(f"schedule data missing required columns: {missing}")
@@ -346,10 +393,14 @@ def compute_game_context_features(schedule: pd.DataFrame) -> pd.DataFrame:
     div_game = div_game.where(div_game.notna(), 0).astype(int)
     frame["div_game"] = div_game
 
-    home = frame[["season", "week", "game_id", "home_team", "away_team", "gameday", "div_game"]].copy()
+    home = frame[
+        ["season", "week", "game_id", "home_team", "away_team", "gameday", "div_game"]
+    ].copy()
     home.rename(columns={"home_team": "team", "away_team": "opponent"}, inplace=True)
 
-    away = frame[["season", "week", "game_id", "away_team", "home_team", "gameday", "div_game"]].copy()
+    away = frame[
+        ["season", "week", "game_id", "away_team", "home_team", "gameday", "div_game"]
+    ].copy()
     away.rename(columns={"away_team": "team", "home_team": "opponent"}, inplace=True)
 
     combined = pd.concat([home, away], ignore_index=True)
@@ -364,4 +415,14 @@ def compute_game_context_features(schedule: pd.DataFrame) -> pd.DataFrame:
     combined["is_divisional"] = combined["div_game"] > 0
 
     combined["game_id"] = combined["game_id"].astype(str)
-    return combined[["season", "week", "game_id", "team", "rest_days", "short_week", "is_divisional"]]
+    return combined[
+        [
+            "season",
+            "week",
+            "game_id",
+            "team",
+            "rest_days",
+            "short_week",
+            "is_divisional",
+        ]
+    ]

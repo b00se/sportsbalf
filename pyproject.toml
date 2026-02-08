@@ -1,7 +1,7 @@
 [tool.black]
 line-length = 88
 target-version = ["py311"]
-include = '\\.(py|pyi)$'
+include = '\.pyi?$'
 extend-exclude = '''
 (
   ^/data/

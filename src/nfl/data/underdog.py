@@ -1,24 +1,39 @@
 """Underdog ingestion helpers for NFL QB pass attempts."""
+
 from __future__ import annotations
 
+import http.client
 import json
 from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 import pandas as pd
 
 PASS_ATTEMPTS_ALGOLIA_ID = "PickemStat_de868934-c920-405c-b827-693c15aa47a1"
-BASE_URL = "https://api.underdogfantasy.com/v2/pickem_search/search_results"
+UNDERDOG_HOST = "api.underdogfantasy.com"
+UNDERDOG_PATH = "/v2/pickem_search/search_results"
 
 
 def _fetch_payload(algolia_object_id: str) -> dict[str, Any]:
     """Fetch the raw Underdog payload for the given Algolia object id."""
     query = urlencode({"sport_id": "HOME", "algolia_object_id": algolia_object_id})
-    request = Request(f"{BASE_URL}?{query}", headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(request) as response:  # noqa: S310 - trusted public API
-        return json.load(response)
+    connection = http.client.HTTPSConnection(UNDERDOG_HOST, timeout=15)
+    try:
+        connection.request(
+            "GET",
+            f"{UNDERDOG_PATH}?{query}",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        response = connection.getresponse()
+        if response.status >= 400:
+            raise RuntimeError(
+                f"Underdog API request failed with status {response.status}."
+            )
+        payload = response.read()
+        return json.loads(payload.decode("utf-8"))
+    finally:
+        connection.close()
 
 
 def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
@@ -29,9 +44,7 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
         if appearance.get("id")
     }
     games = {
-        game.get("id"): game
-        for game in payload.get("games", [])
-        if game.get("id")
+        game.get("id"): game for game in payload.get("games", []) if game.get("id")
     }
     players = {
         player.get("id"): player
@@ -59,7 +72,11 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
         player_name = f"{first} {last}".strip()
         if not player_name:
             higher_option = next(
-                (opt for opt in line.get("options", []) if opt.get("choice") == "higher"),
+                (
+                    opt
+                    for opt in line.get("options", [])
+                    if opt.get("choice") == "higher"
+                ),
                 None,
             )
             player_name = (higher_option or {}).get("selection_header")
@@ -67,8 +84,12 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
             continue
 
         options = line.get("options", [])
-        higher_option = next((opt for opt in options if opt.get("choice") == "higher"), None)
-        lower_option = next((opt for opt in options if opt.get("choice") == "lower"), None)
+        higher_option = next(
+            (opt for opt in options if opt.get("choice") == "higher"), None
+        )
+        lower_option = next(
+            (opt for opt in options if opt.get("choice") == "lower"), None
+        )
 
         game = games.get(appearance.get("match_id"))
         rows.append(
@@ -83,10 +104,14 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
                 "scheduled_at": (game or {}).get("scheduled_at"),
                 "season_type": (game or {}).get("season_type"),
                 "over_decimal_price": (higher_option or {}).get("decimal_price"),
-                "over_payout_multiplier": (higher_option or {}).get("payout_multiplier"),
+                "over_payout_multiplier": (higher_option or {}).get(
+                    "payout_multiplier"
+                ),
                 "over_american_price": (higher_option or {}).get("american_price"),
                 "under_decimal_price": (lower_option or {}).get("decimal_price"),
-                "under_payout_multiplier": (lower_option or {}).get("payout_multiplier"),
+                "under_payout_multiplier": (lower_option or {}).get(
+                    "payout_multiplier"
+                ),
                 "under_american_price": (lower_option or {}).get("american_price"),
             }
         )
@@ -94,7 +119,6 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
     frame = pd.DataFrame(rows)
     if frame.empty:
         return frame
-
 
     numeric_cols = [
         "line",

@@ -3,10 +3,9 @@ from urllib.error import HTTPError
 
 import pandas as pd
 import pandas.testing as pdt
-
+import src.nfl.data.providers.readpy as readpy_provider_module
 import src.nfl.data.qb_attempts as qb_attempts
 from src.nfl.data.qb_attempts import prepare_qb_attempts_dataset
-import src.nfl.data.providers.readpy as readpy_provider_module
 
 
 def test_prepare_qb_attempts_dataset_merges_ud_lines_and_features():
@@ -253,6 +252,7 @@ def test_prepare_qb_attempts_dataset_normalizes_team_names():
         assert feature in row.index
         assert row[feature] == 0
 
+
 def test_load_weekly_data_skips_missing_year(monkeypatch):
     class DummyNFL:
         def load_player_stats(self, years_arg, summary_level="week"):
@@ -290,7 +290,9 @@ def test_load_weekly_data_skips_missing_year(monkeypatch):
             )
 
     monkeypatch.setattr(readpy_provider_module, "nfl", DummyNFL(), raising=False)
-    monkeypatch.setattr(readpy_provider_module, "_NFL_IMPORT_ERROR", None, raising=False)
+    monkeypatch.setattr(
+        readpy_provider_module, "_NFL_IMPORT_ERROR", None, raising=False
+    )
 
     provider = readpy_provider_module.NFLReadPyProvider()
 
@@ -454,7 +456,9 @@ def test_provider_schema_alignment(monkeypatch):
             return FakePolars(readpy_ngs.copy())
 
     monkeypatch.setattr(readpy_provider_module, "nfl", ReadPyStub(), raising=False)
-    monkeypatch.setattr(readpy_provider_module, "_NFL_IMPORT_ERROR", None, raising=False)
+    monkeypatch.setattr(
+        readpy_provider_module, "_NFL_IMPORT_ERROR", None, raising=False
+    )
 
     provider = readpy_provider_module.NFLReadPyProvider()
 
@@ -480,5 +484,3 @@ def test_provider_schema_alignment(monkeypatch):
             check_dtype=False,
         )
         assert provider_results[key].skipped_years == []
-
-
