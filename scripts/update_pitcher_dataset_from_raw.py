@@ -10,13 +10,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.mlb.features.dynamic_opponent import compute_opponent_k_pct_dynamic
-from src.mlb.features.enrichments import add_park_factor
-from src.mlb.features.mlb_features import aggregate_pitcher_games
-from src.mlb.features.park_factors import compute_k_park_factors
-from src.mlb.features.rolling import add_rolling_features
-from src.utils.names import from_last_first, normalize_person_name, resolve_unique_name_match
-
 RAW_PATH = "data/raw/statcast"
 PROCESSED_PATH = "data/processed"
 
@@ -32,6 +25,8 @@ def _unique_pitcher_id(
     starter_name: str, raw_name_map: dict[str, set[int]]
 ) -> int | None:
     """Return a unique pitcher id from raw names when lookup data is missing."""
+    from src.utils.names import resolve_unique_name_match
+
     name_to_unique_id = {
         name: next(iter(ids)) for name, ids in raw_name_map.items() if len(ids) == 1
     }
@@ -40,6 +35,8 @@ def _unique_pitcher_id(
 
 def _build_raw_name_map(raw_df: pd.DataFrame) -> dict[str, set[int]]:
     """Create normalized name -> pitcher-id mapping from raw Statcast rows."""
+    from src.utils.names import from_last_first, normalize_person_name
+
     if not {"player_name", "pitcher"}.issubset(raw_df.columns):
         return {}
     mapping: dict[str, set[int]] = {}
@@ -102,6 +99,12 @@ def load_pitcher_ids(starter_csv: str, raw_df: pd.DataFrame) -> list[tuple[str, 
 
 
 def update_pitcher_dataset(season):
+    from src.mlb.features.dynamic_opponent import compute_opponent_k_pct_dynamic
+    from src.mlb.features.enrichments import add_park_factor
+    from src.mlb.features.mlb_features import aggregate_pitcher_games
+    from src.mlb.features.park_factors import compute_k_park_factors
+    from src.mlb.features.rolling import add_rolling_features
+
     raw_file = os.path.join(RAW_PATH, f"statcast_raw_{season}.parquet")
     processed_file = os.path.join(PROCESSED_PATH, f"pitcher_game_data_{season}.parquet")
     starter_csv = f"data/raw/top_starters_{season}.csv"

@@ -10,13 +10,16 @@ import pandas as pd
 
 from .distributions import ResidualBootstrapper
 
+
 @dataclass
 class MonteCarloConfig:
     simulations: int = 10_000
     random_seed: Optional[int] = None
 
 
-def _ev_from_decimal(prob_win: float, decimal_price: float, prob_push: float = 0.0) -> float:
+def _ev_from_decimal(
+    prob_win: float, decimal_price: float, prob_push: float = 0.0
+) -> float:
     """Return expected profit per 1 unit stake using decimal odds."""
     profit_on_win = decimal_price - 1.0
     prob_loss = max(0.0, 1.0 - prob_win - prob_push)
@@ -48,21 +51,10 @@ def simulate_row(
             "simulated_median": np.nan,
         }
 
-    if std_dev is None or np.isnan(std_dev) or std_dev <= 0:
-        std_dev = 1.0
-
-    use_sampler = False
     if sampler is not None:
-        can_bootstrap = getattr(sampler, "can_bootstrap", None)
-        if callable(can_bootstrap):
-            try:
-                use_sampler = bool(can_bootstrap(pitcher_id))
-            except Exception:
-                use_sampler = False
-        else:
-            use_sampler = True
-    if use_sampler:
-        sims = sampler.sample_counts(mean=mean, pitcher_id=pitcher_id, simulations=config.simulations, rng=rng)
+        sims = sampler.sample_counts(
+            mean=mean, pitcher_id=pitcher_id, simulations=config.simulations, rng=rng
+        )
     else:
         scale = max(float(std_dev), 1e-6)
         sims = rng.normal(loc=mean, scale=scale, size=config.simulations)
@@ -95,21 +87,11 @@ def apply_simulations(
     config = config or MonteCarloConfig()
     rng = np.random.default_rng(config.random_seed)
 
-    if isinstance(std_dev, str):
-        std_values = pd.to_numeric(lines[std_dev], errors="coerce").to_numpy()
-    elif np.isscalar(std_dev):
-        std_values = np.full(len(lines), float(std_dev))
-    else:
-        std_values = pd.to_numeric(np.asarray(std_dev), errors="coerce")
-        if std_values.shape[0] != len(lines):
-            raise ValueError("std_dev length must match number of rows in lines")
-
     results = []
-    for idx, row in enumerate(lines.itertuples(index=False)):
-        sigma = std_values[idx] if idx < len(std_values) else float(std_dev)
+    for row in lines.itertuples(index=False):
         stats = simulate_row(
             mean=getattr(row, mean_col),
-            std_dev=sigma,
+            std_dev=std_dev,
             strikeout_line=row.k_line,
             config=config,
             rng=rng,

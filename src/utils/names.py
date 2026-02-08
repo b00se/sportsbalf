@@ -38,7 +38,7 @@ def from_last_first(name: str) -> str:
     """
     if "," not in str(name):
         return str(name)
-    last, first = [part.strip() for part in str(name).split(",", 1)]
+    last, first = (part.strip() for part in str(name).split(",", 1))
     return f"{first} {last}".strip()
 
 

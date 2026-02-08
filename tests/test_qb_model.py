@@ -1,8 +1,5 @@
 import pandas as pd
-
 from src.nfl.models.predict import (
-    DEFAULT_MODEL_PATH,
-    NFL_FEATURES,
     predict_attempts,
     residual_std,
     train_model,

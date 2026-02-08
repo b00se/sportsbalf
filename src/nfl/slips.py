@@ -10,7 +10,7 @@ def prepare_long_df(
     top_n: int | None = None,
     min_ev: float = 0.0,
 ) -> pd.DataFrame:
-    """Return long-form higher/lower rows ready for slip generation."""
+    """Return long-form over/under rows ready for slip generation."""
 
     if results is None or results.empty:
         return pd.DataFrame()
@@ -20,11 +20,11 @@ def prepare_long_df(
         "qb_id",
         "team",
         "opponent",
-        "ud_line",
-        "prob_higher",
-        "prob_lower",
-        "ev_higher",
-        "ev_lower",
+        "attempts_line",
+        "prob_over",
+        "prob_under",
+        "ev_over",
+        "ev_under",
         "over_decimal_price",
         "over_payout_multiplier",
         "under_decimal_price",
@@ -38,25 +38,25 @@ def prepare_long_df(
 
     df = results.copy()
 
-    higher = df.assign(
-        play="higher",
-        prob=df["prob_higher"],
-        ev=df["ev_higher"],
+    over = df.assign(
+        play="over",
+        prob=df["prob_over"],
+        ev=df["ev_over"],
         payout=df["over_decimal_price"],
         payout_multiplier=df["over_payout_multiplier"],
         american_price=df.get("over_american_price"),
     )
 
-    lower = df.assign(
-        play="lower",
-        prob=df["prob_lower"],
-        ev=df["ev_lower"],
+    under = df.assign(
+        play="under",
+        prob=df["prob_under"],
+        ev=df["ev_under"],
         payout=df["under_decimal_price"],
         payout_multiplier=df["under_payout_multiplier"],
         american_price=df.get("under_american_price"),
     )
 
-    combined = pd.concat([higher, lower], ignore_index=True)
+    combined = pd.concat([over, under], ignore_index=True)
     combined = combined.loc[combined["ev"] > min_ev].copy()
     combined = combined.sort_values("ev", ascending=False)
 
@@ -68,7 +68,7 @@ def prepare_long_df(
         columns={
             "qb_name": "player",
             "qb_id": "player_id",
-            "ud_line": "line",
+            "attempts_line": "line",
             "rest_days": "rest_days",
         },
         inplace=True,

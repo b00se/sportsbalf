@@ -1,6 +1,5 @@
 import pandas as pd
-import pytest
-
+import yaml
 from src.nfl import pipeline
 
 
@@ -57,20 +56,31 @@ def test_pipeline_run_returns_enriched_frame(tmp_path, monkeypatch):
     dataset.to_parquet(dataset_path, index=False)
 
     cfg = {
-        "dataset_path": str(dataset_path),
-        "model_path": str(tmp_path / "model.joblib"),
-        "rebuild_dataset": False,
-        "training_years": [2022],
-        "inference_years": [2022],
-        "monte_carlo_simulations": 1000,
-        "fallback_std": 1.0,
+        "pipeline": {"sport": "nfl", "stat": "pass_attempts"},
+        "nfl": {
+            "pass_attempts": {
+                "dataset_path": str(dataset_path),
+                "model_path": str(tmp_path / "model.joblib"),
+                "rebuild_dataset": False,
+                "training_years": [2022],
+                "inference_years": [2022],
+                "monte_carlo_simulations": 1000,
+                "fallback_std": 1.0,
+            }
+        },
     }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
 
-    monkeypatch.setattr(pipeline, "load_config", lambda _: cfg)
-    monkeypatch.setattr(pipeline, "_maybe_build_dataset", lambda _cfg: dataset_path)
-    monkeypatch.setattr(pipeline, "import_ud_pass_attempt_lines", lambda **_: pd.DataFrame())
+    monkeypatch.setattr(
+        pipeline, "import_ud_pass_attempt_lines", lambda **_: pd.DataFrame()
+    )
 
-    result = pipeline.run(config_path=tmp_path / "config.yaml", retrain=True)
+    result = pipeline.run(config_path=config_path, retrain=True)
     assert not result.empty
-    assert {"prob_higher", "prob_lower", "prediction"}.issubset(result.columns)
-
+    assert {
+        "prob_over",
+        "prob_under",
+        "predicted_pass_attempts",
+        "attempts_line",
+    }.issubset(result.columns)

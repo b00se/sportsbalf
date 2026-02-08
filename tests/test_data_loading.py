@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from src.core.config import extract_stat_section
 from src.mlb.data.load_pitcher_stats import load_pitcher_game_logs
 from src.mlb.data.load_props import load_strikeout_lines
 from src.mlb.features.pitcher_games import aggregate_pitcher_games
@@ -18,15 +19,23 @@ def _resolve_existing_lines_path(config_lines_path: str) -> str:
 
 
 def test_loaders():
-    config = load_config("config/mlb.yaml")
+    raw_config = load_config("config/mlb.yaml")
+    config = extract_stat_section(raw_config, sport="mlb", stat="strikeouts")
     lines = load_strikeout_lines(_resolve_existing_lines_path(config["lines_path"]))
     games = load_pitcher_game_logs(config["game_logs_path"])
-    pitch_df = read_csv(config["pitch_data_path"])
+
+    pitch_data_path = Path(config["pitch_data_path"])
+    if not pitch_data_path.exists():
+        pitch_data_path = Path("tests/testdata/pitches.csv")
+    pitch_df = read_csv(str(pitch_data_path))
     agg = aggregate_pitcher_games(pitch_df)
 
     assert not lines.empty
     assert not games.empty
     assert not agg.empty
 
-    park = read_csv(config["park_factors_path"])
+    park_path = Path(config["park_factors_path"])
+    if not park_path.exists():
+        park_path = Path("tests/testdata/park.csv")
+    park = read_csv(str(park_path))
     assert not park.empty

@@ -1,5 +1,4 @@
 import numpy as np
-
 from src.mlb.models.monte_carlo import MonteCarloConfig, simulate_row
 
 
@@ -7,7 +6,9 @@ class DummySampler:
     def __init__(self):
         self.calls = 0
 
-    def sample_counts(self, mean: float, pitcher_id, simulations: int, rng: np.random.Generator):
+    def sample_counts(
+        self, mean: float, pitcher_id, simulations: int, rng: np.random.Generator
+    ):
         self.calls += 1
         return np.full(simulations, mean + 1.0)
 
@@ -45,5 +46,5 @@ def test_simulate_row_uses_sampler_when_allowed():
     )
 
     assert sampler.calls == 1
-    # Bootstrap sampling should produce deterministic fills because we return a constant array.
+    # Deterministic because DummySampler always returns a constant array.
     assert result["prob_over"] in (0.0, 1.0)

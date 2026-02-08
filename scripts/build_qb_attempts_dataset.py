@@ -1,10 +1,11 @@
 """CLI helper for building the NFL QB attempts dataset."""
+
 from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import pandas as pd
 
@@ -12,12 +13,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.nfl.data.qb_attempts import build_qb_attempts_dataset
-
 DEFAULT_OUTPUT = "data/qb_attempts_dataset.parquet"
 
 
-def _empty_loader(_: Sequence[int]) -> pd.DataFrame:  # pragma: no cover - CLI convenience
+# CLI convenience for smoke runs that skip optional data sources.
+def _empty_loader(_: Sequence[int]) -> pd.DataFrame:  # pragma: no cover
     return pd.DataFrame()
 
 
@@ -64,6 +64,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    from src.nfl.data.qb_attempts import build_qb_attempts_dataset
+
     args = parse_args()
     if args.years:
         years = sorted(set(args.years))

@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-
 import scripts.generate_pitcher_dataset_from_raw as gen_script
 import scripts.update_pitcher_dataset_from_raw as upd_script
 

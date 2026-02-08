@@ -1,5 +1,4 @@
 import pandas as pd
-
 from src.mlb.features.mlb_features import aggregate_pitcher_games
 from src.mlb.features.pitcher_enrichment import enrich_pitcher_games
 from src.mlb.features.rolling import add_rolling_features
@@ -80,12 +79,14 @@ def test_enrich_pitcher_games_merges_context():
     player_df = make_player_df()
     opponent_k_df = pd.DataFrame(
         {
-            "game_date": pd.to_datetime([
-                "2023-04-01",
-                "2023-04-02",
-                "2023-04-08",
-                "2023-04-10",
-            ]),
+            "game_date": pd.to_datetime(
+                [
+                    "2023-04-01",
+                    "2023-04-02",
+                    "2023-04-08",
+                    "2023-04-10",
+                ]
+            ),
             "Team": ["ATL", "NYY", "PHI", "NYY"],
             "K_pct_so_far": [0.26, 0.24, 0.27, 0.23],
         }
