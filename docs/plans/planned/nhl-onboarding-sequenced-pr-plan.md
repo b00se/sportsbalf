@@ -45,7 +45,7 @@ Sequence is optimized for low-risk integration: each PR has explicit acceptance 
 - Dependency: PR 1 config schema doc.
 
 ### PR 6: Pipeline Registration + Discovery Standardization
-- Scope: formalize registry bootstrap pattern and add explicit onboarding hooks for new sports/stats (factory registration, required stage map, config section checks).
+- Scope: centralize default sport/stat declarations in `src/pipeline/registration.py`, formalize idempotent registry bootstrap, and add explicit onboarding/discovery hooks for new sports/stats (factory registration, required stage map, config section checks).
 - Purpose: make adding NHL mostly configuration + module wiring.
 - Acceptance: adding a dummy sport/stat in tests requires minimal boilerplate and passes registry/engine contract tests.
 - Dependency: PRs 2 and 5.

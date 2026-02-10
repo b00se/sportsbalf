@@ -39,7 +39,7 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 - Core modular layers:
   - `src/core/contracts.py` (sport/stat protocol)
   - `src/core/registry.py` (pipeline registry)
-  - `src/core/config.py` (typed config + migration fallback)
+  - `src/core/config.py` (typed config + sectioned-schema validation)
 - MLB pipeline core: `src/mlb/pipeline.py` (compat shim + strikeouts orchestration helpers).
 - NFL pipeline core: `src/nfl/pipeline.py` (compat shim + pass attempts orchestration helpers).
 - Features: `src/mlb/features/` (aggregation, rolling, park/opponent context).
@@ -58,6 +58,22 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 - Safety: Never delete or reset generated `data/` artifacts automatically; leave cleanup to explicit user request.
 - After dependency changes, re-run `.venv/bin/pytest -q` and `.venv/bin/ruff check .`
   before reporting completion.
+
+## Branch Context Guardrails
+- Before major git actions (review, commit, PR, branch switching), report:
+  - current path (`pwd`)
+  - current branch (`git branch --show-current`)
+  - current status (`git status --short`)
+- If working tree contains unexpected tracked changes, stop and ask before proceeding.
+- Treat untracked `.worktrees/` as non-commit noise unless user explicitly asks to include it.
+
+## Review Guardrails
+- Before any review-style response, verify there is a non-empty diff in the intended comparison context.
+- If requested base/merge-base diff is empty:
+  - do not provide fake findings,
+  - explain why review is empty,
+  - provide exact branch/worktree switching steps to review the right changes.
+- For worktree-based feature work, run review from the worktree branch containing the commit(s), not from `main`.
 
 ## Suggested Approval Prefixes
 - For smoother autonomous operation, pre-approve these command prefixes when possible:
