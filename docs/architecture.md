@@ -8,6 +8,7 @@ Date: 2026-02-08
 - CLI entry: `pipeline/main.py`
 - Engine orchestration: `src/pipeline/engine.py`
 - Sport/stat registry: `src/core/registry.py`
+- Default registration bootstrap: `src/pipeline/registration.py`
 - Config loading + identity resolution: `src/core/config.py`
 
 ## Runtime lifecycle (actual engine order)
@@ -33,7 +34,8 @@ Date: 2026-02-08
   - `src/core/registry.py`: pipeline factory registration and lookup
   - `src/core/simulation.py`: shared Monte Carlo simulation primitives
 - Engine layer
-  - `src/pipeline/engine.py`: default registrations + stage sequencing
+  - `src/pipeline/engine.py`: registration bootstrap + stage sequencing
+  - `src/pipeline/registration.py`: canonical default sport/stat catalog and idempotent registration bootstrap
 - Sport adapters
   - `src/mlb/pitcher_props/adapter.py`
   - `src/nfl/pass_attempts/pipeline.py`

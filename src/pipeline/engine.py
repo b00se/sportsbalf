@@ -3,18 +3,12 @@
 from __future__ import annotations
 
 from src.core.config import load_pipeline_config
-from src.core.registry import get_pipeline, register_pipeline
-from src.mlb.pitcher_props.adapter import MlbPitcherPropsPipeline
-from src.nfl.pass_attempts.pipeline import NflPassAttemptsPipeline
+from src.core.registry import get_pipeline
+from src.pipeline.registration import ensure_default_pipeline_registrations
 
 
 def _ensure_default_registrations() -> None:
-    register_pipeline("mlb", "strikeouts", MlbPitcherPropsPipeline)
-    register_pipeline("mlb", "outs_recorded", MlbPitcherPropsPipeline)
-    register_pipeline("mlb", "earned_runs", MlbPitcherPropsPipeline)
-    register_pipeline("mlb", "hits_allowed", MlbPitcherPropsPipeline)
-    register_pipeline("mlb", "bb_allowed", MlbPitcherPropsPipeline)
-    register_pipeline("nfl", "pass_attempts", NflPassAttemptsPipeline)
+    ensure_default_pipeline_registrations()
 
 
 def run_pipeline(config_path: str, retrain: bool = False):

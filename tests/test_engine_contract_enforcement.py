@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 from src.core.contracts import ModelBundle, PipelineConfig, PipelineInputs
 from src.pipeline import engine
+from src.pipeline.registration import DEFAULT_PIPELINE_REGISTRATIONS
 
 SIMULATE_ONLY_ALLOWLIST = {
     "src.mlb.pitcher_props.adapter.MlbPitcherPropsPipeline",
@@ -28,19 +29,7 @@ def _fqcn(value: Any) -> str:
 
 
 def _capture_default_registrations() -> list[tuple[str, str, Any]]:
-    captured: list[tuple[str, str, Any]] = []
-
-    def _capture_register(sport: str, stat: str, factory: Any) -> None:
-        captured.append((sport, stat, factory))
-
-    original = engine.register_pipeline
-    try:
-        engine.register_pipeline = _capture_register
-        engine._ensure_default_registrations()
-    finally:
-        engine.register_pipeline = original
-
-    return captured
+    return list(DEFAULT_PIPELINE_REGISTRATIONS)
 
 
 def _is_simulate_only_adapter(factory: Any) -> bool:
@@ -283,17 +272,11 @@ def test_run_pipeline_with_overrides_passes_cli_overrides(monkeypatch) -> None:
     assert list(result.columns) == ["ok"]
 
 
-def test_default_registrations_match_expected_pairs(monkeypatch) -> None:
-    calls: list[tuple[str, str, Any]] = []
-
-    def _capture_register(sport: str, stat: str, factory: Any) -> None:
-        calls.append((sport, stat, factory))
-
-    monkeypatch.setattr(engine, "register_pipeline", _capture_register)
-
-    engine._ensure_default_registrations()
-
-    assert {(sport, stat) for sport, stat, _factory in calls} == {
+def test_default_registrations_match_expected_pairs() -> None:
+    registered_pairs = {
+        (sport, stat) for sport, stat, _factory in DEFAULT_PIPELINE_REGISTRATIONS
+    }
+    assert registered_pairs == {
         ("mlb", "strikeouts"),
         ("mlb", "outs_recorded"),
         ("mlb", "earned_runs"),
@@ -316,3 +299,18 @@ def test_allowlist_entries_must_exist_in_default_registrations() -> None:
     registered_classes = {_fqcn(factory) for _sport, _stat, factory in registrations}
 
     assert SIMULATE_ONLY_ALLOWLIST.issubset(registered_classes)
+
+
+def test_engine_default_registration_bootstrap_routes_through_pipeline_registration(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        engine,
+        "ensure_default_pipeline_registrations",
+        lambda: calls.append("called"),
+    )
+
+    engine._ensure_default_registrations()
+    assert calls == ["called"]

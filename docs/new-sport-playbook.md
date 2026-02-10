@@ -9,8 +9,8 @@ Date: 2026-02-08
    - choose `sport` and `stat` identifiers (example: `nhl`, `shots_on_goal`)
 2. Add adapter implementing `SportStatPipeline`:
    - create sport/stat adapter class matching `src/core/contracts.py`
-3. Register adapter in engine bootstrap:
-   - wire `register_pipeline("<sport>", "<stat>", <Factory>)` in `src/pipeline/engine.py`
+3. Register adapter in centralized catalog:
+   - add `("<sport>", "<stat>", <Factory>)` entry in `src/pipeline/registration.py::DEFAULT_PIPELINE_REGISTRATIONS`
 4. Add config section:
    - update YAML so `pipeline.sport`, `pipeline.stat`, and `{sport}.{stat}` section resolve correctly
 5. Define output schema:
@@ -35,7 +35,7 @@ Date: 2026-02-08
      - `pipeline.stat: shots_on_goal`
      - `nhl.shots_on_goal` section
 3. Registry wiring:
-   - add `register_pipeline("nhl", "shots_on_goal", ...)` to engine defaults
+   - add `("nhl", "shots_on_goal", ...)` to `DEFAULT_PIPELINE_REGISTRATIONS`
 4. Test target:
    - `tests/integration/test_nhl_shots_on_goal_pipeline.py` using fixtures under `tests/testdata/`
 
