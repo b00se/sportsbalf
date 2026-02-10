@@ -30,6 +30,11 @@ Treat these as direct workflow commands in chat.
 
 3. `plan:execute <path>`
 - Execute plan end-to-end with normal repo workflow.
+- Default to simple branch-first execution in `/Users/jbrys/sportsbalf`:
+  1) create/use a feature branch from `main`,
+  2) implement on that branch,
+  3) run review rounds on `main...HEAD`,
+  4) open PR from that same branch.
 - Use TDD where applicable, run validations, summarize RED/GREEN evidence.
 
 4. `plan:audit`

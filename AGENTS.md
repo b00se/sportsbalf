@@ -51,13 +51,23 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 - Tests: `tests/` plus fixtures in `tests/testdata/`.
 
 ## Autonomy Defaults (Codex)
-- Worktree-first: For substantial changes, create and use a dedicated git worktree branch (`*-wt`) before editing.
+- Branch-first: For substantial changes, create and use a dedicated feature branch in the primary repo checkout (`/Users/jbrys/sportsbalf`) before editing.
+- Worktrees are opt-in only: use a dedicated worktree only when the user explicitly requests it or when parallel branch work is required.
 - Real e2e policy:
   - Default: use offline fixtures and `/tmp` outputs.
-  - If user explicitly requests real ingestion/e2e, it is allowed to write transient artifacts under `data/` in the active worktree.
+  - If user explicitly requests real ingestion/e2e, it is allowed to write transient artifacts under `data/` in the active checkout.
 - Safety: Never delete or reset generated `data/` artifacts automatically; leave cleanup to explicit user request.
 - After dependency changes, re-run `.venv/bin/pytest -q` and `.venv/bin/ruff check .`
   before reporting completion.
+
+## Preferred Git Workflow (Simple)
+Use this default sequence unless the user asks for a different flow:
+1. Write/approve plan docs.
+2. Create a feature branch from `main`.
+3. Execute plan changes on that same branch.
+4. Run one or more review rounds against `main...<feature-branch>`.
+5. Apply fixes and re-run review as needed.
+6. Open PR from the feature branch so diffs are easy to review.
 
 ## Branch Context Guardrails
 - Before major git actions (review, commit, PR, branch switching), report:
@@ -72,8 +82,7 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 - If requested base/merge-base diff is empty:
   - do not provide fake findings,
   - explain why review is empty,
-  - provide exact branch/worktree switching steps to review the right changes.
-- For worktree-based feature work, run review from the worktree branch containing the commit(s), not from `main`.
+  - provide exact branch/path switching steps to review the right changes.
 
 ## Suggested Approval Prefixes
 - For smoother autonomous operation, pre-approve these command prefixes when possible:
