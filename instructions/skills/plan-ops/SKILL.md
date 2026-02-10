@@ -44,16 +44,20 @@ Treat these as direct workflow commands in chat.
 6. `plan:approve <path>`
 - Approval workflow for your default sequence:
   1) confirm plan is in `docs/plans/planned/`
-  2) commit the approved plan doc change(s) first
-  3) audit all plans by updating `docs/plans/plan-doneness-audit-2026-02-08.md`
-  4) commit the audit update
-  5) optionally push/open PR when requested
+  2) if user requested commit-on-main, move to `/Users/jbrys/sportsbalf` on branch `main`
+  3) pull latest main with `git pull --ff-only origin main`
+  4) verify tracked tree is clean before staging
+  5) commit only the approved plan doc change(s)
+  6) audit plans by updating `docs/plans/plan-doneness-audit-2026-02-08.md` when requested
+  7) commit audit update separately when requested
+  8) optionally push/open PR when requested
 
 ## Repo Constraints
 - Keep tests offline and deterministic.
 - Use repo-local executables (`.venv/bin/...`).
 - Do not touch `data/`, `models/`, `notebooks/`, `betslips/` for planning flows.
 - Keep changes surgical and scoped to the requested plan.
+- Do not stage `.worktrees/` in plan workflow commits.
 
 ## Validation Defaults
 - Lint: `.venv/bin/ruff check .`
