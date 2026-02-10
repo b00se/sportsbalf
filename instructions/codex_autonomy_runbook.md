@@ -18,6 +18,34 @@ Reduce operator back-and-forth for common repo workflows while staying safe and 
 4. If requested, run e2e smoke checks and report exact commands + outputs.
 5. Push branch and open/update PR with validation summary.
 
+## Preflight Checklist
+Run before mutate/review/PR actions.
+
+1. Confirm context:
+   - `pwd`
+   - `git branch --show-current`
+   - `git status --short`
+2. Confirm intent-to-branch match:
+   - substantial implementation -> worktree branch
+   - approved plan/doc commit-on-main -> `/Users/jbrys/sportsbalf` on `main`
+3. Confirm sync state when targeting `main`:
+   - `git pull --ff-only origin main`
+4. If unexpected tracked changes are present, stop and ask before proceeding.
+
+## Context Recovery Protocol
+- If in wrong path/branch:
+  1. report current context and intended context,
+  2. switch to correct repo path/branch/worktree,
+  3. re-run preflight checklist.
+- If review result is unexpectedly empty, treat as context mismatch until proven otherwise.
+
+## Review Quality Gate
+- Before review output, verify non-empty diff for intended comparison.
+- If diff is empty:
+  - return "no actionable findings due to empty diff context",
+  - provide exact commands to switch context and rerun review.
+- Do not invent findings when comparison scope is empty.
+
 ## Quick Commands
 - Lint:
   - `.venv/bin/ruff check .`

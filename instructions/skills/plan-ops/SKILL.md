@@ -50,7 +50,14 @@ Treat these as direct workflow commands in chat.
   5) commit only the approved plan doc change(s)
   6) audit plans by updating `docs/plans/plan-doneness-audit-2026-02-08.md` when requested
   7) commit audit update separately when requested
-  8) optionally push/open PR when requested
+  8) verify commit landed on intended branch via `git branch --show-current` and `git log -n 1`
+  9) optionally push/open PR when requested
+
+7. `plan:review-context`
+- Verify review context before running review tasks:
+  1) print `pwd`, current branch, and `git status --short`
+  2) verify intended diff scope is non-empty
+  3) if diff is empty, stop and return exact context-switch steps instead of findings
 
 ## Repo Constraints
 - Keep tests offline and deterministic.
@@ -58,6 +65,7 @@ Treat these as direct workflow commands in chat.
 - Do not touch `data/`, `models/`, `notebooks/`, `betslips/` for planning flows.
 - Keep changes surgical and scoped to the requested plan.
 - Do not stage `.worktrees/` in plan workflow commits.
+- Do not run review/findings on empty diff scope.
 
 ## Validation Defaults
 - Lint: `.venv/bin/ruff check .`
