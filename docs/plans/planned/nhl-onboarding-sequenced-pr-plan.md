@@ -9,8 +9,13 @@ Sequence is optimized for low-risk integration: each PR has explicit acceptance 
 
 ## Progress Tracker
 - PR 1: Implemented and merged on 2026-02-08 (`#11`)
-- PR 2: Planned (this branch target: `feature/nhl-pr2-contract-enforcement`)
-- PR 3-PR 10: Planned
+- PR 2: Implemented and merged on 2026-02-08 (`#12`)
+- PR 3: Implemented and merged on 2026-02-08 (`#13`)
+- PR 4: Implemented and merged on 2026-02-08 (`#14`)
+- PR 5: Implemented and merged on 2026-02-09 (`#15`)
+- PR 6: Planned
+- PR 7: Implemented and merged on 2026-02-10 (local merge to `main`, no PR)
+- PR 8-PR 10: Planned
 
 ## PR Sequence
 
