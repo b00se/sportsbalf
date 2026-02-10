@@ -52,6 +52,22 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
   - `attempts_line`
 - plus common simulation probability/EV/edge fields above
 
+### NHL shots on goal fields (PR#8 skeleton baseline)
+- identity/line:
+  - `player_id`
+  - `player_name`
+  - `team`
+  - `opponent`
+  - `game_id`
+  - `sog_line`
+- prediction:
+  - `predicted_shots_on_goal`
+- simulation outputs:
+  - shared `prob_*`, `ev_*`, `edge_*` fields above
+- mode metadata:
+  - `run_mode`
+  - `lines_status`
+
 ## Field stability policy for onboarding work
 - Existing MLB/NFL output columns above are treated as backward-compatible commitments for this onboarding program.
 - New NHL outputs should align to shared probability/EV conventions (`prob_*`, `ev_*`, `edge_*`) from day one.

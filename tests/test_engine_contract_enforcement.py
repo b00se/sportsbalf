@@ -11,6 +11,7 @@ from src.pipeline.registration import DEFAULT_PIPELINE_REGISTRATIONS
 SIMULATE_ONLY_ALLOWLIST = {
     "src.mlb.pitcher_props.adapter.MlbPitcherPropsPipeline",
     "src.nfl.pass_attempts.pipeline.NflPassAttemptsPipeline",
+    "src.nhl.shots_on_goal.pipeline.NhlShotsOnGoalPipeline",
 }
 
 
@@ -283,6 +284,7 @@ def test_default_registrations_match_expected_pairs() -> None:
         ("mlb", "hits_allowed"),
         ("mlb", "bb_allowed"),
         ("nfl", "pass_attempts"),
+        ("nhl", "shots_on_goal"),
     }
 
 

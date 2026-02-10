@@ -8,6 +8,7 @@ from typing import Any
 from src.core.registry import register_pipeline
 from src.mlb.pitcher_props.adapter import MlbPitcherPropsPipeline
 from src.nfl.pass_attempts.pipeline import NflPassAttemptsPipeline
+from src.nhl.shots_on_goal.pipeline import NhlShotsOnGoalPipeline
 
 _REQUIRED_STAGE_METHODS: tuple[str, ...] = (
     "load_inputs",
@@ -24,6 +25,7 @@ DEFAULT_PIPELINE_REGISTRATIONS: tuple[tuple[str, str, Callable[[], Any]], ...] =
     ("mlb", "hits_allowed", MlbPitcherPropsPipeline),
     ("mlb", "bb_allowed", MlbPitcherPropsPipeline),
     ("nfl", "pass_attempts", NflPassAttemptsPipeline),
+    ("nhl", "shots_on_goal", NhlShotsOnGoalPipeline),
 )
 
 _VALIDATED_REGISTRATION_DECLARATIONS: set[tuple[str, str, int]] = set()
