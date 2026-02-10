@@ -51,7 +51,7 @@ Sequence is optimized for low-risk integration: each PR has explicit acceptance 
 - Dependency: PRs 2 and 5.
 
 ### PR 7: Legacy Surface Area Clarification
-- Scope: mark or isolate non-authoritative modules (`src/models/ensemble.py`, root `ingest/`, `cli/main.py`) with clear status comments/docs; optionally gate unused entrypoints.
+- Scope: add explicit non-authoritative status markers and docs clarifications for legacy modules (`src/models/ensemble.py`, root `ingest/`, `cli/main.py`) while keeping runtime behavior unchanged.
 - Purpose: reduce ambiguity and onboarding mistakes.
 - Acceptance: contributors can identify authoritative pipeline entrypoints unambiguously (`pipeline/main.py`, `src/pipeline/engine.py`).
 - Dependency: PR 1 docs.

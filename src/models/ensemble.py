@@ -1,5 +1,11 @@
+"""Legacy ensemble helper retained for non-canonical utility usage."""
+
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
+
+MODULE_STATUS = "legacy_non_authoritative"
+AUTHORITATIVE_ENTRYPOINT = "pipeline/main.py -> src/pipeline/engine.py"
+STATUS_NOTE = "Legacy training helper; authoritative orchestration lives in engine pipeline flow."
 
 
 FEATURES = [

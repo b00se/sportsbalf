@@ -11,6 +11,13 @@ Date: 2026-02-08
 - Default registration bootstrap: `src/pipeline/registration.py`
 - Config loading + identity resolution: `src/core/config.py`
 
+## Legacy/non-authoritative modules
+- `cli/main.py`: compatibility stub only; do not use for canonical pipeline integration.
+- `src/models/ensemble.py`: legacy helper module; not part of the authoritative sport/stat engine path.
+- `ingest/parse_ud_strikeouts.py`: standalone ingestion utility, retained for compatibility/utility usage.
+- `ingest/park_factors.py`: standalone park-factor utility, retained for compatibility/utility usage.
+- Canonical path for new integration work remains `pipeline/main.py` and `src/pipeline/engine.py`.
+
 ## Runtime lifecycle (actual engine order)
 `run_pipeline(...)` and `run_pipeline_with_overrides(...)` in `src/pipeline/engine.py` run this fixed sequence:
 1. `load_inputs(config)`

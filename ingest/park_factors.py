@@ -3,6 +3,13 @@ from datetime import date, timedelta
 from pybaseball import statcast
 from src.mlb.features.team_abbr_map import team_fix_map
 
+MODULE_STATUS = "legacy_non_authoritative"
+AUTHORITATIVE_ENTRYPOINT = "pipeline/main.py -> src/pipeline/engine.py"
+STATUS_NOTE = (
+    "Standalone park-factor utility retained for compatibility; "
+    "not an authoritative pipeline entrypoint."
+)
+
 
 def compute_k_park_factors(start, end=None):
     if end is None:

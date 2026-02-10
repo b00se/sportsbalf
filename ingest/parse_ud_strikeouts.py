@@ -5,6 +5,13 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+MODULE_STATUS = "legacy_non_authoritative"
+AUTHORITATIVE_ENTRYPOINT = "pipeline/main.py -> src/pipeline/engine.py"
+STATUS_NOTE = (
+    "Standalone ingestion utility retained for compatibility; "
+    "not an authoritative pipeline entrypoint."
+)
+
 
 def get_ud_strikeouts_json():
     algolia_object_id = "PickemStat_311b6775-4d03-4466-8ab9-776442468b27"

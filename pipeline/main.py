@@ -2,6 +2,8 @@ import argparse
 import sys
 from pathlib import Path
 
+MODULE_STATUS = "authoritative_entrypoint"
+
 # Ensure project root is on the import path when running this script directly
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:

@@ -6,6 +6,8 @@ from src.core.config import load_pipeline_config
 from src.core.registry import get_pipeline
 from src.pipeline.registration import ensure_default_pipeline_registrations
 
+MODULE_STATUS = "authoritative_engine"
+
 
 def _ensure_default_registrations() -> None:
     ensure_default_pipeline_registrations()

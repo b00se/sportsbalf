@@ -43,3 +43,4 @@ Date: 2026-02-08
 - Do not leak MLB/NFL domain aliases into new sports (`qb_id`/`pitcher_id` style cross-domain naming).
 - Keep adapter behavior explicit and documented (especially if using temporary pass-through stages).
 - Preserve output column stability for existing sports while adding new sport outputs.
+- Do not treat legacy modules as onboarding authority (`cli/main.py`, `src/models/ensemble.py`, `ingest/*`); integrate via `pipeline/main.py` + `src/pipeline/engine.py`.
