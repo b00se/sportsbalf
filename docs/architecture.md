@@ -51,7 +51,11 @@ Date: 2026-02-08
   - `src/mlb/pipeline.py`: MLB compatibility shim
   - `src/mlb/pitcher_props/pipeline.py`: shared MLB pitcher-prop orchestration
   - `src/nfl/pipeline.py`: NFL pass-attempts orchestration
-  - `src/nhl/pipeline.py`: NHL shots-on-goal orchestration shim
+  - `src/nhl/pipeline.py`: NHL shots-on-goal orchestration shim with provider-backed features
+- NHL PR#9 data/feature modules
+  - `src/nhl/data/moneypuck_ingest.py`: raw snapshot -> curated cache materialization
+  - `src/nhl/data/providers/*`: runtime curated-cache provider abstraction
+  - `src/nhl/features/shots_on_goal.py`: deterministic NHL feature builder
 
 ## Known architecture debt
 - Stage semantics are not yet enforced by dedicated contract tests (planned follow-up: PR#2 in NHL onboarding sequence).

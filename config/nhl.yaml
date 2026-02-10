@@ -4,8 +4,14 @@ pipeline:
 
 nhl:
   shots_on_goal:
+    provider: moneypuck_snapshot
     inference_input_path: tests/testdata/nhl_shots_on_goal_input.csv
-    model_path: models/nhl_shots_on_goal.joblib
+    provider_seasons: [2024]
+    moneypuck_skater_games_snapshot_path: tests/testdata/nhl/moneypuck/skater_games_full_snapshot_sample.csv
+    moneypuck_skater_games_curated_cache_path: data/nhl/moneypuck_skater_games_curated.parquet
+    feature_rolling_windows: [5, 10]
+    auto_refresh_snapshot: true
+    fail_on_provider_error: true
     monte_carlo_simulations: 10000
     monte_carlo_seed: 42
     fallback_std: 1.0

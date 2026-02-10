@@ -10,6 +10,9 @@ import pandas as pd
 from src.core.config import load_pipeline_config
 from src.core.contracts import PipelineConfig
 from src.core.simulation import MonteCarloConfig, apply_simulations
+from src.nhl.data.moneypuck_ingest import refresh_skater_games_snapshot
+from src.nhl.data.providers import get_provider
+from src.nhl.features.shots_on_goal import build_sog_inference_features
 from src.utils.io import read_csv
 
 logger = logging.getLogger(__name__)
@@ -134,6 +137,40 @@ def run_shots_on_goal_pipeline(
     default_over_price = float(section.get("default_over_decimal_price", 1.91))
     default_under_price = float(section.get("default_under_decimal_price", 1.91))
     fallback_prediction = float(section.get("fallback_prediction", 2.5))
+    provider_seasons = [int(value) for value in section.get("provider_seasons", [])]
+
+    try:
+        if bool(section.get("auto_refresh_snapshot", False)):
+            refresh_skater_games_snapshot(
+                snapshot_path=str(section["moneypuck_skater_games_snapshot_path"]),
+                curated_cache_path=str(
+                    section["moneypuck_skater_games_curated_cache_path"]
+                ),
+                seasons=provider_seasons,
+            )
+
+        provider = get_provider(
+            section.get("provider"),
+            curated_cache_path=str(
+                section["moneypuck_skater_games_curated_cache_path"]
+            ),
+        )
+        provider_result = provider.load_skater_games(provider_seasons)
+    except Exception as exc:
+        if bool(section.get("fail_on_provider_error", True)):
+            raise RuntimeError(f"NHL provider load failure: {exc}") from exc
+        logger.warning("NHL provider load failed; falling back to configured default.")
+        provider_result = None
+
+    if provider_result is not None:
+        inference_frame = build_sog_inference_features(
+            inference_rows=inference_frame,
+            skater_games=provider_result.data,
+            rolling_windows=[
+                int(value) for value in section.get("feature_rolling_windows", [5, 10])
+            ],
+            fallback_prediction=fallback_prediction,
+        )
 
     inference_frame["over_decimal_price"] = _optional_numeric_series(
         inference_frame, "over_decimal_price"
@@ -141,13 +178,13 @@ def run_shots_on_goal_pipeline(
     inference_frame["under_decimal_price"] = _optional_numeric_series(
         inference_frame, "under_decimal_price"
     ).fillna(default_under_price)
-
-    inferred_prediction = _optional_numeric_series(
-        inference_frame, "predicted_shots_on_goal"
-    )
-    inference_frame["predicted_shots_on_goal"] = inferred_prediction.fillna(
-        fallback_prediction
-    )
+    if "predicted_shots_on_goal" in inference_frame.columns:
+        predicted = _optional_numeric_series(inference_frame, "predicted_shots_on_goal")
+        inference_frame["predicted_shots_on_goal"] = predicted.fillna(
+            fallback_prediction
+        )
+    else:
+        inference_frame["predicted_shots_on_goal"] = fallback_prediction
 
     sim_config = MonteCarloConfig(
         simulations=int(section.get("monte_carlo_simulations", 10_000)),

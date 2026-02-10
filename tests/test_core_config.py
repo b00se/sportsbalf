@@ -216,6 +216,135 @@ def test_nfl_config_loads_for_pass_attempts() -> None:
     assert isinstance(config.section, dict)
 
 
+def _base_nhl_shots_on_goal_section() -> dict[str, Any]:
+    return {
+        "provider": "moneypuck_snapshot",
+        "inference_input_path": "tests/testdata/nhl_shots_on_goal_input.csv",
+        "provider_seasons": [2024],
+        "moneypuck_skater_games_snapshot_path": (
+            "tests/testdata/nhl/moneypuck/skater_games_full_snapshot_sample.csv"
+        ),
+        "moneypuck_skater_games_curated_cache_path": (
+            "tests/testdata/nhl/moneypuck/skater_games_curated.parquet"
+        ),
+        "feature_rolling_windows": [5, 10],
+        "auto_refresh_snapshot": False,
+        "fail_on_provider_error": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("missing_key", "expected_path"),
+    [
+        ("provider", "nhl.shots_on_goal.provider"),
+        ("inference_input_path", "nhl.shots_on_goal.inference_input_path"),
+        ("provider_seasons", "nhl.shots_on_goal.provider_seasons"),
+        (
+            "moneypuck_skater_games_snapshot_path",
+            "nhl.shots_on_goal.moneypuck_skater_games_snapshot_path",
+        ),
+        (
+            "moneypuck_skater_games_curated_cache_path",
+            "nhl.shots_on_goal.moneypuck_skater_games_curated_cache_path",
+        ),
+        ("feature_rolling_windows", "nhl.shots_on_goal.feature_rolling_windows"),
+        ("auto_refresh_snapshot", "nhl.shots_on_goal.auto_refresh_snapshot"),
+        ("fail_on_provider_error", "nhl.shots_on_goal.fail_on_provider_error"),
+    ],
+)
+def test_nhl_shots_on_goal_required_keys_must_exist(
+    tmp_path: Path,
+    missing_key: str,
+    expected_path: str,
+) -> None:
+    section = _base_nhl_shots_on_goal_section()
+    section.pop(missing_key)
+    config_path = tmp_path / f"nhl_shots_missing_{missing_key}.yaml"
+    _write_yaml(
+        config_path,
+        {
+            "pipeline": {"sport": "nhl", "stat": "shots_on_goal"},
+            "nhl": {"shots_on_goal": section},
+        },
+    )
+
+    with pytest.raises(ConfigValidationError, match=expected_path):
+        load_pipeline_config(str(config_path))
+
+
+@pytest.mark.parametrize(
+    ("key", "bad_value", "expected_path"),
+    [
+        ("provider", 1, "nhl.shots_on_goal.provider"),
+        ("inference_input_path", True, "nhl.shots_on_goal.inference_input_path"),
+        ("provider_seasons", [], "nhl.shots_on_goal.provider_seasons"),
+        (
+            "provider_seasons",
+            [2024, "2025"],
+            "nhl.shots_on_goal.provider_seasons\\[1\\]",
+        ),
+        ("provider_seasons", [2024, True], "nhl.shots_on_goal.provider_seasons\\[1\\]"),
+        ("feature_rolling_windows", [], "nhl.shots_on_goal.feature_rolling_windows"),
+        (
+            "feature_rolling_windows",
+            [5, "10"],
+            "nhl.shots_on_goal.feature_rolling_windows\\[1\\]",
+        ),
+        ("auto_refresh_snapshot", "false", "nhl.shots_on_goal.auto_refresh_snapshot"),
+        (
+            "fail_on_provider_error",
+            "true",
+            "nhl.shots_on_goal.fail_on_provider_error",
+        ),
+    ],
+)
+def test_nhl_shots_on_goal_required_keys_must_have_valid_types(
+    tmp_path: Path,
+    key: str,
+    bad_value: Any,
+    expected_path: str,
+) -> None:
+    section = _base_nhl_shots_on_goal_section()
+    section[key] = bad_value
+    config_path = tmp_path / f"nhl_shots_bad_{key}.yaml"
+    _write_yaml(
+        config_path,
+        {
+            "pipeline": {"sport": "nhl", "stat": "shots_on_goal"},
+            "nhl": {"shots_on_goal": section},
+        },
+    )
+
+    with pytest.raises(ConfigValidationError, match=expected_path):
+        load_pipeline_config(str(config_path))
+
+
+def test_nhl_shots_on_goal_fail_on_provider_error_must_be_true(tmp_path: Path) -> None:
+    section = _base_nhl_shots_on_goal_section()
+    section["fail_on_provider_error"] = False
+    config_path = tmp_path / "nhl_fail_soft.yaml"
+    _write_yaml(
+        config_path,
+        {
+            "pipeline": {"sport": "nhl", "stat": "shots_on_goal"},
+            "nhl": {"shots_on_goal": section},
+        },
+    )
+
+    with pytest.raises(
+        ConfigValidationError, match="nhl.shots_on_goal.fail_on_provider_error"
+    ):
+        load_pipeline_config(str(config_path))
+
+
+def test_nhl_config_loads_for_shots_on_goal() -> None:
+    config = load_pipeline_config("config/nhl.yaml")
+
+    assert config.sport == "nhl"
+    assert config.stat == "shots_on_goal"
+    assert isinstance(config.section, dict)
+
+
 def test_unknown_sport_stat_without_registered_validator_still_loads(
     tmp_path: Path,
 ) -> None:

@@ -1,0 +1,5 @@
+team,season,name,gameId,playerTeam,opposingTeam,gameDate,iceTime,shotsOnGoalFor
+NYR,2024,Player One,2024-10-05-NYR-BOS,NYR,BOS,2024-10-05,18.5,4
+NYR,2024,Player One,2024-10-06-NYR-MTL,NYR,MTL,2024-10-06,19.0,3
+TOR,2024,Player Two,2024-10-05-TOR-MTL,TOR,MTL,2024-10-05,17.0,2
+TOR,2024,Player Two,2024-10-06-TOR-OTT,TOR,OTT,2024-10-06,18.2,3

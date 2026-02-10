@@ -38,11 +38,18 @@ Date: 2026-02-08
    - add `("nhl", "shots_on_goal", ...)` to `DEFAULT_PIPELINE_REGISTRATIONS`
 4. Test target:
    - `tests/integration/test_nhl_shots_on_goal_pipeline.py` using fixtures under `tests/testdata/`
+5. PR#9 data layer target:
+   - add raw snapshot ingestion + curated parquet cache flow under `src/nhl/data/`
+   - add provider abstraction under `src/nhl/data/providers/`
+   - build deterministic inference features under `src/nhl/features/shots_on_goal.py`
 
 ## Implemented reference
-- NHL `shots_on_goal` skeleton is now implemented as an onboarding example:
+- NHL `shots_on_goal` provider-backed baseline is implemented as an onboarding example:
   - adapter: `src/nhl/shots_on_goal/pipeline.py`
   - orchestration shim: `src/nhl/pipeline.py`
+  - data ingest: `src/nhl/data/moneypuck_ingest.py`
+  - provider abstraction: `src/nhl/data/providers/`
+  - feature builder: `src/nhl/features/shots_on_goal.py`
   - config: `config/nhl.yaml`
   - integration test: `tests/integration/test_nhl_shots_on_goal_pipeline.py`
 

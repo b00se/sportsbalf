@@ -52,7 +52,7 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
   - `attempts_line`
 - plus common simulation probability/EV/edge fields above
 
-### NHL shots on goal fields (PR#8 skeleton baseline)
+### NHL shots on goal fields (PR#9 provider baseline)
 - identity/line:
   - `player_id`
   - `player_name`
@@ -67,6 +67,18 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
 - mode metadata:
   - `run_mode`
   - `lines_status`
+
+### NHL PR#9 runtime data/feature baseline
+- Data provider abstraction:
+  - `src/nhl/data/providers/base.py`
+  - `src/nhl/data/providers/moneypuck_snapshot.py`
+- Curated cache canonical schema:
+  - `season`, `game_id`, `game_date`, `player_id`, `player_name`
+  - `team`, `opponent`, `shots_on_goal`, `time_on_ice_minutes`
+- Deterministic baseline feature fields:
+  - `sog_avg_last_5`
+  - `sog_avg_last_10`
+  - `sog_avg_season`
 
 ## Field stability policy for onboarding work
 - Existing MLB/NFL output columns above are treated as backward-compatible commitments for this onboarding program.

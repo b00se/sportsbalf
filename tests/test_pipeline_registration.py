@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import yaml
 from src.core.config import ConfigValidationError, load_pipeline_config
 from src.core.contracts import ModelBundle, PipelineConfig, PipelineInputs
 from src.core.registry import (
@@ -266,22 +267,36 @@ def test_onboarding_dummy_pipeline_minimal_boilerplate(tmp_path: Path) -> None:
 
     config_path = tmp_path / "nhl_dummy.yaml"
     config_path.write_text(
-        "\n".join(
-            [
-                "pipeline:",
-                "  sport: nhl",
-                "  stat: shots_on_goal",
-                "nhl:",
-                "  shots_on_goal:",
-                "    seed: 7",
-            ]
+        yaml.safe_dump(
+            {
+                "pipeline": {"sport": "nhl", "stat": "shots_on_goal"},
+                "nhl": {
+                    "shots_on_goal": {
+                        "provider": "moneypuck_snapshot",
+                        "inference_input_path": (
+                            "tests/testdata/nhl_shots_on_goal_input.csv"
+                        ),
+                        "provider_seasons": [2024],
+                        "moneypuck_skater_games_snapshot_path": (
+                            "tests/testdata/nhl/moneypuck/"
+                            "skater_games_full_snapshot_sample.csv"
+                        ),
+                        "moneypuck_skater_games_curated_cache_path": (
+                            "/tmp/nhl_curated.parquet"
+                        ),
+                        "feature_rolling_windows": [5, 10],
+                        "auto_refresh_snapshot": False,
+                        "fail_on_provider_error": True,
+                    }
+                },
+            }
         ),
         encoding="utf-8",
     )
     loaded = load_pipeline_config(str(config_path))
     assert loaded.sport == "nhl"
     assert loaded.stat == "shots_on_goal"
-    assert loaded.section == {"seed": 7}
+    assert loaded.section["provider"] == "moneypuck_snapshot"
 
 
 def test_unregistered_sport_stat_still_raises_unknown_pipeline_error() -> None:

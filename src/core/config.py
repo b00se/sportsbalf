@@ -117,6 +117,25 @@ def _validate_required_non_empty_int_list(section: dict[str, Any], path: str) ->
             )
 
 
+def _validate_required_bool_key(section: dict[str, Any], path: str) -> None:
+    """Validate a required boolean key for runtime-critical config fields.
+
+    Args:
+        section: Parent mapping containing the key.
+        path: Full dotted path to the key.
+
+    Raises:
+        ConfigValidationError: If key is missing or not a boolean.
+    """
+
+    key = path.rsplit(".", maxsplit=1)[-1]
+    value = section.get(key)
+    if not isinstance(value, bool):
+        raise ConfigValidationError(
+            f"Invalid required field '{path}': expected boolean."
+        )
+
+
 def _validate_mlb_stat_section(section: dict[str, Any], path: str) -> None:
     """Validate MLB runtime-critical keys for implemented stats.
 
@@ -140,12 +159,40 @@ def _validate_nfl_pass_attempts_section(section: dict[str, Any], path: str) -> N
     _validate_required_non_empty_int_list(section, f"{path}.training_years")
 
 
+def _validate_nhl_shots_on_goal_section(section: dict[str, Any], path: str) -> None:
+    """Validate NHL shots-on-goal runtime-critical keys for PR#9 flow.
+
+    Args:
+        section: Active stat config subsection.
+        path: Full dotted section path, such as `nhl.shots_on_goal`.
+    """
+
+    for key in (
+        "provider",
+        "inference_input_path",
+        "moneypuck_skater_games_snapshot_path",
+        "moneypuck_skater_games_curated_cache_path",
+    ):
+        _validate_required_str_key(section, f"{path}.{key}")
+
+    for key in ("provider_seasons", "feature_rolling_windows"):
+        _validate_required_non_empty_int_list(section, f"{path}.{key}")
+
+    _validate_required_bool_key(section, f"{path}.auto_refresh_snapshot")
+    _validate_required_bool_key(section, f"{path}.fail_on_provider_error")
+    if section.get("fail_on_provider_error") is not True:
+        raise ConfigValidationError(
+            f"Invalid required field '{path}.fail_on_provider_error': expected true."
+        )
+
+
 _VALIDATORS: dict[tuple[str, str], Callable[[dict[str, Any], str], None]] = {
     **{
         ("mlb", stat): _validate_mlb_stat_section
         for stat in _MLB_RUNTIME_CRITICAL_STATS
     },
     ("nfl", "pass_attempts"): _validate_nfl_pass_attempts_section,
+    ("nhl", "shots_on_goal"): _validate_nhl_shots_on_goal_section,
 }
 
 
