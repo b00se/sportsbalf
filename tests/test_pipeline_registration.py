@@ -14,6 +14,7 @@ from src.core.registry import (
     list_registered_pipelines,
     register_pipeline,
 )
+from src.pipeline import registration as pipeline_registration
 from src.pipeline.registration import (
     DEFAULT_PIPELINE_REGISTRATIONS,
     ensure_default_pipeline_registrations,
@@ -52,6 +53,150 @@ def test_bootstrap_registers_expected_defaults_and_is_idempotent() -> None:
     }
     assert first == expected
     assert second == expected
+
+
+def test_bootstrap_overwrites_existing_default_registration() -> None:
+    clear_registry()
+
+    class ShadowPipeline:
+        pass
+
+    register_pipeline("mlb", "strikeouts", ShadowPipeline)  # type: ignore[arg-type]
+    ensure_default_pipeline_registrations()
+
+    registrations = {
+        (entry.sport, entry.stat): entry.factory
+        for entry in list_registered_pipelines()
+    }
+    assert registrations[("mlb", "strikeouts")] is not ShadowPipeline
+    assert (
+        registrations[("mlb", "strikeouts")]
+        is dict(
+            ((sport, stat), factory)
+            for sport, stat, factory in DEFAULT_PIPELINE_REGISTRATIONS
+        )[("mlb", "strikeouts")]
+    )
+
+
+def test_bootstrap_validation_does_not_reinstantiate_factories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_registry()
+    calls = {"count": 0}
+
+    class DummyPipeline:
+        def load_inputs(self, config: PipelineConfig) -> PipelineInputs:
+            return PipelineInputs()
+
+        def build_training_frame(
+            self,
+            inputs: PipelineInputs,
+            config: PipelineConfig,
+        ) -> pd.DataFrame:
+            return pd.DataFrame()
+
+        def train_or_load_model(
+            self,
+            frame: pd.DataFrame,
+            config: PipelineConfig,
+            retrain: bool,
+        ) -> ModelBundle:
+            return ModelBundle()
+
+        def predict_lines(
+            self,
+            inputs: PipelineInputs,
+            model_bundle: ModelBundle,
+            config: PipelineConfig,
+        ) -> pd.DataFrame:
+            return pd.DataFrame()
+
+        def simulate(
+            self,
+            predictions: pd.DataFrame,
+            model_bundle: ModelBundle,
+            config: PipelineConfig,
+        ) -> pd.DataFrame:
+            return pd.DataFrame()
+
+    def _counting_factory() -> DummyPipeline:
+        calls["count"] += 1
+        return DummyPipeline()
+
+    monkeypatch.setattr(
+        pipeline_registration,
+        "DEFAULT_PIPELINE_REGISTRATIONS",
+        (("test", "metric", _counting_factory),),
+    )
+
+    ensure_default_pipeline_registrations()
+    ensure_default_pipeline_registrations()
+    assert calls["count"] == 1
+
+
+def test_bootstrap_handles_unhashable_callable_factories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_registry()
+    calls = {"count": 0}
+
+    class DummyPipeline:
+        def load_inputs(self, config: PipelineConfig) -> PipelineInputs:
+            return PipelineInputs()
+
+        def build_training_frame(
+            self,
+            inputs: PipelineInputs,
+            config: PipelineConfig,
+        ) -> pd.DataFrame:
+            return pd.DataFrame()
+
+        def train_or_load_model(
+            self,
+            frame: pd.DataFrame,
+            config: PipelineConfig,
+            retrain: bool,
+        ) -> ModelBundle:
+            return ModelBundle()
+
+        def predict_lines(
+            self,
+            inputs: PipelineInputs,
+            model_bundle: ModelBundle,
+            config: PipelineConfig,
+        ) -> pd.DataFrame:
+            return pd.DataFrame()
+
+        def simulate(
+            self,
+            predictions: pd.DataFrame,
+            model_bundle: ModelBundle,
+            config: PipelineConfig,
+        ) -> pd.DataFrame:
+            return pd.DataFrame()
+
+    class UnhashableFactory:
+        def __call__(self) -> DummyPipeline:
+            calls["count"] += 1
+            return DummyPipeline()
+
+        def __eq__(self, other: object) -> bool:
+            return self is other
+
+    monkeypatch.setattr(
+        pipeline_registration,
+        "_VALIDATED_REGISTRATION_DECLARATIONS",
+        set(),
+    )
+    monkeypatch.setattr(
+        pipeline_registration,
+        "DEFAULT_PIPELINE_REGISTRATIONS",
+        (("test", "metric", UnhashableFactory()),),
+    )
+
+    ensure_default_pipeline_registrations()
+    ensure_default_pipeline_registrations()
+    assert calls["count"] == 1
 
 
 def test_discovery_helpers_follow_registry_normalization() -> None:
