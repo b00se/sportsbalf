@@ -39,6 +39,13 @@ Date: 2026-02-08
 4. Test target:
    - `tests/integration/test_nhl_shots_on_goal_pipeline.py` using fixtures under `tests/testdata/`
 
+## Implemented reference
+- NHL `shots_on_goal` skeleton is now implemented as an onboarding example:
+  - adapter: `src/nhl/shots_on_goal/pipeline.py`
+  - orchestration shim: `src/nhl/pipeline.py`
+  - config: `config/nhl.yaml`
+  - integration test: `tests/integration/test_nhl_shots_on_goal_pipeline.py`
+
 ## Common pitfalls to avoid
 - Do not leak MLB/NFL domain aliases into new sports (`qb_id`/`pitcher_id` style cross-domain naming).
 - Keep adapter behavior explicit and documented (especially if using temporary pass-through stages).

@@ -13,9 +13,10 @@ Sequence is optimized for low-risk integration: each PR has explicit acceptance 
 - PR 3: Implemented and merged on 2026-02-08 (`#13`)
 - PR 4: Implemented and merged on 2026-02-08 (`#14`)
 - PR 5: Implemented and merged on 2026-02-09 (`#15`)
-- PR 6: Planned
+- PR 6: Implemented and merged on 2026-02-10 (local merge to `main`, no PR)
 - PR 7: Implemented and merged on 2026-02-10 (local merge to `main`, no PR)
-- PR 8-PR 10: Planned
+- PR 8: In progress
+- PR 9-PR 10: Planned
 
 ## PR Sequence
 

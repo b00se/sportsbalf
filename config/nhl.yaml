@@ -1,0 +1,14 @@
+pipeline:
+  sport: nhl
+  stat: shots_on_goal
+
+nhl:
+  shots_on_goal:
+    inference_input_path: tests/testdata/nhl_shots_on_goal_input.csv
+    model_path: models/nhl_shots_on_goal.joblib
+    monte_carlo_simulations: 10000
+    monte_carlo_seed: 42
+    fallback_std: 1.0
+    fallback_prediction: 2.5
+    default_over_decimal_price: 1.91
+    default_under_decimal_price: 1.91

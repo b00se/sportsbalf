@@ -32,6 +32,7 @@ def test_default_pipeline_registration_catalog_is_expected() -> None:
         ("mlb", "hits_allowed"),
         ("mlb", "bb_allowed"),
         ("nfl", "pass_attempts"),
+        ("nhl", "shots_on_goal"),
     }
 
 
@@ -50,6 +51,7 @@ def test_bootstrap_registers_expected_defaults_and_is_idempotent() -> None:
         ("mlb", "hits_allowed"),
         ("mlb", "bb_allowed"),
         ("nfl", "pass_attempts"),
+        ("nhl", "shots_on_goal"),
     }
     assert first == expected
     assert second == expected

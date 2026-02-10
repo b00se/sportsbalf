@@ -46,10 +46,12 @@ Date: 2026-02-08
 - Sport adapters
   - `src/mlb/pitcher_props/adapter.py`
   - `src/nfl/pass_attempts/pipeline.py`
+  - `src/nhl/shots_on_goal/pipeline.py`
 - Sport orchestration modules
   - `src/mlb/pipeline.py`: MLB compatibility shim
   - `src/mlb/pitcher_props/pipeline.py`: shared MLB pitcher-prop orchestration
   - `src/nfl/pipeline.py`: NFL pass-attempts orchestration
+  - `src/nhl/pipeline.py`: NHL shots-on-goal orchestration shim
 
 ## Known architecture debt
 - Stage semantics are not yet enforced by dedicated contract tests (planned follow-up: PR#2 in NHL onboarding sequence).
