@@ -276,6 +276,7 @@ def test_onboarding_dummy_pipeline_minimal_boilerplate(tmp_path: Path) -> None:
                         "inference_input_path": (
                             "tests/testdata/nhl_shots_on_goal_input.csv"
                         ),
+                        "model_path": "models/nhl_shots_on_goal_model.joblib",
                         "provider_seasons": [2024],
                         "moneypuck_skater_games_snapshot_path": (
                             "tests/testdata/nhl/moneypuck/"
