@@ -5,11 +5,11 @@ pipeline:
 nhl:
   shots_on_goal:
     provider: moneypuck_snapshot
-    inference_input_path: tests/testdata/nhl_shots_on_goal_input.csv
+    inference_input_path: data/nhl/nhl_shots_on_goal_all_player_input.csv
     model_path: models/nhl_shots_on_goal_model.joblib
     provider_seasons: [2024]
     training_seasons: [2024]
-    moneypuck_skater_games_snapshot_path: tests/testdata/nhl/moneypuck/skater_games_full_snapshot_sample.csv
+    moneypuck_skater_games_snapshot_path: data/nhl/moneypuck_skater_games_full_snapshot_from_shots.csv
     moneypuck_skater_games_curated_cache_path: data/nhl/moneypuck_skater_games_curated.parquet
     feature_rolling_windows: [5, 10]
     auto_refresh_snapshot: true
