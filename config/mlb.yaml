@@ -4,7 +4,7 @@ pipeline:
 
 mlb:
   strikeouts:
-    lines_path: data/lines/strikeouts_2025-09-22.csv
+    lines_path: data/lines/strikeouts_2025-09-20.csv
     game_logs_path: tests/testdata/game_logs.csv
     park_factors_path: data/raw/park_factors_2025.csv
     pitch_data_path: data/processed/pitcher_game_data_2025.parquet

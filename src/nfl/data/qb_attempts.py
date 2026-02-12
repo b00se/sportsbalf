@@ -292,16 +292,17 @@ def _attach_ud_lines(
 def _fill_missing_values(merged: pd.DataFrame) -> pd.DataFrame:
     filled = merged.copy()
 
-    # Player-centric backfills
-    season_avg = filled.groupby(["qb_id", "season"])["pass_attempts"].transform("mean")
-    career_avg = filled.groupby("qb_id")["pass_attempts"].transform("mean")
-    league_median = filled["pass_attempts"].median()
-
-    for column in ["season_avg_attempts", "career_avg_attempts", "season_avg_attempts_to_date"]:
+    # Player-centric backfills.
+    # Keep these leakage-safe by avoiding fills derived from full-sample target values.
+    for column in [
+        "season_avg_attempts",
+        "career_avg_attempts",
+        "season_avg_attempts_to_date",
+    ]:
         if column in filled.columns:
-            filled[column] = filled[column].fillna(season_avg)
-            filled[column] = filled[column].fillna(career_avg)
-            filled[column] = filled[column].fillna(league_median)
+            column_values = pd.to_numeric(filled[column], errors="coerce")
+            column_values = column_values.fillna(0.0)
+            filled[column] = column_values
 
     numeric_team_cols = [
         "plays_per_game",
@@ -315,21 +316,7 @@ def _fill_missing_values(merged: pd.DataFrame) -> pd.DataFrame:
     for column in numeric_team_cols:
         if column in filled.columns:
             column_values = pd.to_numeric(filled[column], errors="coerce")
-            team_fallback = None
-            opponent_fallback = None
-            if "team" in filled.columns:
-                team_fallback = column_values.groupby(filled["team"]).transform("median")
-            if "opponent" in filled.columns:
-                opponent_fallback = column_values.groupby(filled["opponent"]).transform("median")
-            if team_fallback is not None and team_fallback.notna().any():
-                column_values = column_values.where(column_values.notna(), team_fallback)
-            if opponent_fallback is not None and opponent_fallback.notna().any():
-                column_values = column_values.where(column_values.notna(), opponent_fallback)
-            if column_values.notna().any():
-                global_median = float(column_values.median())
-            else:
-                global_median = 0.0
-            column_values = column_values.where(column_values.notna(), global_median)
+            column_values = column_values.fillna(0.0)
             filled[column] = column_values
 
     qb_numeric_cols = [
@@ -345,14 +332,7 @@ def _fill_missing_values(merged: pd.DataFrame) -> pd.DataFrame:
     for column in qb_numeric_cols:
         if column in filled.columns:
             column_values = pd.to_numeric(filled[column], errors="coerce")
-            qb_fallback = column_values.groupby(filled["qb_id"]).transform("mean")
-            if qb_fallback.notna().any():
-                column_values = column_values.where(column_values.notna(), qb_fallback)
-            if column_values.notna().any():
-                global_median = float(column_values.median())
-            else:
-                global_median = 0.0
-            column_values = column_values.where(column_values.notna(), global_median)
+            column_values = column_values.fillna(0.0)
             filled[column] = column_values
 
     if "rest_days" in filled.columns:
@@ -458,6 +438,12 @@ def prepare_qb_attempts_dataset(
             how="left",
         )
         merged.drop(columns=["qb_id"], inplace=True, errors="ignore")
+        merged.sort_values(["player_id", "season", "week"], inplace=True)
+        for column in ("ngs_avg_time_to_throw", "ngs_avg_air_yards", "ngs_cpoe"):
+            if column in merged.columns:
+                merged[column] = merged.groupby("player_id", dropna=False)[
+                    column
+                ].shift(1)
 
     # Game context features
     context_features = compute_game_context_features(schedule)

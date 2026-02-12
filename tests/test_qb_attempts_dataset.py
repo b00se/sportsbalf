@@ -182,19 +182,27 @@ def test_prepare_qb_attempts_dataset_merges_ud_lines_and_features():
     assert kyler_week1["ud_line"] == 31.5
     assert bool(kyler_week1["home"])
     assert pd.isna(kyler_week1["prev_attempts"])
-    assert kyler_week1["plays_per_game"] > 0
-    assert kyler_week1["ngs_avg_time_to_throw"] == 2.5
+    assert kyler_week1["plays_per_game"] == 0
+    assert kyler_week1["ngs_avg_time_to_throw"] == 0
+    assert kyler_week1["qb_dropbacks"] == 0
+    assert kyler_week1["season_avg_attempts"] == 0
+    assert kyler_week1["career_avg_attempts"] == 0
 
     kyler_week2 = result[(result["qb_id"] == "A") & (result["week"] == 2)].iloc[0]
     assert kyler_week2["ud_line"] == 30.5
     assert kyler_week2["prev_attempts"] == 30
     assert pd.isna(kyler_week2["rolling3_attempts"])
     assert not bool(kyler_week2["short_week"])
+    assert kyler_week2["plays_per_game"] > 0
+    assert kyler_week2["ngs_avg_time_to_throw"] == 2.5
+    assert kyler_week2["qb_dropbacks"] > 0
+    assert kyler_week2["season_avg_attempts"] == 30
+    assert kyler_week2["career_avg_attempts"] == 30
 
     josh = result[result["qb_id"] == "B"].iloc[0]
     assert not bool(josh["home"])
     assert josh["ud_line"] == 38.5
-    assert josh["opponent_pass_rate_allowed"] >= 0
+    assert josh["opponent_pass_rate_allowed"] == 0
 
 
 def test_prepare_qb_attempts_dataset_normalizes_team_names():
