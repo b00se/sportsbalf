@@ -16,7 +16,7 @@ Sequence is optimized for low-risk integration: each PR has explicit acceptance 
 - PR 6: Implemented and merged on 2026-02-10 (local merge to `main`, no PR)
 - PR 7: Implemented and merged on 2026-02-10 (local merge to `main`, no PR)
 - PR 8: Implemented and merged on 2026-02-10 (local merge to `main`, no PR)
-- PR 9: Implemented on 2026-02-10 in branch `feat/nhl-pr9-moneypuck-curated-cache` (pending merge)
+- PR 9: Implemented and merged on 2026-02-10 (`d5c0a4a`)
 - PR 10: Planned (detailed spec in `docs/plans/planned/nhl-pr10-model-simulation-mvp-plan.md`)
 
 ## PR Sequence
