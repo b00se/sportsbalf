@@ -19,6 +19,12 @@ Reduce operator back-and-forth for common repo workflows while staying safe and 
    - `.venv/bin/pytest -q`
 6. If requested, run e2e smoke checks and report exact commands + outputs.
 7. Push branch and open/update PR with validation summary.
+8. If contract/config/workflow behavior changed, update matching docs in the same change:
+   - `README.md`
+   - `docs/architecture.md`
+   - `docs/contracts.md`
+   - `docs/config-schema.md`
+   - relevant `docs/plans/*` status/location
 
 ## Preflight Checklist
 Run before mutate/review/PR actions.
@@ -74,3 +80,4 @@ Run before mutate/review/PR actions.
 - Avoid relying on shell activation state; always call `.venv/bin/...` explicitly.
 - Network commands may require escalated execution depending on sandbox state.
 - Keep generated artifacts inside active checkout only.
+- Treat untracked `.worktrees/` as expected local noise unless explicitly requested.

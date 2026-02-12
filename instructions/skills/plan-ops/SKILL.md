@@ -71,6 +71,10 @@ Treat these as direct workflow commands in chat.
 - Keep changes surgical and scoped to the requested plan.
 - Do not stage `.worktrees/` in plan workflow commits.
 - Do not run review/findings on empty diff scope.
+- Keep plan lifecycle docs consistent:
+  - planned work in `docs/plans/planned/`
+  - shipped work in `docs/plans/implemented/`
+  - each plan doc must include `Status: ...`
 
 ## Validation Defaults
 - Lint: `.venv/bin/ruff check .`

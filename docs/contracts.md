@@ -2,27 +2,46 @@
 
 Status: Canonical (Current State)
 
-Date: 2026-02-08
+Date: 2026-02-12
 
-## Contract source
-The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
+## Contract Source
 
-## Stage contract (intended vs current behavior)
-| Stage | Intended responsibility | Current MLB/NFL behavior | Required handoff artifact |
+Authoritative protocol:
+- `SportStatPipeline` in `src/core/contracts.py`
+
+## Stage Contract (Intended vs Current Adapter Behavior)
+
+| Stage | Intended responsibility | Current adapter behavior | Required handoff artifact |
 |---|---|---|---|
-| `load_inputs(config)` | Gather raw sources and return structured inputs | Returns minimal payload with `config_path` only | `PipelineInputs` |
-| `build_training_frame(inputs, config)` | Build model-ready training frame | Returns empty `DataFrame` in adapters | `pd.DataFrame` |
-| `train_or_load_model(frame, config, retrain)` | Produce/load trained artifacts | Stores retrain flag, returns empty `ModelBundle` | `ModelBundle` |
-| `predict_lines(inputs, model_bundle, config)` | Produce pre-simulation prediction rows | Returns empty `DataFrame` in adapters | `pd.DataFrame` |
-| `simulate(predictions, model_bundle, config)` | Run simulation and return final output | Performs full end-to-end workflow in current adapters | Final `pd.DataFrame` |
+| `load_inputs(config)` | Gather raw sources | Minimal payload in adapters | `PipelineInputs` |
+| `build_training_frame(inputs, config)` | Build model-ready frame | Compatibility no-op in adapters | `pd.DataFrame` |
+| `train_or_load_model(frame, config, retrain)` | Return trained artifacts | Compatibility no-op in adapters | `ModelBundle` |
+| `predict_lines(inputs, model_bundle, config)` | Build pre-simulation rows | Compatibility no-op in adapters | `pd.DataFrame` |
+| `simulate(predictions, model_bundle, config)` | Run final simulation output | Performs full sport workflow | final `pd.DataFrame` |
 
-## Adapter exception (temporary compatibility pattern)
-- MLB (`src/mlb/pitcher_props/adapter.py`) and NFL (`src/nfl/pass_attempts/pipeline.py`) satisfy the protocol but defer all business logic to `simulate(...)`.
-- This compatibility pattern is intentionally preserved for current behavior and backward compatibility.
-- Future sports should not assume this is required; stage-by-stage semantics may be enforced later.
+## Simulate-Only Adapter Policy
 
-## Output fields (current stability baseline)
-### Common simulation fields
+Current simulate-only adapters are explicit and test-enforced:
+- `src.mlb.pitcher_props.adapter.MlbPitcherPropsPipeline`
+- `src.nfl.pass_attempts.pipeline.NflPassAttemptsPipeline`
+- `src.nhl.shots_on_goal.pipeline.NhlShotsOnGoalPipeline`
+
+Enforcement:
+- `tests/test_engine_contract_enforcement.py`
+- Any new simulate-only adapter must be deliberately allowlisted.
+
+## Shared Simulation Contract
+
+From `src/core/simulation.py`:
+- `MonteCarloConfig`
+- `simulate_row(...)`
+- `apply_simulations(...)`
+
+Shared naming is sport-neutral (`line`, `entity_id`) with caller-specified column mappings (`line_col`, `id_col`).
+
+## Output Schema Baseline
+
+### Shared simulation fields
 - `prob_over`
 - `prob_under`
 - `prob_push`
@@ -31,90 +50,58 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
 - `edge_over`
 - `edge_under`
 
-### MLB fields by stat family
-- Strikeouts:
-  - prediction + line: `predicted_strikeouts`, `k_line`
-- Outs recorded:
-  - prediction + line: `predicted_outs_recorded`, `outs_line`
-- Earned runs:
-  - prediction + line: `predicted_earned_runs`, `er_line`
-- Hits allowed:
-  - prediction + line: `predicted_hits_allowed`, `hits_line`
-- Walks allowed:
-  - prediction + line: `predicted_bb_allowed`, `bb_line`
-- MLB mode/availability metadata (where applicable):
-  - `run_mode`
-  - `lines_status`
+### MLB fields
+- Strikeouts: `predicted_strikeouts`, `k_line`
+- Outs: `predicted_outs_recorded`, `outs_line`
+- Earned runs: `predicted_earned_runs`, `er_line`
+- Hits allowed: `predicted_hits_allowed`, `hits_line`
+- Walks allowed: `predicted_bb_allowed`, `bb_line`
+- Mode metadata where applicable: `run_mode`, `lines_status`
 
-### NFL pass attempts fields
-- prediction + line:
-  - `predicted_pass_attempts`
-  - `attempts_line`
-- plus common simulation probability/EV/edge fields above
+### NFL fields
+- `predicted_pass_attempts`
+- `attempts_line`
+- plus shared simulation fields
 
-### NHL shots on goal fields (PR#10 model + simulation MVP)
-- identity/line:
-  - `player_id`
-  - `player_name`
-  - `team`
-  - `opponent`
-  - `game_id`
-  - `sog_line`
-- prediction:
-  - `predicted_shots_on_goal`
-- additive model metadata:
-  - `baseline_predicted_shots_on_goal`
-  - `model_residual_std`
-  - `training_rmse`
-  - `training_mae`
-  - `training_r2`
-  - `model_name`
-- simulation outputs:
-  - shared `prob_*`, `ev_*`, `edge_*` fields above
-- mode metadata:
-  - `run_mode`
-  - `lines_status`
+### NHL fields (`shots_on_goal`)
+Identity/line:
+- `player_id`, `player_name`, `team`, `opponent`, `game_id`, `sog_line`
 
-### NHL PR#10 runtime data/feature/model baseline
-- Data provider abstraction:
-  - `src/nhl/data/providers/base.py`
-  - `src/nhl/data/providers/moneypuck_snapshot.py`
-- Curated cache canonical schema:
-  - `season`, `game_id`, `game_date`, `player_id`, `player_name`
-  - `team`, `opponent`, `shots_on_goal`, `time_on_ice_minutes`
-- Deterministic baseline feature fields:
-  - `sog_avg_last_5`
-  - `sog_avg_last_10`
-  - `sog_avg_season_to_date`
-- Additional model features:
-  - `toi_avg_last_5`
-  - `toi_avg_last_10`
-  - `games_played_to_date`
-  - `days_since_last_game`
-  - `team_sog_for_avg_last_5`
-  - `opponent_sog_allowed_avg_last_5`
-- Model artifact compatibility:
-  - NHL model artifacts persist feature schema hash and model metadata
-  - incompatible/corrupted artifacts automatically retrain when running the pipeline
+Prediction:
+- `predicted_shots_on_goal`
 
-## Field stability policy for onboarding work
-- Existing MLB/NFL output columns above are treated as backward-compatible commitments for this onboarding program.
-- New NHL outputs should align to shared probability/EV conventions (`prob_*`, `ev_*`, `edge_*`) from day one.
+Additive model metadata:
+- `baseline_predicted_shots_on_goal`
+- `model_residual_std`
+- `training_rmse`
+- `training_mae`
+- `training_r2`
+- `model_name`
 
-## PR#2 enforcement baseline
-- Engine contract invariants are enforced in `tests/test_engine_contract_enforcement.py`:
-  strict stage order, stage handoff artifacts, CLI override passthrough, and default registration pairs.
-- Temporary simulate-only adapter behavior is explicitly allowlisted in that test module via fully qualified class names.
-- Any new simulate-only adapter must be intentionally added to the allowlist; silent introduction of new no-op adapters is a test failure.
+Mode metadata:
+- `run_mode`, `lines_status`
 
-## PR#3 shared simulation extraction note
-- Shared simulation primitives now live in `src/core/simulation.py`:
-  `MonteCarloConfig`, `simulate_row(...)`, and `apply_simulations(...)`.
-- MLB compatibility imports remain supported via `src/mlb/models/monte_carlo.py`
-  as thin re-exports to preserve existing callsites.
+## NHL Data/Model Baseline
 
-## PR#4 neutral simulation naming + NFL shim removal
-- Shared simulation interfaces use sport-neutral argument names (`line`, `entity_id`).
-- `apply_simulations(...)` uses explicit `line_col` and `id_col` mappings from callers.
-- NFL pass-attempt orchestration no longer aliases `ud_line -> k_line` or `qb_id -> pitcher_id`.
-- MLB/NFL output column commitments above remain unchanged.
+Curated canonical skater-game schema:
+- `season`, `game_id`, `game_date`, `player_id`, `player_name`, `team`, `opponent`, `shots_on_goal`, `time_on_ice_minutes`
+
+Current NHL model feature set:
+- `sog_avg_last_5`
+- `sog_avg_last_10`
+- `sog_avg_season_to_date`
+- `toi_avg_last_5`
+- `toi_avg_last_10`
+- `games_played_to_date`
+- `days_since_last_game`
+- `team_sog_for_avg_last_5`
+- `opponent_sog_allowed_avg_last_5`
+
+Model compatibility policy:
+- NHL model artifact stores feature schema hash.
+- Incompatible/corrupt artifact triggers retrain path.
+
+## Stability Policy
+
+- Existing output columns for shipped sport/stat pipelines are backward-compatible commitments.
+- New features may add columns, but existing required columns should remain stable unless a deliberate contract migration is documented.

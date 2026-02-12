@@ -27,6 +27,7 @@ Run end-to-end repo tasks with minimal user intervention while preserving safety
    - `.venv/bin/pytest -q`
    - optional e2e run requested by user
 7. Run review rounds against `main...HEAD` as requested, then summarize with exact outputs, unresolved risks, and next action.
+8. If contracts/config/workflow behavior changed, update canonical docs in the same change (`README.md`, `docs/architecture.md`, `docs/contracts.md`, `docs/config-schema.md`).
 
 ## Mainline Plan-Commit Workflow
 Use this when user intent is to commit an approved plan doc on `main`.

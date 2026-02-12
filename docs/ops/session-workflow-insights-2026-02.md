@@ -33,8 +33,9 @@ Capture recurring workflow friction observed in local Codex session history for 
    - branch `main`
    - `git pull --ff-only origin main`
    - targeted staging only.
-4. Worktree remains default for substantial implementation work.
-5. `.worktrees/` is treated as non-commit noise unless explicitly requested.
+4. Branch-first in primary checkout is default for substantial implementation work.
+5. Worktrees are opt-in only (explicit user request or parallel branch execution).
+6. `.worktrees/` is treated as non-commit noise unless explicitly requested.
 
 ## Before vs After Behavior
 - Before:

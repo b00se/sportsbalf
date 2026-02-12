@@ -2,7 +2,7 @@
 
 Scope: This file applies to the entire repository.
 
-Purpose: Guide Codex when extending modeling features and the MLB prediction pipeline with simple, consistent practices.
+Purpose: Guide Codex when extending modeling features and sport/stat pipelines with simple, consistent practices.
 
 ## Goals
 - Prioritize modeling features and pipeline extensions.
@@ -12,6 +12,8 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
   break current behavior.
 - Keep changes minimal, focused, and consistent with current structure.
 - Maintain offline-safe tests; allow online pipeline execution.
+- Keep human-facing docs (`README.md`, `docs/*`) and agent docs (`AGENTS.md`,
+  `CODEX.md`, `instructions/*`) synchronized when workflows or contracts change.
 
 ## Python & Tooling
 - Target Python: 3.11
@@ -42,6 +44,8 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
   - `src/core/config.py` (typed config + sectioned-schema validation)
 - MLB pipeline core: `src/mlb/pipeline.py` (compat shim + strikeouts orchestration helpers).
 - NFL pipeline core: `src/nfl/pipeline.py` (compat shim + pass attempts orchestration helpers).
+- NHL pipeline core: `src/nhl/pipeline.py` (shots-on-goal orchestration with
+  provider refresh/load, model train/load, and simulation).
 - Features: `src/mlb/features/` (aggregation, rolling, park/opponent context).
 - Modeling utils:
   - `src/mlb/models/` (feature list, XGBoost, residual bootstrap, Monte Carlo helpers)
@@ -49,6 +53,19 @@ Purpose: Guide Codex when extending modeling features and the MLB prediction pip
 - Utilities: `src/utils/io.py` (CSV/Parquet I/O, config loading).
 - CLI: `cli/` (lightweight; expand as needed without breaking `pipeline/main.py`).
 - Tests: `tests/` plus fixtures in `tests/testdata/`.
+
+## Documentation Hygiene
+- If config keys, output schemas, or canonical workflows change, update:
+  - `docs/config-schema.md`
+  - `docs/contracts.md`
+  - `docs/architecture.md`
+  - `README.md` (command/examples if user-visible)
+- Plan lifecycle docs:
+  - keep in `docs/plans/planned/` while not fully shipped
+  - move to `docs/plans/implemented/` when shipped
+  - ensure each plan doc includes a `Status:` line
+- Keep references current when moving docs (avoid stale `planned/` paths in
+  implemented docs).
 
 ## Autonomy Defaults (Codex)
 - Branch-first: For substantial changes, create and use a dedicated feature branch in the primary repo checkout (`/Users/jbrys/sportsbalf`) before editing.

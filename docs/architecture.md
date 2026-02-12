@@ -2,66 +2,91 @@
 
 Status: Canonical (Current State)
 
-Date: 2026-02-08
+Date: 2026-02-12
 
-## Authoritative entrypoints
+## Authoritative Entrypoints
+
 - CLI entry: `pipeline/main.py`
 - Engine orchestration: `src/pipeline/engine.py`
-- Sport/stat registry: `src/core/registry.py`
-- Default registration bootstrap: `src/pipeline/registration.py`
-- Config loading + identity resolution: `src/core/config.py`
+- Pipeline registration catalog: `src/pipeline/registration.py`
+- Registry runtime map: `src/core/registry.py`
+- Config loading + validation: `src/core/config.py`
 
-## Legacy/non-authoritative modules
-- `cli/main.py`: compatibility stub only; do not use for canonical pipeline integration.
-- `src/models/ensemble.py`: legacy helper module; not part of the authoritative sport/stat engine path.
-- `ingest/parse_ud_strikeouts.py`: standalone ingestion utility, retained for compatibility/utility usage.
-- `ingest/park_factors.py`: standalone park-factor utility, retained for compatibility/utility usage.
-- Canonical path for new integration work remains `pipeline/main.py` and `src/pipeline/engine.py`.
+## Non-Authoritative / Legacy Surfaces
 
-## Runtime lifecycle (actual engine order)
-`run_pipeline(...)` and `run_pipeline_with_overrides(...)` in `src/pipeline/engine.py` run this fixed sequence:
+- `cli/main.py`: compatibility-only, not canonical for new integration work
+- `src/models/ensemble.py`: legacy helper, not part of canonical sport/stat engine path
+- `ingest/*`: standalone utilities, not onboarding authority
+
+New integration work should route through:
+- `pipeline/main.py`
+- `src/pipeline/engine.py`
+- `src/pipeline/registration.py`
+
+## Engine Lifecycle (Fixed Stage Order)
+
+`run_pipeline(...)` and `run_pipeline_with_overrides(...)` in `src/pipeline/engine.py` execute:
 1. `load_inputs(config)`
 2. `build_training_frame(inputs, config)`
 3. `train_or_load_model(training_frame, config, retrain)`
 4. `predict_lines(inputs, model_bundle, config)`
-5. `simulate(predictions, model_bundle, config)` and return final output
+5. `simulate(predictions, model_bundle, config)`
 
-## Current adapter pass-through behavior
-- MLB adapter `src/mlb/pitcher_props/adapter.py` and NFL adapter `src/nfl/pass_attempts/pipeline.py` implement the `SportStatPipeline` protocol.
-- In both adapters, the first four contract stages are compatibility no-ops.
-- The full sport workflow is delegated in `simulate(...)`:
-  - MLB: `run_mlb_pitcher_prop_pipeline(...)` from `src/mlb/pitcher_props/pipeline.py`
-  - NFL: `run_pass_attempts_pipeline(...)` from `src/nfl/pipeline.py`
-- This is intentional compatibility behavior for current MLB/NFL integrations, not a long-term protocol guarantee for future sports.
+## Adapter Pattern (Current State)
 
-## Module relationship map
-- Core layer
-  - `src/core/contracts.py`: shared protocol and typed dataclasses
-  - `src/core/config.py`: config schema resolution (sectioned + legacy fallback)
-  - `src/core/registry.py`: pipeline factory registration and lookup
-  - `src/core/simulation.py`: shared Monte Carlo simulation primitives
-- Engine layer
-  - `src/pipeline/engine.py`: registration bootstrap + stage sequencing
-  - `src/pipeline/registration.py`: canonical default sport/stat catalog and idempotent registration bootstrap
-- Sport adapters
-  - `src/mlb/pitcher_props/adapter.py`
-  - `src/nfl/pass_attempts/pipeline.py`
-  - `src/nhl/shots_on_goal/pipeline.py`
-- Sport orchestration modules
-  - `src/mlb/pipeline.py`: MLB compatibility shim
-  - `src/mlb/pitcher_props/pipeline.py`: shared MLB pitcher-prop orchestration
-  - `src/nfl/pipeline.py`: NFL pass-attempts orchestration
-  - `src/nhl/pipeline.py`: NHL shots-on-goal orchestration with model train/load/retrain + residual-aware simulation
-- NHL PR#10 data/feature/model modules
-  - `src/nhl/data/moneypuck_ingest.py`: raw snapshot -> curated cache materialization
-  - `src/nhl/data/providers/*`: runtime curated-cache provider abstraction
-  - `src/nhl/features/shots_on_goal.py`: leakage-safe training and inference feature builders
-  - `src/nhl/models/predict.py`: model artifact compatibility + train/load/predict helpers
-  - `src/nhl/models/bootstrap.py`: player/global residual bootstrap sampler
+Current adapters are simulate-centric (compatibility pattern):
+- MLB: `src/mlb/pitcher_props/adapter.py`
+- NFL: `src/nfl/pass_attempts/pipeline.py`
+- NHL: `src/nhl/shots_on_goal/pipeline.py`
 
-## Known architecture debt
-- Stage semantics are not yet enforced by dedicated contract tests (planned follow-up: PR#2 in NHL onboarding sequence).
+Business logic remains delegated into sport orchestration modules via `simulate(...)`:
+- MLB: `src/mlb/pitcher_props/pipeline.py`
+- NFL: `src/nfl/pipeline.py`
+- NHL: `src/nhl/pipeline.py`
 
-## PR#4 simulation API update
-- Shared simulation APIs in `src/core/simulation.py` now use sport-neutral naming (`line`, `entity_id`) with explicit line and ID column mapping at call sites.
-- NFL pass-attempt orchestration no longer introduces `k_line`/`pitcher_id` alias columns before simulation.
+This pattern is intentionally allowed and test-enforced; new sports should document any deviation explicitly.
+
+## Module Relationship Map
+
+Core:
+- `src/core/contracts.py`: protocols/dataclasses
+- `src/core/config.py`: sectioned config identity + typed runtime-critical validation
+- `src/core/registry.py`: registration and lookup
+- `src/core/simulation.py`: shared simulation primitives
+
+Engine:
+- `src/pipeline/engine.py`: orchestration + override routing
+- `src/pipeline/registration.py`: default sport/stat catalog + idempotent bootstrap
+
+Sports:
+- MLB: `src/mlb/*`
+- NFL: `src/nfl/*`
+- NHL: `src/nhl/*`
+
+## NHL Runtime Topology
+
+Data layer:
+- `src/nhl/data/moneypuck_ingest.py`: normalize raw snapshot + build curated cache
+- `src/nhl/data/providers/*`: curated-cache provider abstraction
+- `src/nhl/data/shot_snapshot.py`: shot-level -> skater-game snapshot builder utilities
+
+Feature/model layer:
+- `src/nhl/features/shots_on_goal.py`: leakage-safe training + inference features
+- `src/nhl/models/predict.py`: train/load/predict + feature schema hash compatibility
+- `src/nhl/models/bootstrap.py`: residual bootstrap sampler
+
+Orchestration:
+- `src/nhl/pipeline.py`: provider load/refresh + model lifecycle + simulation outputs
+
+## Stability Invariants
+
+- Existing output schema columns for MLB/NFL are backward-compatible commitments.
+- NHL output columns are contract-stable for current `shots_on_goal` pipeline.
+- Model artifact compatibility is schema-hash based where implemented (NHL today).
+- Tests are offline by default; network behavior must be optional and guarded.
+
+## Operational Footguns
+
+- Wrong entrypoint (`cli/main.py`) causes confusion and non-canonical behavior.
+- Empty-diff reviews often indicate wrong branch/path context.
+- `.worktrees/` appearing in status is normal local noise; do not stage unless explicitly requested.

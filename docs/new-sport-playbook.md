@@ -2,61 +2,66 @@
 
 Status: Canonical (Current Process Baseline)
 
-Date: 2026-02-08
+Date: 2026-02-12
 
-## Stepwise checklist: idea to runnable skeleton
-1. Define keys:
-   - choose `sport` and `stat` identifiers (example: `nhl`, `shots_on_goal`)
-2. Add adapter implementing `SportStatPipeline`:
-   - create sport/stat adapter class matching `src/core/contracts.py`
-3. Register adapter in centralized catalog:
-   - add `("<sport>", "<stat>", <Factory>)` entry in `src/pipeline/registration.py::DEFAULT_PIPELINE_REGISTRATIONS`
-4. Add config section:
-   - update YAML so `pipeline.sport`, `pipeline.stat`, and `{sport}.{stat}` section resolve correctly
+## Goal
+
+Add a new `{sport}.{stat}` pipeline through the canonical engine path with deterministic offline tests and stable output contracts.
+
+## Canonical Path (Do This)
+
+1. Choose stable keys:
+- `sport` (example: `nhl`)
+- `stat` (example: `shots_on_goal`)
+
+2. Implement a `SportStatPipeline` adapter.
+
+3. Register in `src/pipeline/registration.py::DEFAULT_PIPELINE_REGISTRATIONS`.
+
+4. Add sectioned config:
+- `pipeline.sport`
+- `pipeline.stat`
+- `{sport}.{stat}` section in `config/<sport>.yaml`
+
 5. Define output schema:
-   - include shared simulation columns (`prob_*`, `ev_*`, `edge_*`) plus stat-specific prediction/line columns
-6. Add deterministic offline integration test:
-   - run through `run_pipeline_with_overrides(...)` with test fixtures and no network requirements
+- stat-specific prediction and line columns
+- shared simulation columns (`prob_*`, `ev_*`, `edge_*`)
 
-## Definition of done: onboarding-ready skeleton
-- Runs via `pipeline/main.py --sport <sport> --stat <stat> --config <path>`
-- Includes deterministic offline test path
-- Requires no network in tests
-- Output schema is documented in `docs/contracts.md`
+6. Add deterministic offline integration test using `tests/testdata/*`.
 
-## NHL `shots_on_goal` starter checklist
-1. Package layout:
-   - `src/nhl/`
-   - `src/nhl/pipeline.py` (orchestration shim)
-   - `src/nhl/shots_on_goal/pipeline.py` (contract adapter)
-2. Config target:
-   - `config/nhl.yaml` with:
-     - `pipeline.sport: nhl`
-     - `pipeline.stat: shots_on_goal`
-     - `nhl.shots_on_goal` section
-3. Registry wiring:
-   - add `("nhl", "shots_on_goal", ...)` to `DEFAULT_PIPELINE_REGISTRATIONS`
-4. Test target:
-   - `tests/integration/test_nhl_shots_on_goal_pipeline.py` using fixtures under `tests/testdata/`
-5. PR#9 data layer target:
-   - add raw snapshot ingestion + curated parquet cache flow under `src/nhl/data/`
-   - add provider abstraction under `src/nhl/data/providers/`
-   - build deterministic inference features under `src/nhl/features/shots_on_goal.py`
+## Definition of Done
 
-## Implemented reference
-- NHL `shots_on_goal` model-backed MVP is implemented as an onboarding example:
-  - adapter: `src/nhl/shots_on_goal/pipeline.py`
-  - orchestration shim: `src/nhl/pipeline.py`
-  - data ingest: `src/nhl/data/moneypuck_ingest.py`
-  - provider abstraction: `src/nhl/data/providers/`
-  - feature builder: `src/nhl/features/shots_on_goal.py`
-  - model helpers: `src/nhl/models/predict.py`
-  - residual bootstrap: `src/nhl/models/bootstrap.py`
-  - config: `config/nhl.yaml`
-  - integration test: `tests/integration/test_nhl_shots_on_goal_pipeline.py`
+- Runs through:
+  - `.venv/bin/python -m pipeline.main --sport <sport> --stat <stat> --config <path>`
+- No network dependency in tests
+- Config validator covers runtime-critical keys
+- Output schema documented in `docs/contracts.md`
 
-## Common pitfalls to avoid
-- Do not leak MLB/NFL domain aliases into new sports (`qb_id`/`pitcher_id` style cross-domain naming).
-- Keep adapter behavior explicit and documented (especially if using temporary pass-through stages).
-- Preserve output column stability for existing sports while adding new sport outputs.
-- Do not treat legacy modules as onboarding authority (`cli/main.py`, `src/models/ensemble.py`, `ingest/*`); integrate via `pipeline/main.py` + `src/pipeline/engine.py`.
+## Implemented Reference (NHL)
+
+NHL `shots_on_goal` is the current full reference implementation:
+- Adapter: `src/nhl/shots_on_goal/pipeline.py`
+- Orchestration: `src/nhl/pipeline.py`
+- Data ingest: `src/nhl/data/moneypuck_ingest.py`
+- Providers: `src/nhl/data/providers/`
+- Features: `src/nhl/features/shots_on_goal.py`
+- Models: `src/nhl/models/predict.py`, `src/nhl/models/bootstrap.py`
+- Snapshot builder utility: `src/nhl/data/shot_snapshot.py`, `scripts/build_nhl_skater_games_snapshot_from_shots.py`
+- Config: `config/nhl.yaml`
+- Integration test: `tests/integration/test_nhl_shots_on_goal_pipeline.py`
+
+## Required Guardrails
+
+- Use `pipeline/main.py`; do not onboard through `cli/main.py`.
+- Use `.venv/bin/...` commands in docs/scripts.
+- Keep tests offline-only.
+- Preserve existing output columns for already-shipped stats.
+- Keep path config-driven; avoid hardcoding repo-local file paths in code.
+
+## Common Footguns
+
+- Forgetting registration entry in `DEFAULT_PIPELINE_REGISTRATIONS`.
+- Adding features in training path but not inference path.
+- Introducing network calls in tests.
+- Changing output columns without contract/test updates.
+- Reviewing wrong branch/context and missing real diff.

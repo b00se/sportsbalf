@@ -1,104 +1,85 @@
 # sportsbalf
 
-This project provides modular stat-line pipelines for MLB strikeouts and NFL pass attempts.
-The original workflows lived in Jupyter notebooks; the code has been refactored
-into reusable modules under `src/` with a sport/stat orchestration entry point.
+Modular, config-driven sports prop pipelines with a shared engine and per-sport adapters.
 
-## Setup
+Current production-shaped stats:
+- MLB: `strikeouts`, `outs_recorded`, `earned_runs`, `hits_allowed`, `bb_allowed`
+- NFL: `pass_attempts`
+- NHL: `shots_on_goal`
 
-Use Python 3.11 for local development. Then create a virtual environment and
-install dependencies:
+## Quick Start
+
+### 1) Environment
+
+Use Python 3.11 and repo-local executables.
 
 ```bash
 python3.11 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Automation note: in this repo, prefer direct virtualenv executables
-(`.venv/bin/python`, `.venv/bin/pytest`, `.venv/bin/ruff`, `.venv/bin/black`)
-instead of relying on shell activation state.
+Command convention in this repo:
+- Always prefer `.venv/bin/...` over shell activation assumptions.
 
-## Running the pipeline
+### 2) Run Pipelines
 
-Run the orchestration entrypoint with explicit sport/stat selection:
+Authoritative entrypoint:
+- `pipeline/main.py`
+
+Examples:
 
 ```bash
 .venv/bin/python -m pipeline.main --sport mlb --stat strikeouts --config config/mlb.yaml
 .venv/bin/python -m pipeline.main --sport nfl --stat pass_attempts --config config/nfl.yaml
+.venv/bin/python -m pipeline.main --sport nhl --stat shots_on_goal --config config/nhl.yaml
 ```
 
-The pipeline aggregates pitch-level data using the helpers in
-`src/mlb/features/`, enriches games with rolling and park context, and scores
-props with a persisted champion model. Champion selection is optional/config
-driven and compares candidate regressors on season walk-forward splits using
-lowest MAE as the primary objective (RMSE and R² tie-breakers). When enabled,
-the tournament evaluates `global`, `quantile3`, and `kmeans` workload
-segmentation strategies and persists the winning strategy + model artifact.
-Ahead of
-scoring, the pipeline fetches each team’s upcoming opponent from Baseball
-Reference (via `pybaseball.schedule_and_record`), recomputes rest days, applies
-the correct park factor, and normalizes player names to handle accents. The
-Monte Carlo step then adds win probabilities, medians, and expected values for
-each side of the bet.
-
-Model training and the residual bootstrap now pull from every parquet listed in
-`training_data_paths`, so earlier seasons (2021–2024) are folded in alongside
-the current year. If you add more processed seasons, just append the parquet
-paths in the config.
-
-To retrain before scoring, pass the `--retrain` flag:
+Force retrain before inference:
 
 ```bash
-.venv/bin/python -m pipeline.main --sport mlb --stat strikeouts --config config/mlb.yaml --retrain
+.venv/bin/python -m pipeline.main --sport nhl --stat shots_on_goal --config config/nhl.yaml --retrain
 ```
 
-To run the offline tournament directly and emit leaderboard/champion artifacts:
-
-```bash
-PYTHONPATH=. .venv/bin/python scripts/backtest_mlb_strikeouts.py --config config/mlb.yaml
-```
-
-Outputs:
-- CSV fold metrics (`strategy`, `model`, `test_season`, `mae`, `rmse`, `r2`)
-- CSV leaderboard with fold aggregates (`mean_mae`, `median_mae`, `std_mae`, `mean_rmse`, `mean_r2`)
-- JSON champion metadata with selected strategy/model and fold-level metrics
-
-Compatibility note: legacy helpers such as `src.mlb.pipeline.run(...)` and
-`src.nfl.pipeline.run(...)` still work, but engine-based invocation is the default interface.
-
-Fetching upcoming opponents requires network access (Baseball Reference). If the
-call fails, the pipeline gracefully falls back to the previous opponent context
-and still produces output.
-
-## Updating historical pitcher datasets
-
-To rebuild the enriched pitcher game logs from raw Statcast data, use the
-existing scripts in the `scripts/` directory. For a single season run:
-
-```bash
-PYTHONPATH=. .venv/bin/python scripts/generate_pitcher_dataset_from_raw.py --season 2023
-```
-
-This will fetch the cached raw Statcast file for the season, aggregate it with
-the functions in `src/mlb/features/mlb_features.py`, merge opponent strikeout
-and park factor context, and write the processed parquet file under
-`data/processed/`.
-
-To regenerate multiple seasons in sequence, the helper script
-`scripts/bootstrap_all_years.sh` automates fetching starters, caching the raw
-pitch-level data, and producing enriched game logs for each year in the range.
-
-## Testing
-
-Run the unit tests:
-
-```bash
-.venv/bin/pytest -q
-```
-
-Run lint and formatting checks:
+### 3) Validate Changes
 
 ```bash
 .venv/bin/ruff check .
-.venv/bin/black --check .
+.venv/bin/pytest -q
 ```
+
+## Documentation Map
+
+Core docs:
+- Architecture: `docs/architecture.md`
+- Runtime contracts: `docs/contracts.md`
+- Config schema: `docs/config-schema.md`
+- New sport onboarding: `docs/new-sport-playbook.md`
+- Onboarding conventions + footguns: `docs/onboarding-footguns.md`
+
+Planning docs:
+- Planned work: `docs/plans/planned/`
+- Shipped plans: `docs/plans/implemented/`
+- Plan lifecycle rules: `docs/plans/README.md`
+
+Agent/autonomy docs:
+- Repo agent policy: `AGENTS.md`
+- Codex workflow policy: `CODEX.md`
+- Autonomy runbook: `instructions/codex_autonomy_runbook.md`
+
+## High-Value Conventions
+
+- Use config-driven paths; do not hardcode data/model locations.
+- Keep tests offline and deterministic; network paths must degrade gracefully.
+- Preserve output schema stability for existing sports.
+- Treat `.worktrees/` as local noise unless explicitly requested.
+- Do not modify `data/`, `models/`, `notebooks/`, `betslips/` as part of normal code changes.
+
+## Common Footguns
+
+- Running from the wrong entrypoint (`cli/main.py`) instead of `pipeline/main.py`.
+- Using global Python/pip instead of `.venv/bin/...`.
+- Reviewing an empty diff due to wrong branch/context.
+- Changing feature columns without updating model compatibility handling.
+- Staging broad file sets when only targeted docs/code were intended.
+
+See `docs/onboarding-footguns.md` for concrete prevention checklists.
