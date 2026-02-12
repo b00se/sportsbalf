@@ -117,6 +117,25 @@ def _validate_required_non_empty_int_list(section: dict[str, Any], path: str) ->
             )
 
 
+def _validate_optional_non_empty_int_list(section: dict[str, Any], path: str) -> None:
+    """Validate an optional non-empty list of integers (excluding bool)."""
+
+    key = path.rsplit(".", maxsplit=1)[-1]
+    if key not in section:
+        return
+
+    value = section.get(key)
+    if not isinstance(value, list) or not value:
+        raise ConfigValidationError(
+            f"Invalid optional field '{path}': expected non-empty list[int]."
+        )
+    for idx, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, Integral):
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}[{idx}]': expected integer."
+            )
+
+
 def _validate_required_bool_key(section: dict[str, Any], path: str) -> None:
     """Validate a required boolean key for runtime-critical config fields.
 
@@ -170,6 +189,7 @@ def _validate_nhl_shots_on_goal_section(section: dict[str, Any], path: str) -> N
     for key in (
         "provider",
         "inference_input_path",
+        "model_path",
         "moneypuck_skater_games_snapshot_path",
         "moneypuck_skater_games_curated_cache_path",
     ):
@@ -184,6 +204,81 @@ def _validate_nhl_shots_on_goal_section(section: dict[str, Any], path: str) -> N
         raise ConfigValidationError(
             f"Invalid required field '{path}.fail_on_provider_error': expected true."
         )
+
+    _validate_optional_non_empty_int_list(section, f"{path}.training_seasons")
+
+    min_training_games = section.get("min_training_games_per_player")
+    if min_training_games is not None:
+        if isinstance(min_training_games, bool) or not isinstance(
+            min_training_games, Integral
+        ):
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.min_training_games_per_player': "
+                "expected integer >= 1."
+            )
+        if int(min_training_games) < 1:
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.min_training_games_per_player': "
+                "expected integer >= 1."
+            )
+
+    sigma_min_history = section.get("sigma_min_history")
+    if sigma_min_history is not None:
+        if isinstance(sigma_min_history, bool) or not isinstance(
+            sigma_min_history, Integral
+        ):
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.sigma_min_history': "
+                "expected integer >= 1."
+            )
+        if int(sigma_min_history) < 1:
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.sigma_min_history': "
+                "expected integer >= 1."
+            )
+
+    min_sigma = section.get("min_sigma")
+    if min_sigma is not None:
+        try:
+            numeric_min_sigma = float(min_sigma)
+        except (TypeError, ValueError) as exc:
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.min_sigma': expected float >= 0."
+            ) from exc
+        if numeric_min_sigma < 0:
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.min_sigma': expected float >= 0."
+            )
+
+    bootstrap_mix_prob = section.get("bootstrap_mix_global_prob")
+    if bootstrap_mix_prob is not None:
+        try:
+            numeric_prob = float(bootstrap_mix_prob)
+        except (TypeError, ValueError) as exc:
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.bootstrap_mix_global_prob': "
+                "expected float in [0, 1]."
+            ) from exc
+        if numeric_prob < 0 or numeric_prob > 1:
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.bootstrap_mix_global_prob': "
+                "expected float in [0, 1]."
+            )
+
+    bootstrap_min_sigma = section.get("bootstrap_min_sigma")
+    if bootstrap_min_sigma is not None:
+        try:
+            numeric_bootstrap_min_sigma = float(bootstrap_min_sigma)
+        except (TypeError, ValueError) as exc:
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.bootstrap_min_sigma': "
+                "expected float >= 0."
+            ) from exc
+        if numeric_bootstrap_min_sigma < 0:
+            raise ConfigValidationError(
+                f"Invalid optional field '{path}.bootstrap_min_sigma': "
+                "expected float >= 0."
+            )
 
 
 _VALIDATORS: dict[tuple[str, str], Callable[[dict[str, Any], str], None]] = {

@@ -74,5 +74,8 @@ def test_build_skater_games_curated_cache_supports_live_moneypuck_headers(
 
     assert curated_path.exists()
     assert curated.columns.tolist() == EXPECTED_COLUMNS
-    assert set(curated["player_name"].astype(str).unique()) == {"Player One", "Player Two"}
+    assert set(curated["player_name"].astype(str).unique()) == {
+        "Player One",
+        "Player Two",
+    }
     assert curated["player_id"].astype(str).str.len().gt(0).all()

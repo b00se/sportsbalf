@@ -220,6 +220,7 @@ def _base_nhl_shots_on_goal_section() -> dict[str, Any]:
     return {
         "provider": "moneypuck_snapshot",
         "inference_input_path": "tests/testdata/nhl_shots_on_goal_input.csv",
+        "model_path": "models/nhl_shots_on_goal_model.joblib",
         "provider_seasons": [2024],
         "moneypuck_skater_games_snapshot_path": (
             "tests/testdata/nhl/moneypuck/skater_games_full_snapshot_sample.csv"
@@ -238,6 +239,7 @@ def _base_nhl_shots_on_goal_section() -> dict[str, Any]:
     [
         ("provider", "nhl.shots_on_goal.provider"),
         ("inference_input_path", "nhl.shots_on_goal.inference_input_path"),
+        ("model_path", "nhl.shots_on_goal.model_path"),
         ("provider_seasons", "nhl.shots_on_goal.provider_seasons"),
         (
             "moneypuck_skater_games_snapshot_path",
@@ -277,6 +279,7 @@ def test_nhl_shots_on_goal_required_keys_must_exist(
     [
         ("provider", 1, "nhl.shots_on_goal.provider"),
         ("inference_input_path", True, "nhl.shots_on_goal.inference_input_path"),
+        ("model_path", True, "nhl.shots_on_goal.model_path"),
         ("provider_seasons", [], "nhl.shots_on_goal.provider_seasons"),
         (
             "provider_seasons",
@@ -334,6 +337,56 @@ def test_nhl_shots_on_goal_fail_on_provider_error_must_be_true(tmp_path: Path) -
     with pytest.raises(
         ConfigValidationError, match="nhl.shots_on_goal.fail_on_provider_error"
     ):
+        load_pipeline_config(str(config_path))
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "expected_path"),
+    [
+        ("training_seasons", [], "nhl.shots_on_goal.training_seasons"),
+        (
+            "training_seasons",
+            [2024, "2025"],
+            "nhl.shots_on_goal.training_seasons\\[1\\]",
+        ),
+        (
+            "min_training_games_per_player",
+            0,
+            "nhl.shots_on_goal.min_training_games_per_player",
+        ),
+        ("sigma_min_history", 0, "nhl.shots_on_goal.sigma_min_history"),
+        ("min_sigma", -0.1, "nhl.shots_on_goal.min_sigma"),
+        ("bootstrap_min_sigma", -0.1, "nhl.shots_on_goal.bootstrap_min_sigma"),
+        (
+            "bootstrap_mix_global_prob",
+            -0.1,
+            "nhl.shots_on_goal.bootstrap_mix_global_prob",
+        ),
+        (
+            "bootstrap_mix_global_prob",
+            1.1,
+            "nhl.shots_on_goal.bootstrap_mix_global_prob",
+        ),
+    ],
+)
+def test_nhl_shots_on_goal_optional_model_keys_validate_constraints(
+    tmp_path: Path,
+    key: str,
+    value: Any,
+    expected_path: str,
+) -> None:
+    section = _base_nhl_shots_on_goal_section()
+    section[key] = value
+    config_path = tmp_path / "nhl_optional_invalid.yaml"
+    _write_yaml(
+        config_path,
+        {
+            "pipeline": {"sport": "nhl", "stat": "shots_on_goal"},
+            "nhl": {"shots_on_goal": section},
+        },
+    )
+
+    with pytest.raises(ConfigValidationError, match=expected_path):
         load_pipeline_config(str(config_path))
 
 

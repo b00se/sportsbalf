@@ -44,12 +44,14 @@ Date: 2026-02-08
    - build deterministic inference features under `src/nhl/features/shots_on_goal.py`
 
 ## Implemented reference
-- NHL `shots_on_goal` provider-backed baseline is implemented as an onboarding example:
+- NHL `shots_on_goal` model-backed MVP is implemented as an onboarding example:
   - adapter: `src/nhl/shots_on_goal/pipeline.py`
   - orchestration shim: `src/nhl/pipeline.py`
   - data ingest: `src/nhl/data/moneypuck_ingest.py`
   - provider abstraction: `src/nhl/data/providers/`
   - feature builder: `src/nhl/features/shots_on_goal.py`
+  - model helpers: `src/nhl/models/predict.py`
+  - residual bootstrap: `src/nhl/models/bootstrap.py`
   - config: `config/nhl.yaml`
   - integration test: `tests/integration/test_nhl_shots_on_goal_pipeline.py`
 

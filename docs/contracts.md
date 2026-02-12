@@ -52,7 +52,7 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
   - `attempts_line`
 - plus common simulation probability/EV/edge fields above
 
-### NHL shots on goal fields (PR#9 provider baseline)
+### NHL shots on goal fields (PR#10 model + simulation MVP)
 - identity/line:
   - `player_id`
   - `player_name`
@@ -62,13 +62,20 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
   - `sog_line`
 - prediction:
   - `predicted_shots_on_goal`
+- additive model metadata:
+  - `baseline_predicted_shots_on_goal`
+  - `model_residual_std`
+  - `training_rmse`
+  - `training_mae`
+  - `training_r2`
+  - `model_name`
 - simulation outputs:
   - shared `prob_*`, `ev_*`, `edge_*` fields above
 - mode metadata:
   - `run_mode`
   - `lines_status`
 
-### NHL PR#9 runtime data/feature baseline
+### NHL PR#10 runtime data/feature/model baseline
 - Data provider abstraction:
   - `src/nhl/data/providers/base.py`
   - `src/nhl/data/providers/moneypuck_snapshot.py`
@@ -78,7 +85,17 @@ The authoritative protocol is `SportStatPipeline` in `src/core/contracts.py`.
 - Deterministic baseline feature fields:
   - `sog_avg_last_5`
   - `sog_avg_last_10`
-  - `sog_avg_season`
+  - `sog_avg_season_to_date`
+- Additional model features:
+  - `toi_avg_last_5`
+  - `toi_avg_last_10`
+  - `games_played_to_date`
+  - `days_since_last_game`
+  - `team_sog_for_avg_last_5`
+  - `opponent_sog_allowed_avg_last_5`
+- Model artifact compatibility:
+  - NHL model artifacts persist feature schema hash and model metadata
+  - incompatible/corrupted artifacts automatically retrain when running the pipeline
 
 ## Field stability policy for onboarding work
 - Existing MLB/NFL output columns above are treated as backward-compatible commitments for this onboarding program.
