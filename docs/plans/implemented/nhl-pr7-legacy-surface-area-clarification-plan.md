@@ -1,5 +1,7 @@
 # PR#7 Plan: Legacy Surface Area Clarification
 
+Status: Implemented
+
 ## Summary
 
 Implement PR#7 as a low-risk clarification pass that removes contributor ambiguity about which runtime paths are authoritative.

@@ -1,5 +1,7 @@
 # PR#5 Plan: Config Schema Validation Hardening (Sectioned-Only, Runtime-Critical Typed Checks)
 
+Status: Implemented
+
 ## Summary
 
 Implement PR#5 by hardening config validation in src/core/config.py so config loading fails fast with precise field-path errors before pipeline runtime.

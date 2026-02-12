@@ -1,6 +1,6 @@
 # PR#8 Plan: NHL `shots_on_goal` Skeleton (Offline-First, Registry-Wired)
 
-Status: Approved
+Status: Implemented
 
 ## Summary
 Deliver a production-shaped NHL skeleton that is fully runnable through the existing engine/registry flow, but intentionally lightweight: no live NHL provider ingestion yet, and no full model training stack yet.

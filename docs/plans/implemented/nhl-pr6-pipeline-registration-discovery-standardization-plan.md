@@ -1,5 +1,7 @@
 # PR#6 Plan: Pipeline Registration + Discovery Standardization
 
+Status: Implemented
+
 ## Summary
 
 Implement PR#6 by standardizing how sport/stat pipelines are declared, registered, and discovered.

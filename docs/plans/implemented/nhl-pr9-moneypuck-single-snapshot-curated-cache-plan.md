@@ -1,6 +1,6 @@
 # PR#9 Plan: NHL MoneyPuck Single-Snapshot + Curated Cache Foundation
 
-Status: Approved
+Status: Implemented
 
 ## Summary
 Implement PR#9 using MoneyPuck's large all-seasons CSV pattern: download one full raw snapshot, build a curated filtered cache for runtime, and drive NHL `shots_on_goal` inference from that curated layer.

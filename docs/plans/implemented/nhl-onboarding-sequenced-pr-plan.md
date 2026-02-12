@@ -1,6 +1,6 @@
 # NHL Onboarding Readiness Program: Sequenced PR Plan (Shots on Goal, Small-PR Track)
 
-Status: Planned (Partially Implemented)
+Status: Implemented
 
 ## Summary
 Prepare the repo for smooth in-season NHL onboarding by first removing architecture bottlenecks (contract drift, cross-sport coupling, shallow config validation, legacy ambiguity), then adding reusable sport-agnostic scaffolding, and finally shipping an NHL `shots_on_goal` pipeline skeleton with offline-safe tests.
@@ -17,7 +17,7 @@ Sequence is optimized for low-risk integration: each PR has explicit acceptance 
 - PR 7: Implemented and merged on 2026-02-10 (local merge to `main`, no PR)
 - PR 8: Implemented and merged on 2026-02-10 (local merge to `main`, no PR)
 - PR 9: Implemented and merged on 2026-02-10 (`d5c0a4a`)
-- PR 10: Implemented on 2026-02-12 (local branch)
+- PR 10: Implemented and merged on 2026-02-12 (`f32793e`)
 
 ## PR Sequence
 

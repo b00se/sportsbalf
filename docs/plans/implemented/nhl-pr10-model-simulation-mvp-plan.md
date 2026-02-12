@@ -1,6 +1,6 @@
 # PR#10 Plan: NHL Shots-on-Goal Model MVP with Rich Features + Baseline Uplift
 
-Status: Planned
+Status: Implemented
 
 ## Summary
 Implement NHL model training/loading and residual-aware simulation using the current NHL shots-on-goal pipeline baseline, with richer feature engineering (including time-on-ice context), and report improvement versus the existing deterministic weighted-average baseline in the same PR.

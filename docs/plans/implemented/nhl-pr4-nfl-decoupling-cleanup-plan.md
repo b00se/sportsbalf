@@ -1,10 +1,10 @@
 # PR#4 Execution Plan: NFL Decoupling Cleanup via Strict Neutral Simulation API
 
-Status: Approved
+Status: Implemented
 
 Date: 2026-02-08
 
-Source: PR#4 scope from `docs/plans/planned/nhl-onboarding-sequenced-pr-plan.md`
+Source: PR#4 scope from `docs/plans/implemented/nhl-onboarding-sequenced-pr-plan.md`
 
 ## Summary
 Execute PR#4 by removing NFL orchestration alias shims (`ud_line -> k_line`, `qb_id -> pitcher_id`) and standardizing simulation/sampler interfaces to a strict sport-neutral contract. Scope includes full neutral naming in shared simulation APIs (not only ID semantics) with a hard cutover in this PR. This plan intentionally applies the neutral API to both NFL and MLB samplers/call sites in the same PR so repo behavior remains green while eliminating naming debt.

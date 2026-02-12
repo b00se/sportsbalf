@@ -1,5 +1,7 @@
 # NHL SOG Feature Engineering Plan (Data-Contract First, NHL API-First)
 
+Status: Planned
+
 ## Summary
 Build a decision-complete feature engineering roadmap for NHL shots-on-goal that upgrades the current 9-feature model to usage/context-rich features, while keeping the existing pipeline contract stable.
 
