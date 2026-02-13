@@ -105,3 +105,36 @@ Model compatibility policy:
 
 - Existing output columns for shipped sport/stat pipelines are backward-compatible commitments.
 - New features may add columns, but existing required columns should remain stable unless a deliberate contract migration is documented.
+
+## Fantasy Phase 0 Unified Projection Core
+
+Source modules:
+- `src/fantasy/core/contracts.py`
+- `src/fantasy/core/registry.py`
+- `src/fantasy/core/config.py`
+- `src/fantasy/core/validation.py`
+- `src/fantasy/core/mapping.py`
+- `src/fantasy/core/derived.py`
+
+Canonical primitive:
+- `Projection(entity, metric, horizon, distribution)` represented by:
+  - `ProjectionKey`
+  - `ProjectionDistribution`
+  - `ProjectionRow`
+
+Unified contract layers:
+- Base stat projection (`SportProjectionAdapter.project`)
+- Derived metrics (`DerivedMetricAdapter.derive`)
+- Market transform (`MarketTransformAdapter.transform`)
+- Provider export (`ExportAdapter.export`)
+
+Shared config contracts:
+- `ContestConfig`
+- `MarketDefinition`
+- `DerivedMetricSpec`
+- `ProviderPlayerMapping`
+
+Phase 0 policy:
+- Fantasy points are modeled as derived metrics from base stats.
+- Market surfaces reference existing `(metric_id, horizon)` pairs.
+- Mapping resolution emits `mapped`, `unmapped`, `duplicate_provider_id`.

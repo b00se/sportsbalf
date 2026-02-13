@@ -128,3 +128,41 @@ nhl:
     auto_refresh_snapshot: false
     fail_on_provider_error: true
 ```
+
+## Fantasy Unified Schema (Phase 0)
+
+Reference config:
+- `config/fantasy/mlb_unified_szn_core_2026.yaml`
+
+Required top-level sections:
+- `contest`
+- `metrics`
+- `mapping`
+- `markets`
+
+Required/validated fields:
+- `contest.mode` enum:
+  - `season_long_tournament`
+  - `short_slate_fantasy`
+  - `single_game_pickem`
+  - `season_long_stat_pickem`
+- `metrics.base_metrics`: non-empty list of `(metric_id, horizon, adapter_key)`
+- `metrics.derived_metrics`: optional list of `(derived_metric_id, input_metric_ids, transform_id, transform_params)`
+- `mapping.player_id_map_path`: non-empty string
+- `mapping.unresolved_policy` enum: `fail`, `warn`, `drop`
+- `markets.mode`: must match `contest.mode`
+- `markets.definitions`: non-empty list of market items with:
+  - `market_id`, `metric_id`, `horizon`, `window_start`, `window_end`
+  - optional `line_value`, optional `operator`, optional `game_id`
+
+Strict validation:
+- Every market must resolve to a declared metric/horizon wire-up.
+- Derived metrics may only reference declared base metrics.
+- If `line_value` is set, `operator` is required.
+- If market metric is derived, `contest.scoring_ruleset_id` must be set.
+
+Soft shape validation (no optimization semantics enforced):
+- `season_long_tournament`: `roster`, `advancement`, `payouts`
+- `short_slate_fantasy`: `roster`, `slate_selection_rule`
+- `single_game_pickem`: `slip_constraints`, `payout_ladder`
+- `season_long_stat_pickem`: `slip_constraints`, `payout_ladder`

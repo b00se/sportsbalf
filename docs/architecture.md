@@ -90,3 +90,25 @@ Orchestration:
 - Wrong entrypoint (`cli/main.py`) causes confusion and non-canonical behavior.
 - Empty-diff reviews often indicate wrong branch/path context.
 - `.worktrees/` appearing in status is normal local noise; do not stage unless explicitly requested.
+
+## Fantasy Phase 0 Architecture
+
+Phase 0 introduces a reusable fantasy core that is separate from current
+`pipeline/main.py` runtime behavior.
+
+Modules:
+- `src/fantasy/core/contracts.py`: projection/market dataclasses + adapter protocols
+- `src/fantasy/core/config.py`: unified config loader for fantasy market surfaces
+- `src/fantasy/core/validation.py`: strict wiring validation + soft mode-config shape checks
+- `src/fantasy/core/derived.py`: dependency checks + no-op derivation scaffolding
+- `src/fantasy/core/mapping.py`: provider-player mapping resolver
+- `src/fantasy/core/registry.py`: adapter registries for projection/derived/market/export
+
+Canonical flow:
+1. projection
+2. derived metric
+3. market transform
+4. export
+
+The flow is horizon-aware and uses a single schema for season-long fantasy,
+short-slate fantasy, single-game pick'em, and season-long stat pick'em.
