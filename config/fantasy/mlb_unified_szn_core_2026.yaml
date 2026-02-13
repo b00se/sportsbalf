@@ -1,0 +1,48 @@
+contest:
+  contest_id: ud-mlb-2026-season-core
+  provider: underdog
+  sport: mlb
+  mode: season_long_tournament
+  scoring_ruleset_id: ud_mlb_classic
+  mode_config:
+    roster:
+      slots: 18
+      positions: [P, C, 1B, 2B, 3B, SS, OF, OF, OF, UTIL]
+    advancement:
+      rounds: [12, 2]
+      advancing_teams_per_round: [2, 1]
+    payouts:
+      first: 100000
+      second: 30000
+      third: 15000
+  metadata:
+    season: 2026
+
+metrics:
+  base_metrics:
+    - metric_id: hits
+      horizon: season
+      adapter_key: mlb_hits_season
+    - metric_id: runs
+      horizon: season
+      adapter_key: mlb_runs_season
+  derived_metrics:
+    - derived_metric_id: fantasy_points
+      input_metric_ids: [hits, runs]
+      transform_id: mlb_fantasy_points_v1
+      transform_params:
+        hits: 3.0
+        runs: 2.0
+
+mapping:
+  player_id_map_path: data/fantasy/mlb_player_mapping_2026.csv
+  unresolved_policy: fail
+
+markets:
+  mode: season_long_tournament
+  definitions:
+    - market_id: ud_mlb_2026_fantasy_points
+      metric_id: fantasy_points
+      horizon: season
+      window_start: "2026-03-01"
+      window_end: "2026-10-01"
