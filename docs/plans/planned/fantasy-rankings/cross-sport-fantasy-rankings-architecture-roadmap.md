@@ -1,8 +1,15 @@
 # Cross-Sport Fantasy Rankings Architecture Roadmap (MLB Season-Long MVP First)
 
+Status: Planned (Partially Implemented)
+
 ## Summary
 Deliver an MLB season-long best-ball rankings CSV pipeline now, but design every layer so NFL/NHL and daily slates can plug in later without core rewrites.
 Implementation remains phased and small-scope, with explicit extensibility gates that must pass before moving to the next phase.
+
+## Current Status
+1. Phase 0 is implemented and tracked at:
+   - `docs/plans/implemented/fantasy-rankings/phase-0-unified-projection-core-plan.md`
+2. Remaining phases (1-5) are still planned.
 
 ## Locked Architecture Principles (Non-Negotiable)
 1. Core is sport-agnostic.

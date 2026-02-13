@@ -1,6 +1,11 @@
 # Phase 0 Plan: Unified Projection Core Across Fantasy + Stat Markets
 
-Status: Planned
+Status: Implemented
+
+## Implementation Status
+Shipped on `main` via:
+1. `383a671` (`Add fantasy Phase 0 unified projection core scaffolding`)
+2. `58f2b5d` (merge into `main`)
 
 ## Summary
 Build a single reusable foundation where the canonical primitive is `Projection(entity, metric, horizon, distribution)`.
