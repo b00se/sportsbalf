@@ -215,3 +215,32 @@ def test_metric_specific_feature_selection_excludes_target_leakage() -> None:
 
     for metric_id in PHASE1_METRICS:
         assert model_feature_columns_for_metric(metric_id)
+
+
+def test_project_fallback_window_without_matching_market_is_timezone_safe() -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date=None,
+            inference_anchor_date=None,
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    contest = _contest("walks")
+
+    projected = adapter.project(contest)
+
+    assert not projected.empty
+    _assert_neutral_schema(projected)

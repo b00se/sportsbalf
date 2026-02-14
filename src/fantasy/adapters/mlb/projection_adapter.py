@@ -214,7 +214,7 @@ class MlbSeasonProjectionAdapter:
                 if not pd.isna(start) and not pd.isna(end):
                     return pd.Timestamp(start), pd.Timestamp(end)
 
-        fallback_end = pd.Timestamp.utcnow().normalize()
+        fallback_end = pd.Timestamp.utcnow().tz_localize(None).normalize()
         fallback_start = fallback_end - pd.Timedelta(days=200)
         return fallback_start, fallback_end
 

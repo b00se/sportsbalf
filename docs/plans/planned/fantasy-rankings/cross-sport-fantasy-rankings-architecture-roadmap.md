@@ -10,7 +10,7 @@ Implementation remains phased and small-scope, with explicit extensibility gates
 1. Phase 0 is implemented and tracked at:
    - `docs/plans/implemented/fantasy-rankings/phase-0-unified-projection-core-plan.md`
 2. Phase 1 is implemented and tracked at:
-   - `docs/plans/planned/fantasy-rankings/phase-1-mlb-projection-adapter-plan.md`
+   - `docs/plans/implemented/fantasy-rankings/phase-1-mlb-projection-adapter-plan.md`
 3. Remaining phases (2-5) are still planned.
 
 ## Locked Architecture Principles (Non-Negotiable)
