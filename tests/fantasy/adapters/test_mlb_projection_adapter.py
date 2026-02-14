@@ -413,6 +413,44 @@ def test_availability_confidence_uses_full_pre_window_history(monkeypatch) -> No
     assert float(captured["max_games_per_entity"]) > 1.0
 
 
+def test_season_projection_scales_per_game_predictions_to_window(monkeypatch) -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    def _fake_apply_model(self, *, train_frame, infer_frame):
+        predicted = infer_frame.copy()
+        predicted["prediction"] = 1.0
+        return predicted, pd.Series(dtype="float64"), "baseline"
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date=None,
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    monkeypatch.setattr(
+        MlbSeasonProjectionAdapter,
+        "_apply_model",
+        _fake_apply_model,
+    )
+
+    projected = adapter.project(_contest("hits", window_end="2026-06-01"))
+
+    assert not projected.empty
+    assert (projected["mean"] > 1.0).all()
+
+
 def test_poisson_model_name_is_preserved_without_random_state_fallback() -> None:
     from src.fantasy.adapters.mlb.features import prepare_mlb_projection_frame
     from src.fantasy.adapters.mlb.projection_adapter import (

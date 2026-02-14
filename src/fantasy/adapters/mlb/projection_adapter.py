@@ -163,6 +163,50 @@ class MlbSeasonProjectionAdapter:
                 self.adapter_config.entity_id_col, as_index=False
             ).tail(1)
 
+        horizon_days = max((window_end - window_start).days + 1, 1)
+        if infer_history_frame.empty:
+            expected_games_by_entity = pd.Series(
+                1.0,
+                index=infer_frame[self.adapter_config.entity_id_col]
+                .astype(str)
+                .drop_duplicates(),
+                dtype="float64",
+            )
+        else:
+            history_span = infer_history_frame[
+                [self.adapter_config.entity_id_col, self.adapter_config.date_col]
+            ].copy()
+            history_span[self.adapter_config.date_col] = pd.to_datetime(
+                history_span[self.adapter_config.date_col], errors="coerce"
+            )
+            history_span = history_span.dropna(subset=[self.adapter_config.date_col])
+
+            if history_span.empty:
+                expected_games_by_entity = pd.Series(
+                    1.0,
+                    index=infer_frame[self.adapter_config.entity_id_col]
+                    .astype(str)
+                    .drop_duplicates(),
+                    dtype="float64",
+                )
+            else:
+                span_stats = history_span.groupby(
+                    self.adapter_config.entity_id_col, dropna=False
+                )[self.adapter_config.date_col].agg(["min", "max", "size"])
+                observed_days = (
+                    (span_stats["max"] - span_stats["min"])
+                    .dt.days.add(1)
+                    .clip(lower=1)
+                    .astype("float64")
+                )
+                games_per_day = span_stats["size"].astype("float64") / observed_days
+                expected_games_by_entity = (games_per_day * float(horizon_days)).clip(
+                    lower=1.0
+                )
+                expected_games_by_entity.index = (
+                    expected_games_by_entity.index.astype(str)
+                )
+
         infer_frame = infer_frame.sort_values(
             [self.adapter_config.entity_id_col, self.adapter_config.date_col],
             kind="stable",
@@ -174,12 +218,17 @@ class MlbSeasonProjectionAdapter:
         )
 
         entity_id_col = self.adapter_config.entity_id_col
+        per_game_mean = (
+            infer_frame.groupby(entity_id_col)["prediction"].mean().astype("float64")
+        )
+        expected_games = expected_games_by_entity.reindex(
+            per_game_mean.index.astype(str)
+        ).fillna(1.0)
+        expected_games.index = per_game_mean.index
         sample_sizes = (
-            infer_frame.groupby(entity_id_col)["prediction"].size().astype("float64")
+            expected_games.astype("float64").clip(lower=1.0)
         )
-        mean_by_entity = (
-            infer_frame.groupby(entity_id_col)["prediction"].sum().astype("float64")
-        )
+        mean_by_entity = (per_game_mean * expected_games).astype("float64")
 
         uncertainty = summarize_empirical_uncertainty(
             mean_by_entity=mean_by_entity,
