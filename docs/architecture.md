@@ -85,6 +85,11 @@ Orchestration:
 - Model artifact compatibility is schema-hash based where implemented (NHL today).
 - Tests are offline by default; network behavior must be optional and guarded.
 
+Testing strategy baseline:
+- Intent matrix: `docs/testing-intent-matrix.md`
+- Cross-sport parity suite: `tests/contracts/test_pipeline_output_contracts.py`
+- Shared invariant helpers: `tests/helpers/assertions.py`
+
 ## Operational Footguns
 
 - Wrong entrypoint (`cli/main.py`) causes confusion and non-canonical behavior.

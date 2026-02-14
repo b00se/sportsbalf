@@ -106,6 +106,16 @@ Model compatibility policy:
 - Existing output columns for shipped sport/stat pipelines are backward-compatible commitments.
 - New features may add columns, but existing required columns should remain stable unless a deliberate contract migration is documented.
 
+## Test Enforcement Baseline
+
+Intent-first contract checks are documented and enforced through:
+- `docs/testing-intent-matrix.md` (authoritative coverage matrix)
+- `tests/helpers/assertions.py` (shared invariant assertion helpers)
+- `tests/contracts/test_pipeline_output_contracts.py` (cross-sport contract parity)
+
+Current parity checks validate shared simulation semantics across shipped
+MLB/NFL/NHL pipelines, including probability algebra and run-mode semantics.
+
 ## Fantasy Phase 0 Unified Projection Core
 
 Source modules:

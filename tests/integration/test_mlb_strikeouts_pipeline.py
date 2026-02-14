@@ -4,6 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 from src.pipeline.engine import run_pipeline_with_overrides
+from tests.helpers.assertions import (
+    assert_probability_columns_valid,
+    assert_simulation_contract,
+)
 
 REQUIRED_COLUMNS = {
     "predicted_strikeouts",
@@ -57,3 +61,5 @@ def test_engine_run_mlb_strikeouts_schema(tmp_path: Path, monkeypatch) -> None:
 
     assert isinstance(result, pd.DataFrame)
     assert REQUIRED_COLUMNS.issubset(result.columns)
+    assert_simulation_contract(result)
+    assert_probability_columns_valid(result)

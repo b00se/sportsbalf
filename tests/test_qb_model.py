@@ -50,9 +50,22 @@ def _sample_training_frame() -> pd.DataFrame:
 
 def test_train_and_predict_model(tmp_path):
     frame = _sample_training_frame()
-    model = train_model(frame)
-    predictions = predict_attempts(frame, model)
-    assert len(predictions) == len(frame)
-    sigma = residual_std(frame["pass_attempts"], predictions)
-    assert sigma >= 0
+    model_one = train_model(frame)
+    model_two = train_model(frame)
+    predictions_one = predict_attempts(frame, model_one)
+    predictions_two = predict_attempts(frame, model_two)
 
+    assert len(predictions_one) == len(frame)
+    assert len(predictions_two) == len(frame)
+    assert predictions_one.notna().all()
+    assert predictions_two.notna().all()
+    assert (predictions_one >= 0.0).all()
+    assert (predictions_two >= 0.0).all()
+    pd.testing.assert_series_equal(
+        predictions_one.reset_index(drop=True),
+        predictions_two.reset_index(drop=True),
+        check_dtype=False,
+    )
+
+    sigma = residual_std(frame["pass_attempts"], predictions_one)
+    assert sigma >= 0

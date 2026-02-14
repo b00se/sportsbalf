@@ -11,6 +11,7 @@ from src.fantasy.core.registry import (
     get_projection_adapter,
     list_registered_fantasy_adapters,
 )
+from tests.helpers.assertions import assert_horizon_semantics
 
 PHASE1_METRICS = (
     "plate_appearances",
@@ -135,6 +136,7 @@ def test_schema_contract_and_uncertainty_fields() -> None:
     assert (projected["p10"] <= projected["p50"]).all()
     assert (projected["p50"] <= projected["p90"]).all()
     assert (projected["stddev"] >= 0.0).all()
+    assert_horizon_semantics(projected, horizon="season", prediction_col="mean")
 
 
 def test_phase1_registration_covers_all_metrics() -> None:

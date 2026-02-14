@@ -5,6 +5,10 @@ from pathlib import Path
 import pandas as pd
 import yaml
 from src.pipeline.engine import run_pipeline_with_overrides
+from tests.helpers.assertions import (
+    assert_probability_columns_valid,
+    assert_simulation_contract,
+)
 
 REQUIRED_PRESENT_COLUMNS = {
     "predicted_outs_recorded",
@@ -80,6 +84,8 @@ def test_outs_pipeline_lines_present_runs_prediction_mode(tmp_path: Path) -> Non
     assert REQUIRED_PRESENT_COLUMNS.issubset(result.columns)
     assert set(result["run_mode"].astype(str).unique()) == {"prediction"}
     assert set(result["lines_status"].astype(str).unique()) == {"present"}
+    assert_simulation_contract(result)
+    assert_probability_columns_valid(result)
 
 
 def test_outs_pipeline_no_name_match_still_returns_simulation_schema(

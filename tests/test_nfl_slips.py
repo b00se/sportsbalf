@@ -31,3 +31,10 @@ def test_prepare_long_df_shapes():
     assert set(long_df["play"]) == {"over", "under"}
     assert (long_df["sport"] == "NFL").all()
     assert (long_df["market"] == "pass_attempts").all()
+    assert {"player", "player_id", "line", "prob", "ev", "payout_multiplier"}.issubset(
+        long_df.columns
+    )
+    assert set(long_df["player"]) == {"Aaron Rodgers"}
+    assert set(long_df["line"]) == {30.5}
+    assert set(long_df["prob"]) == {0.62, 0.38}
+    assert (long_df["payout_multiplier"] == 1.0).all()

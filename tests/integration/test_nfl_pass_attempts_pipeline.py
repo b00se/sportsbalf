@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import pandas as pd
 from src.pipeline.engine import run_pipeline_with_overrides
+from tests.helpers.assertions import (
+    assert_probability_columns_valid,
+    assert_simulation_contract,
+)
 
 
 def _mini_dataset() -> pd.DataFrame:
@@ -89,6 +93,12 @@ def test_engine_run_nfl_pass_attempts_offline(tmp_path, monkeypatch) -> None:
         stat="pass_attempts",
         retrain=True,
     )
+    second = run_pipeline_with_overrides(
+        str(config_path),
+        sport="nfl",
+        stat="pass_attempts",
+        retrain=False,
+    )
 
     assert not result.empty
     assert {
@@ -96,4 +106,8 @@ def test_engine_run_nfl_pass_attempts_offline(tmp_path, monkeypatch) -> None:
         "attempts_line",
         "prob_over",
         "prob_under",
+        "prob_push",
     }.issubset(result.columns)
+    assert_simulation_contract(result)
+    assert_probability_columns_valid(result)
+    pd.testing.assert_frame_equal(result, second, check_dtype=False)

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pandas as pd
 from src.core.config import extract_stat_section
 from src.mlb.data.load_pitcher_stats import load_pitcher_game_logs
 from src.mlb.data.load_props import load_strikeout_lines
@@ -31,11 +32,24 @@ def test_loaders():
     agg = aggregate_pitcher_games(pitch_df)
 
     assert not lines.empty
+    assert {"player", "k_line", "over_decimal_price", "under_decimal_price"}.issubset(
+        lines.columns
+    )
+    assert lines["k_line"].notna().all()
+    assert (lines["over_decimal_price"] > 1.0).all()
+    assert (lines["under_decimal_price"] > 1.0).all()
+
     assert not games.empty
+    assert pd.api.types.is_datetime64_any_dtype(games["game_date"])
+    assert games["game_date"].notna().all()
+
     assert not agg.empty
+    assert {"pitcher", "game_date", "strikeouts"}.issubset(agg.columns)
+    assert (pd.to_numeric(agg["strikeouts"], errors="coerce") >= 0).all()
 
     park_path = Path(config["park_factors_path"])
     if not park_path.exists():
         park_path = Path("tests/testdata/park.csv")
     park = read_csv(str(park_path))
     assert not park.empty
+    assert {"Team_abbr", "K_park_factor"}.issubset(park.columns)

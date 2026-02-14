@@ -6,6 +6,10 @@ import pandas as pd
 import pytest
 import yaml
 from src.pipeline.engine import run_pipeline_with_overrides
+from tests.helpers.assertions import (
+    assert_probability_columns_valid,
+    assert_simulation_contract,
+)
 
 REQUIRED_COLUMNS = [
     "player_id",
@@ -128,6 +132,8 @@ def test_engine_run_nhl_shots_on_goal_offline_deterministic(tmp_path: Path) -> N
     assert first.equals(second)
     assert set(first["run_mode"].astype(str).unique()) == {"prediction"}
     assert set(first["lines_status"].astype(str).unique()) == {"present"}
+    assert_simulation_contract(first)
+    assert_probability_columns_valid(first)
 
 
 def test_engine_run_nhl_shots_on_goal_missing_input_fallback(tmp_path: Path) -> None:

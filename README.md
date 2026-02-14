@@ -53,6 +53,7 @@ Core docs:
 - Architecture: `docs/architecture.md`
 - Runtime contracts: `docs/contracts.md`
 - Config schema: `docs/config-schema.md`
+- Testing intent matrix: `docs/testing-intent-matrix.md`
 - New sport onboarding: `docs/new-sport-playbook.md`
 - Onboarding conventions + footguns: `docs/onboarding-footguns.md`
 
