@@ -119,24 +119,43 @@ class MlbSeasonProjectionAdapter:
             if not pd.isna(anchor):
                 window_end_effective = min(window_end_effective, pd.Timestamp(anchor))
 
+        feature_cutoff = window_start - pd.Timedelta(days=1)
+        if self.adapter_config.inference_anchor_date is not None:
+            anchor = pd.to_datetime(
+                self.adapter_config.inference_anchor_date, errors="coerce"
+            )
+            if not pd.isna(anchor):
+                feature_cutoff = min(feature_cutoff, pd.Timestamp(anchor))
+
         train_cutoff = pd.to_datetime(
             self.adapter_config.train_end_date, errors="coerce"
         )
         if pd.isna(train_cutoff):
-            train_cutoff = window_start - pd.Timedelta(days=1)
+            train_cutoff = feature_cutoff
+        train_cutoff = min(pd.Timestamp(train_cutoff), feature_cutoff)
 
         train_frame = source[
             source[self.adapter_config.date_col] <= train_cutoff
         ].copy()
         infer_frame = source[
-            (source[self.adapter_config.date_col] >= window_start)
-            & (source[self.adapter_config.date_col] <= window_end_effective)
+            source[self.adapter_config.date_col] <= feature_cutoff
         ].copy()
 
         if infer_frame.empty:
-            infer_frame = source[
-                source[self.adapter_config.date_col] <= window_end_effective
-            ].copy()
+            infer_frame = source.groupby(
+                self.adapter_config.entity_id_col, as_index=False
+            ).head(1)
+            infer_frame = infer_frame.copy()
+            infer_frame[self.adapter_config.date_col] = feature_cutoff
+            keep_cols = {
+                self.adapter_config.entity_id_col,
+                self.adapter_config.date_col,
+            }
+            for column in infer_frame.columns:
+                if column in keep_cols:
+                    continue
+                infer_frame[column] = 0.0
+        else:
             infer_frame = infer_frame.groupby(
                 self.adapter_config.entity_id_col, as_index=False
             ).tail(1)
@@ -184,7 +203,7 @@ class MlbSeasonProjectionAdapter:
                 "metric_id": self.metric_id,
                 "horizon": "season",
                 "window_start": window_start.date().isoformat(),
-                "window_end": window_end_effective.date().isoformat(),
+                "window_end": window_end.date().isoformat(),
                 "game_id": None,
                 "mean": mean_by_entity.values,
                 "availability_confidence": availability.reindex(mean_by_entity.index)

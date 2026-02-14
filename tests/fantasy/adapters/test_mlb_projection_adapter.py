@@ -244,3 +244,74 @@ def test_project_fallback_window_without_matching_market_is_timezone_safe() -> N
 
     assert not projected.empty
     _assert_neutral_schema(projected)
+
+
+def test_inference_frame_uses_pre_window_history_only(monkeypatch) -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_apply_model(self, *, train_frame, infer_frame):
+        captured["infer_max_date"] = pd.to_datetime(
+            infer_frame["game_date"], errors="coerce"
+        ).max()
+        predicted = infer_frame.copy()
+        predicted["prediction"] = 1.0
+        return predicted, pd.Series(dtype="float64"), "baseline"
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date=None,
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    monkeypatch.setattr(
+        MlbSeasonProjectionAdapter,
+        "_apply_model",
+        _fake_apply_model,
+    )
+
+    projected = adapter.project(_contest("hits", window_end="2026-06-01"))
+
+    assert not projected.empty
+    infer_max_date = pd.Timestamp(captured["infer_max_date"])
+    assert infer_max_date < pd.Timestamp("2026-03-01")
+
+
+def test_output_window_end_matches_contest_window_when_anchor_is_earlier() -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date="2025-12-31",
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+
+    projected = adapter.project(_contest("hits", window_end="2026-06-01"))
+
+    assert set(projected["window_end"]) == {"2026-06-01"}
