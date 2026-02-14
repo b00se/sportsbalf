@@ -38,6 +38,30 @@ _BASE_FEATURE_COLUMNS: tuple[str, ...] = (
     "slugging_proxy",
 )
 
+_TARGET_LEAKAGE_BLOCKLIST: dict[str, tuple[str, ...]] = {
+    "plate_appearances": (
+        "plate_appearances",
+        "pa_vs_lhp",
+        "pa_vs_rhp",
+        "hard_hit_events",
+        "hit_rate",
+        "walk_rate",
+        "strikeout_rate",
+        "slugging_proxy",
+    ),
+    "hits": ("hits", "hit_rate"),
+    "total_bases": ("total_bases", "slugging_proxy"),
+    "walks": ("walks", "walk_rate"),
+    "strikeouts": ("strikeouts", "strikeout_rate"),
+    "pa_vs_lhp": ("pa_vs_lhp", "plate_appearances", "pa_vs_rhp"),
+    "pa_vs_rhp": ("pa_vs_rhp", "plate_appearances", "pa_vs_lhp"),
+    "hard_hit_events": ("hard_hit_events", "hard_hit_rate", "plate_appearances"),
+    "hit_rate": ("hit_rate", "hits", "plate_appearances"),
+    "walk_rate": ("walk_rate", "walks", "plate_appearances"),
+    "strikeout_rate": ("strikeout_rate", "strikeouts", "plate_appearances"),
+    "slugging_proxy": ("slugging_proxy", "total_bases", "plate_appearances"),
+}
+
 
 def _safe_ratio(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
     """Return a stable ratio series with zero fallback for non-positive denominators."""
@@ -116,3 +140,18 @@ def base_feature_columns() -> list[str]:
     """Return the ordered feature set for Phase 1 estimator usage."""
 
     return list(_BASE_FEATURE_COLUMNS)
+
+
+def model_feature_columns_for_metric(metric_id: str) -> list[str]:
+    """Return leakage-safe ordered model features for one metric.
+
+    Args:
+        metric_id: Target metric identifier.
+
+    Returns:
+        Ordered feature list with target-leaking columns removed.
+    """
+
+    metric_key = metric_id.strip().lower()
+    blocked = set(_TARGET_LEAKAGE_BLOCKLIST.get(metric_key, (metric_key,)))
+    return [column for column in _BASE_FEATURE_COLUMNS if column not in blocked]

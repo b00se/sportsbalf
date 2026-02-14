@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.fantasy.adapters.mlb.features import (
-    base_feature_columns,
+    model_feature_columns_for_metric,
     prepare_mlb_projection_frame,
 )
 from src.fantasy.adapters.mlb.uncertainty import (
@@ -231,7 +231,7 @@ class MlbSeasonProjectionAdapter:
         if target_col not in working_infer.columns:
             working_infer[target_col] = 0.0
 
-        features = base_feature_columns()
+        features = model_feature_columns_for_metric(target_col)
 
         if train_frame.empty:
             baseline = float(

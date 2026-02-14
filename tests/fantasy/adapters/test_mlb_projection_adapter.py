@@ -196,3 +196,22 @@ def test_extensibility_gate_non_mlb_adapter_neutral_schema() -> None:
 
     _assert_neutral_schema(output)
     assert set(output["sport"]) == {"nfl"}
+
+
+def test_metric_specific_feature_selection_excludes_target_leakage() -> None:
+    from src.fantasy.adapters.mlb.features import model_feature_columns_for_metric
+
+    hits_features = model_feature_columns_for_metric("hits")
+    assert "hits" not in hits_features
+    assert "hit_rate" not in hits_features
+
+    total_bases_features = model_feature_columns_for_metric("total_bases")
+    assert "total_bases" not in total_bases_features
+    assert "slugging_proxy" not in total_bases_features
+
+    walk_rate_features = model_feature_columns_for_metric("walk_rate")
+    assert "walks" not in walk_rate_features
+    assert "plate_appearances" not in walk_rate_features
+
+    for metric_id in PHASE1_METRICS:
+        assert model_feature_columns_for_metric(metric_id)
