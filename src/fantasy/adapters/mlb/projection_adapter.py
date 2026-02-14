@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import Any
 
@@ -155,10 +156,6 @@ class MlbSeasonProjectionAdapter:
                 if column in keep_cols:
                     continue
                 infer_frame[column] = 0.0
-        else:
-            infer_frame = infer_frame.groupby(
-                self.adapter_config.entity_id_col, as_index=False
-            ).tail(1)
 
         infer_frame = infer_frame.sort_values(
             [self.adapter_config.entity_id_col, self.adapter_config.date_col],
@@ -277,12 +274,15 @@ class MlbSeasonProjectionAdapter:
             model_name = "poisson"
 
         try:
+            fit_params: dict[str, int] | None = None
+            if self._supports_random_state(spec):
+                fit_params = {"random_state": self.adapter_config.seed}
             model = fit_estimator(
                 working_train,
                 spec=spec,
                 features=features,
                 target_col=target_col,
-                params={"random_state": self.adapter_config.seed},
+                params=fit_params,
             )
             train_pred = predict_estimator(
                 working_train,
@@ -308,3 +308,15 @@ class MlbSeasonProjectionAdapter:
             working_infer["prediction"] = baseline
             residuals = working_train[target_col] - baseline
             return working_infer, residuals.astype("float64"), "baseline"
+
+    @staticmethod
+    def _supports_random_state(spec: Any) -> bool:
+        """Return whether a model spec factory accepts `random_state`."""
+
+        if "random_state" in dict(getattr(spec, "default_params", {})):
+            return True
+        try:
+            signature = inspect.signature(spec.factory)
+        except (TypeError, ValueError):
+            return False
+        return "random_state" in signature.parameters

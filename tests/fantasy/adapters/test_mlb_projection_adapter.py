@@ -315,3 +315,83 @@ def test_output_window_end_matches_contest_window_when_anchor_is_earlier() -> No
     projected = adapter.project(_contest("hits", window_end="2026-06-01"))
 
     assert set(projected["window_end"]) == {"2026-06-01"}
+
+
+def test_inference_frame_keeps_full_pre_window_rows(monkeypatch) -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    captured: dict[str, int] = {}
+
+    def _fake_apply_model(self, *, train_frame, infer_frame):
+        captured["infer_rows"] = int(len(infer_frame))
+        predicted = infer_frame.copy()
+        predicted["prediction"] = 1.0
+        return predicted, pd.Series(dtype="float64"), "baseline"
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date=None,
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    monkeypatch.setattr(
+        MlbSeasonProjectionAdapter,
+        "_apply_model",
+        _fake_apply_model,
+    )
+
+    projected = adapter.project(_contest("hits", window_end="2026-06-01"))
+
+    assert not projected.empty
+    # Fixture has 5 pre-window rows total (3 for 101, 2 for 202).
+    assert captured["infer_rows"] == 5
+
+
+def test_poisson_model_name_is_preserved_without_random_state_fallback() -> None:
+    from src.fantasy.adapters.mlb.features import prepare_mlb_projection_frame
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date="2025-12-31",
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    source = prepare_mlb_projection_frame(
+        "tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+        entity_id_col="batter",
+        date_col="game_date",
+    )
+    train_frame = source[source["game_date"] <= pd.Timestamp("2025-12-31")].copy()
+    infer_frame = source[source["game_date"] <= pd.Timestamp("2026-02-28")].copy()
+
+    _predicted, _residuals, model_name = adapter._apply_model(
+        train_frame=train_frame,
+        infer_frame=infer_frame,
+    )
+
+    assert model_name == "poisson"
