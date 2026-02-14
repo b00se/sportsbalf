@@ -11,7 +11,9 @@ Implementation remains phased and small-scope, with explicit extensibility gates
    - `docs/plans/implemented/fantasy-rankings/phase-0-unified-projection-core-plan.md`
 2. Phase 1 is implemented and tracked at:
    - `docs/plans/implemented/fantasy-rankings/phase-1-mlb-projection-adapter-plan.md`
-3. Remaining phases (2-5) are still planned.
+3. Phase 1.5 is implemented and tracked at:
+   - `docs/plans/implemented/fantasy-rankings/phase-1.5-mlb-projection-quality-hardening-plan.md`
+4. Remaining phases (2-5) are still planned.
 
 ## Locked Architecture Principles (Non-Negotiable)
 1. Core is sport-agnostic.

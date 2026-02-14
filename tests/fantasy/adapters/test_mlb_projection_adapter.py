@@ -489,3 +489,112 @@ def test_poisson_model_name_is_preserved_without_random_state_fallback() -> None
     )
 
     assert model_name == "poisson"
+
+
+def test_phase15_rate_metric_is_derived_from_count_predictions(monkeypatch) -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    def _fake_predict_count(self, *, metric_id, config, source):
+        if metric_id == "plate_appearances":
+            return pd.Series({"101": 100.0, "202": 40.0}, dtype="float64")
+        if metric_id == "hits":
+            return pd.Series({"101": 30.0, "202": 10.0}, dtype="float64")
+        raise AssertionError(metric_id)
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hit_rate",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date="2025-12-31",
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    monkeypatch.setattr(
+        MlbSeasonProjectionAdapter,
+        "_predict_count_mean_by_entity",
+        _fake_predict_count,
+    )
+
+    projected = adapter.project(_contest("hit_rate", window_end="2026-06-01"))
+
+    rates = projected.set_index("entity_id")["mean"].astype("float64")
+    assert float(rates.loc["101"]) == 0.3
+    assert float(rates.loc["202"]) == 0.25
+
+
+def test_phase15_uncertainty_uses_model_residuals(monkeypatch) -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    def _fake_apply_model(self, *, train_frame, infer_frame):
+        predicted = infer_frame.copy()
+        predicted["prediction"] = 2.0
+        residuals = pd.Series([-2.0, 0.0, 2.0], dtype="float64")
+        return predicted, residuals, "poisson"
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date=None,
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    monkeypatch.setattr(MlbSeasonProjectionAdapter, "_apply_model", _fake_apply_model)
+
+    projected = adapter.project(_contest("hits", window_end="2026-06-01"))
+
+    assert (projected["stddev"] > 0.0).all()
+    assert (projected["p10"] < projected["p90"]).all()
+
+
+def test_phase15_source_model_version_uses_actual_fallback_model(monkeypatch) -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    def _fake_apply_model(self, *, train_frame, infer_frame):
+        predicted = infer_frame.copy()
+        predicted["prediction"] = 1.0
+        return predicted, pd.Series(dtype="float64"), "baseline"
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="xgboost",
+            train_end_date=None,
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    monkeypatch.setattr(MlbSeasonProjectionAdapter, "_apply_model", _fake_apply_model)
+
+    projected = adapter.project(_contest("hits", window_end="2026-06-01"))
+
+    assert projected["source_model_version"].str.startswith("baseline_phase15_").all()

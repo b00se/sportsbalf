@@ -192,3 +192,17 @@ Phase 1 policy:
 - Output remains in-memory only.
 - Schema is neutral and contains no MLB-specific columns.
 - Uncertainty defaults to empirical residual quantiles.
+
+## Fantasy Phase 1.5 MLB Projection Hardening
+
+Additional modules:
+- `src/fantasy/adapters/mlb/datasets.py`
+- `src/fantasy/adapters/mlb/feature_engineering.py`
+- `src/fantasy/adapters/mlb/priors.py`
+- `src/fantasy/adapters/mlb/backtest.py`
+
+Phase 1.5 policy:
+- Train count-like targets directly and derive rate metrics from predicted counts.
+- Keep neutral output schema unchanged.
+- Use leakage-safe shifted rolling features for snapshot construction.
+- Keep pybaseball priors optional with cache-first/offline fallbacks.

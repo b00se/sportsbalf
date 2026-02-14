@@ -134,3 +134,19 @@ Modeling path:
 2. build leakage-safe training/inference slices by date cutoffs
 3. reuse `src/mlb/models/trainers.py` (`fit_estimator`, `predict_estimator`)
 4. emit neutral projection rows with uncertainty and provenance fields
+
+## Fantasy Phase 1.5 Architecture
+
+Phase 1.5 extends MLB adapter quality controls while preserving the same registry
+surface and output schema.
+
+Modules:
+- `src/fantasy/adapters/mlb/datasets.py`: player-season anchor snapshots and rest-of-season labels
+- `src/fantasy/adapters/mlb/feature_engineering.py`: shifted rolling, playing-time stability, and leakage guards
+- `src/fantasy/adapters/mlb/priors.py`: pybaseball prior-table cache load and deterministic fallback joins
+- `src/fantasy/adapters/mlb/backtest.py`: walk-forward fold generation and MAE/RMSE/bias aggregation
+
+Runtime semantics:
+1. count metrics remain directly modeled
+2. rate metrics are derived from modeled count outputs
+3. uncertainty remains empirical and contract-stable (`p10/p50/p90/stddev`)

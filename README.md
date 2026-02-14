@@ -47,6 +47,20 @@ Force retrain before inference:
 .venv/bin/pytest -q
 ```
 
+### 4) Fantasy MLB Phase 1.5 Helpers
+
+Build snapshot dataset:
+
+```bash
+.venv/bin/python scripts/build_mlb_batter_projection_dataset.py --input tests/testdata/fantasy/mlb_batter_games_phase1.csv --output /tmp/mlb_phase15_snapshots.csv --metric hits
+```
+
+Aggregate backtest metrics:
+
+```bash
+.venv/bin/python scripts/backtest_mlb_fantasy_projections.py --predictions /tmp/mlb_backtest_rows.csv --output /tmp/mlb_backtest_scores.csv
+```
+
 ## Documentation Map
 
 Core docs:

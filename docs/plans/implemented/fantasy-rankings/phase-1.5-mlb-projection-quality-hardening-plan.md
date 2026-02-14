@@ -1,6 +1,6 @@
 # Phase 1.5 Plan: MLB Batter Projection Quality Hardening (Feature Engineering + Walk-Forward Fit/Backtest)
 
-Status: Planned
+Status: Implemented
 
 ## Summary
 Phase 1 shipped a schema-valid MLB projection adapter. Phase 1.5 will harden projection quality before ranking/export phases by adding leakage-safe batter feature engineering, multi-season walk-forward training/backtesting, and pybaseball seasonal priors (Statcast-first policy).
@@ -188,7 +188,7 @@ Primary acceptance objective is out-of-sample MAE improvement.
 4. `README.md` (new offline dataset/backtest commands).
 5. `docs/plans/planned/fantasy-rankings/cross-sport-fantasy-rankings-architecture-roadmap.md` (add Phase 1.5 status line).
 6. Add plan doc:
-- `docs/plans/planned/fantasy-rankings/phase-1.5-mlb-projection-quality-hardening-plan.md`
+- `docs/plans/implemented/fantasy-rankings/phase-1.5-mlb-projection-quality-hardening-plan.md`
 
 ## Assumptions and Defaults
 1. Default anchor frequency is weekly.

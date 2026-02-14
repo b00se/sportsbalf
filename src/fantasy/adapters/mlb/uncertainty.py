@@ -65,6 +65,44 @@ def summarize_empirical_uncertainty(
     )
 
 
+def summarize_bucketed_uncertainty(
+    *,
+    mean_by_entity: pd.Series,
+    sample_size_by_entity: pd.Series,
+    residuals_by_bucket: dict[str, pd.Series],
+    bucket_by_entity: pd.Series,
+) -> pd.DataFrame:
+    """Build uncertainty using per-bucket residual distributions."""
+
+    by_entity_rows: dict[str, dict[str, float]] = {}
+    for entity_id, mean_value in mean_by_entity.items():
+        bucket = str(bucket_by_entity.get(entity_id, "default"))
+        residuals = residuals_by_bucket.get(bucket)
+        if residuals is None:
+            residuals = residuals_by_bucket.get("default", pd.Series(dtype="float64"))
+        local = summarize_empirical_uncertainty(
+            mean_by_entity=pd.Series([mean_value], index=[entity_id], dtype="float64"),
+            sample_size_by_entity=pd.Series(
+                [sample_size_by_entity.get(entity_id, 1.0)],
+                index=[entity_id],
+                dtype="float64",
+            ),
+            residuals=residuals,
+        )
+        by_entity_rows[str(entity_id)] = {
+            "p10": float(local.loc[entity_id, "p10"]),
+            "p50": float(local.loc[entity_id, "p50"]),
+            "p90": float(local.loc[entity_id, "p90"]),
+            "stddev": float(local.loc[entity_id, "stddev"]),
+        }
+
+    if not by_entity_rows:
+        return pd.DataFrame(columns=["p10", "p50", "p90", "stddev"])
+    output = pd.DataFrame.from_dict(by_entity_rows, orient="index")
+    output.index.name = mean_by_entity.index.name
+    return output.reindex(mean_by_entity.index)
+
+
 def availability_confidence_by_entity(
     frame: pd.DataFrame,
     *,

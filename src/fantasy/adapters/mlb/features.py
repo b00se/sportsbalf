@@ -38,6 +38,24 @@ _BASE_FEATURE_COLUMNS: tuple[str, ...] = (
     "slugging_proxy",
 )
 
+DIRECT_COUNT_METRICS: tuple[str, ...] = (
+    "plate_appearances",
+    "hits",
+    "total_bases",
+    "walks",
+    "strikeouts",
+    "pa_vs_lhp",
+    "pa_vs_rhp",
+    "hard_hit_events",
+)
+
+DERIVED_RATE_INPUTS: dict[str, tuple[str, str]] = {
+    "hit_rate": ("hits", "plate_appearances"),
+    "walk_rate": ("walks", "plate_appearances"),
+    "strikeout_rate": ("strikeouts", "plate_appearances"),
+    "slugging_proxy": ("total_bases", "plate_appearances"),
+}
+
 _TARGET_LEAKAGE_BLOCKLIST: dict[str, tuple[str, ...]] = {
     "plate_appearances": (
         "plate_appearances",
@@ -155,3 +173,16 @@ def model_feature_columns_for_metric(metric_id: str) -> list[str]:
     metric_key = metric_id.strip().lower()
     blocked = set(_TARGET_LEAKAGE_BLOCKLIST.get(metric_key, (metric_key,)))
     return [column for column in _BASE_FEATURE_COLUMNS if column not in blocked]
+
+
+def is_derived_rate_metric(metric_id: str) -> bool:
+    """Return whether a metric is derived from count predictions."""
+
+    return metric_id.strip().lower() in DERIVED_RATE_INPUTS
+
+
+def rate_metric_inputs(metric_id: str) -> tuple[str, str]:
+    """Return `(numerator_metric, denominator_metric)` for derived rate metrics."""
+
+    metric_key = metric_id.strip().lower()
+    return DERIVED_RATE_INPUTS[metric_key]
