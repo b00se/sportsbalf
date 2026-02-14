@@ -166,3 +166,36 @@ Soft shape validation (no optimization semantics enforced):
 - `short_slate_fantasy`: `roster`, `slate_selection_rule`
 - `single_game_pickem`: `slip_constraints`, `payout_ladder`
 - `season_long_stat_pickem`: `slip_constraints`, `payout_ladder`
+
+## Fantasy MLB Projection Adapter Schema (Phase 1)
+
+Reference config:
+- `config/fantasy/mlb_phase1_projection_2026.yaml`
+
+Optional adapter section:
+- `adapters.mlb_projection`
+
+Supported keys:
+- `input_dataset_path` (required for adapter runtime)
+- `entity_id_col` (default: `batter`)
+- `date_col` (default: `game_date`)
+- `seed` (default: `2026`)
+- `min_history_games` (default: `20`)
+- `model_name` (default: `xgboost`)
+- `train_end_date` (optional)
+- `inference_anchor_date` (optional)
+- `uncertainty_method` (default: `empirical_quantiles`)
+
+Phase 1 base metrics (`horizon = season`):
+- `plate_appearances`
+- `hits`
+- `total_bases`
+- `walks`
+- `strikeouts`
+- `pa_vs_lhp`
+- `pa_vs_rhp`
+- `hard_hit_events`
+- `hit_rate`
+- `walk_rate`
+- `strikeout_rate`
+- `slugging_proxy`

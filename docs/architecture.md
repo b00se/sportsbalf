@@ -112,3 +112,20 @@ Canonical flow:
 
 The flow is horizon-aware and uses a single schema for season-long fantasy,
 short-slate fantasy, single-game pick'em, and season-long stat pick'em.
+
+## Fantasy Phase 1 Architecture
+
+Phase 1 adds an MLB season projection adapter package while preserving the
+separation from canonical `pipeline/main.py` runtime behavior.
+
+Modules:
+- `src/fantasy/adapters/mlb/projection_adapter.py`: season-horizon projection adapter by metric
+- `src/fantasy/adapters/mlb/features.py`: adapter feature assembly + fallback normalization
+- `src/fantasy/adapters/mlb/uncertainty.py`: empirical quantile/stddev summaries + availability confidence
+- `src/fantasy/adapters/mlb/registration.py`: idempotent registration helper for all Phase 1 metrics
+
+Modeling path:
+1. load reusable batter-game frame from configured local dataset
+2. build leakage-safe training/inference slices by date cutoffs
+3. reuse `src/mlb/models/trainers.py` (`fit_estimator`, `predict_estimator`)
+4. emit neutral projection rows with uncertainty and provenance fields

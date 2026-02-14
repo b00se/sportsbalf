@@ -138,3 +138,47 @@ Phase 0 policy:
 - Fantasy points are modeled as derived metrics from base stats.
 - Market surfaces reference existing `(metric_id, horizon)` pairs.
 - Mapping resolution emits `mapped`, `unmapped`, `duplicate_provider_id`.
+
+## Fantasy Phase 1 MLB Projection Adapter
+
+Source modules:
+- `src/fantasy/adapters/mlb/projection_adapter.py`
+- `src/fantasy/adapters/mlb/features.py`
+- `src/fantasy/adapters/mlb/uncertainty.py`
+- `src/fantasy/adapters/mlb/registration.py`
+
+Registered contract keys:
+- `(mlb, plate_appearances, season)`
+- `(mlb, hits, season)`
+- `(mlb, total_bases, season)`
+- `(mlb, walks, season)`
+- `(mlb, strikeouts, season)`
+- `(mlb, pa_vs_lhp, season)`
+- `(mlb, pa_vs_rhp, season)`
+- `(mlb, hard_hit_events, season)`
+- `(mlb, hit_rate, season)`
+- `(mlb, walk_rate, season)`
+- `(mlb, strikeout_rate, season)`
+- `(mlb, slugging_proxy, season)`
+
+Neutral output schema for `SportProjectionAdapter.project(...)`:
+- `entity_id`
+- `sport`
+- `metric_id`
+- `horizon`
+- `window_start`
+- `window_end`
+- `game_id`
+- `mean`
+- `p10`
+- `p50`
+- `p90`
+- `stddev`
+- `availability_confidence`
+- `source_model_version`
+- `source_snapshot_id`
+
+Phase 1 policy:
+- Output remains in-memory only.
+- Schema is neutral and contains no MLB-specific columns.
+- Uncertainty defaults to empirical residual quantiles.

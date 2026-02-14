@@ -9,7 +9,9 @@ Implementation remains phased and small-scope, with explicit extensibility gates
 ## Current Status
 1. Phase 0 is implemented and tracked at:
    - `docs/plans/implemented/fantasy-rankings/phase-0-unified-projection-core-plan.md`
-2. Remaining phases (1-5) are still planned.
+2. Phase 1 is implemented and tracked at:
+   - `docs/plans/planned/fantasy-rankings/phase-1-mlb-projection-adapter-plan.md`
+3. Remaining phases (2-5) are still planned.
 
 ## Locked Architecture Principles (Non-Negotiable)
 1. Core is sport-agnostic.
@@ -65,7 +67,7 @@ Implementation remains phased and small-scope, with explicit extensibility gates
 - Extensibility gate:
   - A hypothetical NHL/NFL adapter can compile against contracts without schema edits.
 
-## Phase 1: MLB Projection Adapter (Neutral Outputs)
+## Phase 1: MLB Projection Adapter (Neutral Outputs, Implemented)
 - Build MLB adapter that outputs neutral per-player projections + uncertainty.
 - Keep output schema sport-agnostic (`expected_points`, `volatility`, `availability_confidence`, etc.).
 - Extensibility gate:
