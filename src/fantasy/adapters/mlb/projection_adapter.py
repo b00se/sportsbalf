@@ -138,11 +138,11 @@ class MlbSeasonProjectionAdapter:
         train_frame = source[
             source[self.adapter_config.date_col] <= train_cutoff
         ].copy()
-        infer_frame = source[
+        infer_history_frame = source[
             source[self.adapter_config.date_col] <= feature_cutoff
         ].copy()
 
-        if infer_frame.empty:
+        if infer_history_frame.empty:
             infer_frame = source.groupby(
                 self.adapter_config.entity_id_col, as_index=False
             ).head(1)
@@ -156,8 +156,10 @@ class MlbSeasonProjectionAdapter:
                 if column in keep_cols:
                     continue
                 infer_frame[column] = 0.0
+            confidence_frame = infer_frame
         else:
-            infer_frame = infer_frame.groupby(
+            confidence_frame = infer_history_frame
+            infer_frame = infer_history_frame.groupby(
                 self.adapter_config.entity_id_col, as_index=False
             ).tail(1)
 
@@ -185,7 +187,7 @@ class MlbSeasonProjectionAdapter:
             residuals=residuals,
         )
         availability = availability_confidence_by_entity(
-            infer_frame,
+            confidence_frame,
             entity_id_col=entity_id_col,
             date_col=self.adapter_config.date_col,
             min_history_games=self.adapter_config.min_history_games,

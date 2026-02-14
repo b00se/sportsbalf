@@ -72,7 +72,10 @@ def availability_confidence_by_entity(
     date_col: str,
     min_history_games: int,
 ) -> pd.Series:
-    """Estimate deterministic availability confidence from games and recent volume."""
+    """Estimate deterministic availability confidence.
+
+    The score blends historical game count and recency-weighted plate appearances.
+    """
 
     if frame.empty:
         return pd.Series(dtype="float64")
@@ -80,14 +83,30 @@ def availability_confidence_by_entity(
     grouped = frame.groupby(entity_id_col, dropna=False)
     games = grouped[date_col].size().astype("float64")
 
+    plate_appearances = pd.to_numeric(
+        frame.get("plate_appearances", 0.0), errors="coerce"
+    ).fillna(0.0)
     latest_date = pd.to_datetime(frame[date_col], errors="coerce").max()
     if pd.isna(latest_date):
-        recent = grouped["plate_appearances"].sum().astype("float64")
+        recent = plate_appearances.groupby(frame[entity_id_col], dropna=False).sum()
+        recent = recent.astype("float64")
     else:
-        recent_cutoff = pd.Timestamp(latest_date) - pd.Timedelta(days=30)
-        recent_frame = frame[frame[date_col] >= recent_cutoff].copy()
+        dated_frame = frame.copy()
+        dated_frame["_confidence_date"] = pd.to_datetime(
+            frame[date_col], errors="coerce"
+        )
+        dated_frame["_plate_appearances"] = plate_appearances
+        days_since_latest = (
+            pd.Timestamp(latest_date) - dated_frame["_confidence_date"]
+        ).dt.days
+        days_since_latest = days_since_latest.fillna(3650).clip(lower=0.0)
+        # Exponential half-life keeps this sensitive to recent form without hard cutoff.
+        dated_frame["_recency_weight"] = np.power(0.5, days_since_latest / 30.0)
+        dated_frame["_weighted_pa"] = (
+            dated_frame["_plate_appearances"] * dated_frame["_recency_weight"]
+        )
         recent = (
-            recent_frame.groupby(entity_id_col, dropna=False)["plate_appearances"]
+            dated_frame.groupby(entity_id_col, dropna=False)["_weighted_pa"]
             .sum()
             .astype("float64")
         )

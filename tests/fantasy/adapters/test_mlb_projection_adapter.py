@@ -358,6 +358,61 @@ def test_inference_frame_uses_latest_pre_window_row_per_entity(monkeypatch) -> N
     assert captured["infer_rows"] == 2
 
 
+def test_availability_confidence_uses_full_pre_window_history(monkeypatch) -> None:
+    from src.fantasy.adapters.mlb import projection_adapter as projection_module
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_apply_model(self, *, train_frame, infer_frame):
+        captured["infer_rows"] = int(len(infer_frame))
+        predicted = infer_frame.copy()
+        predicted["prediction"] = 1.0
+        return predicted, pd.Series(dtype="float64"), "baseline"
+
+    def _fake_availability(frame, *, entity_id_col, date_col, min_history_games):
+        game_counts = frame.groupby(entity_id_col)[date_col].size().astype("float64")
+        captured["confidence_rows"] = int(len(frame))
+        captured["max_games_per_entity"] = float(game_counts.max())
+        return pd.Series(0.5, index=game_counts.index, dtype="float64")
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hits",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="poisson",
+            train_end_date=None,
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    monkeypatch.setattr(
+        MlbSeasonProjectionAdapter,
+        "_apply_model",
+        _fake_apply_model,
+    )
+    monkeypatch.setattr(
+        projection_module,
+        "availability_confidence_by_entity",
+        _fake_availability,
+    )
+
+    projected = adapter.project(_contest("hits", window_end="2026-06-01"))
+
+    assert not projected.empty
+    assert captured["infer_rows"] == 2
+    assert int(captured["confidence_rows"]) > captured["infer_rows"]
+    assert float(captured["max_games_per_entity"]) > 1.0
+
+
 def test_poisson_model_name_is_preserved_without_random_state_fallback() -> None:
     from src.fantasy.adapters.mlb.features import prepare_mlb_projection_frame
     from src.fantasy.adapters.mlb.projection_adapter import (
