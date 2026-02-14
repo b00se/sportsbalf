@@ -156,6 +156,10 @@ class MlbSeasonProjectionAdapter:
                 if column in keep_cols:
                     continue
                 infer_frame[column] = 0.0
+        else:
+            infer_frame = infer_frame.groupby(
+                self.adapter_config.entity_id_col, as_index=False
+            ).tail(1)
 
         infer_frame = infer_frame.sort_values(
             [self.adapter_config.entity_id_col, self.adapter_config.date_col],

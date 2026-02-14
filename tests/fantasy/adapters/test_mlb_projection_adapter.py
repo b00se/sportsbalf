@@ -317,7 +317,7 @@ def test_output_window_end_matches_contest_window_when_anchor_is_earlier() -> No
     assert set(projected["window_end"]) == {"2026-06-01"}
 
 
-def test_inference_frame_keeps_full_pre_window_rows(monkeypatch) -> None:
+def test_inference_frame_uses_latest_pre_window_row_per_entity(monkeypatch) -> None:
     from src.fantasy.adapters.mlb.projection_adapter import (
         MlbProjectionAdapterConfig,
         MlbSeasonProjectionAdapter,
@@ -355,8 +355,7 @@ def test_inference_frame_keeps_full_pre_window_rows(monkeypatch) -> None:
     projected = adapter.project(_contest("hits", window_end="2026-06-01"))
 
     assert not projected.empty
-    # Fixture has 5 pre-window rows total (3 for 101, 2 for 202).
-    assert captured["infer_rows"] == 5
+    assert captured["infer_rows"] == 2
 
 
 def test_poisson_model_name_is_preserved_without_random_state_fallback() -> None:
