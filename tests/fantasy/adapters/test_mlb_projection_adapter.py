@@ -319,6 +319,65 @@ def test_output_window_end_matches_contest_window_when_anchor_is_earlier() -> No
     assert set(projected["window_end"]) == {"2026-06-01"}
 
 
+def test_phase15b_config_controls_parse_from_nested_sections() -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import MlbProjectionAdapterConfig
+
+    config = MlbProjectionAdapterConfig.from_mapping(
+        {
+            "mlb_projection_phase15": {
+                "input_dataset_path": (
+                    "tests/testdata/fantasy/mlb_batter_games_phase1.csv"
+                ),
+                "model_name": "poisson",
+                "modeling": {
+                    "selection_min_delta_mae": 0.02,
+                },
+                "uncertainty": {
+                    "hit_rate_residual_scale_global": 0.75,
+                    "hit_rate_residual_scale_by_bucket": {
+                        "0_100": 0.6,
+                        "100_250": 0.8,
+                    },
+                    "coverage_target": 0.82,
+                    "calibration_objective": "coverage_width_tradeoff",
+                    "min_bucket_residual_count": 25,
+                },
+            }
+        }
+    )
+
+    assert config.selection_min_delta_mae == 0.02
+    assert config.hit_rate_residual_scale_global == 0.75
+    assert config.hit_rate_residual_scale_by_bucket == {"0_100": 0.6, "100_250": 0.8}
+    assert config.coverage_target == 0.82
+    assert config.calibration_objective == "coverage_width_tradeoff"
+    assert config.min_bucket_residual_count == 25
+
+
+def test_model_selection_threshold_keeps_default_for_small_mae_gain() -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import MlbSeasonProjectionAdapter
+
+    scores = pd.DataFrame(
+        [
+            {"model_name": "poisson", "mae": 1.00, "rmse": 1.20, "abs_bias": 0.10},
+            {
+                "model_name": "hist_gradient_boosting",
+                "mae": 0.995,
+                "rmse": 1.18,
+                "abs_bias": 0.08,
+            },
+        ]
+    )
+
+    selected = MlbSeasonProjectionAdapter._select_model_name_from_scores(
+        scores=scores,
+        default_model_name="poisson",
+        min_delta_mae=0.01,
+    )
+
+    assert selected == "poisson"
+
+
 def test_inference_frame_uses_latest_pre_window_row_per_entity(monkeypatch) -> None:
     from src.fantasy.adapters.mlb.projection_adapter import (
         MlbProjectionAdapterConfig,
@@ -598,3 +657,46 @@ def test_phase15_source_model_version_uses_actual_fallback_model(monkeypatch) ->
     projected = adapter.project(_contest("hits", window_end="2026-06-01"))
 
     assert projected["source_model_version"].str.startswith("baseline_phase15_").all()
+
+
+def test_phase15_hit_rate_is_constrained_to_unit_interval(monkeypatch) -> None:
+    from src.fantasy.adapters.mlb.projection_adapter import (
+        MlbProjectionAdapterConfig,
+        MlbSeasonProjectionAdapter,
+    )
+
+    def _fake_projection_details(self, *, metric_id, config, source):
+        if metric_id == "plate_appearances":
+            means = pd.Series({"101": -10.0, "202": 2.0}, dtype="float64")
+            return means, pd.Series([0.0], dtype="float64"), "baseline"
+        if metric_id == "hits":
+            means = pd.Series({"101": 50.0, "202": 3.0}, dtype="float64")
+            return means, pd.Series([0.0], dtype="float64"), "baseline"
+        raise AssertionError(metric_id)
+
+    adapter = MlbSeasonProjectionAdapter(
+        metric_id="hit_rate",
+        adapter_config=MlbProjectionAdapterConfig(
+            input_dataset_path="tests/testdata/fantasy/mlb_batter_games_phase1.csv",
+            entity_id_col="batter",
+            date_col="game_date",
+            seed=2026,
+            min_history_games=2,
+            model_name="xgboost",
+            train_end_date=None,
+            inference_anchor_date="2026-04-01",
+            uncertainty_method="empirical_quantiles",
+            source_snapshot_id="fixture-snapshot",
+        ),
+    )
+    monkeypatch.setattr(
+        MlbSeasonProjectionAdapter,
+        "_predict_count_projection_details",
+        _fake_projection_details,
+    )
+
+    projected = adapter.project(_contest("hit_rate", window_end="2026-06-01"))
+
+    assert ((projected["mean"] >= 0.0) & (projected["mean"] <= 1.0)).all()
+    assert ((projected["p10"] >= 0.0) & (projected["p10"] <= 1.0)).all()
+    assert ((projected["p90"] >= 0.0) & (projected["p90"] <= 1.0)).all()

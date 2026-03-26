@@ -13,6 +13,8 @@ ROLL_BASE_COLUMNS: tuple[str, ...] = (
     "walks",
     "strikeouts",
     "hard_hit_events",
+    "pa_vs_lhp",
+    "pa_vs_rhp",
 )
 
 
@@ -82,6 +84,12 @@ def add_phase15_rolling_features(
         engineered[f"roll_{window}_hard_hit_rate"] = _safe_ratio(
             engineered[f"roll_{window}_hard_hit_events"], engineered[plate_col]
         )
+        engineered[f"roll_{window}_pa_vs_lhp_share"] = _safe_ratio(
+            engineered[f"roll_{window}_pa_vs_lhp"], engineered[plate_col]
+        )
+        engineered[f"roll_{window}_pa_vs_rhp_share"] = _safe_ratio(
+            engineered[f"roll_{window}_pa_vs_rhp"], engineered[plate_col]
+        )
 
     date_series = pd.to_datetime(engineered[date_col], errors="coerce")
     prev_game = grouped[date_col].shift(1)
@@ -103,5 +111,28 @@ def add_phase15_rolling_features(
             engineered[f"roll_{window}_plate_appearances"],
             engineered[f"games_played_last_{window}"],
         )
+
+    engineered["team_games_seen_last_30"] = pd.to_numeric(
+        engineered.get("games_played_last_30", 0.0), errors="coerce"
+    ).fillna(0.0)
+    engineered["player_game_share_last_30"] = _safe_ratio(
+        engineered["games_played_last_30"], pd.Series(30.0, index=engineered.index)
+    ).clip(lower=0.0, upper=1.0)
+
+    def _shifted_consecutive_streak(series: pd.Series) -> pd.Series:
+        games = pd.to_numeric(series, errors="coerce").fillna(0.0).gt(0.0)
+        output = []
+        streak = 0
+        for played in games:
+            output.append(float(streak))
+            if played:
+                streak += 1
+            else:
+                streak = 0
+        return pd.Series(output, index=series.index, dtype="float64")
+
+    engineered["recent_consecutive_games_played"] = grouped[
+        "plate_appearances"
+    ].transform(_shifted_consecutive_streak)
 
     return engineered

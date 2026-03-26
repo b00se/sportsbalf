@@ -3,9 +3,13 @@
 from src.fantasy.adapters.mlb.backtest import (
     WalkForwardFold,
     aggregate_metric_scores,
+    build_hit_rate_red_flag_dashboard,
     generate_walk_forward_folds,
 )
-from src.fantasy.adapters.mlb.datasets import build_player_season_snapshots
+from src.fantasy.adapters.mlb.datasets import (
+    build_hits_pa_training_view,
+    build_player_season_snapshots,
+)
 from src.fantasy.adapters.mlb.feature_engineering import add_phase15_rolling_features
 from src.fantasy.adapters.mlb.priors import (
     attach_priors_to_snapshots,
@@ -27,7 +31,9 @@ __all__ = [
     "WalkForwardFold",
     "add_phase15_rolling_features",
     "aggregate_metric_scores",
+    "build_hit_rate_red_flag_dashboard",
     "attach_priors_to_snapshots",
+    "build_hits_pa_training_view",
     "build_player_season_snapshots",
     "generate_walk_forward_folds",
     "load_cached_priors",

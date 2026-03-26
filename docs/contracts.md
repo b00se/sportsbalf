@@ -203,6 +203,10 @@ Additional modules:
 
 Phase 1.5 policy:
 - Train count-like targets directly and derive rate metrics from predicted counts.
+- For `hits` and `plate_appearances`, use snapshot/rest-of-season labels from cleaned regular-season batter-game views.
 - Keep neutral output schema unchanged.
 - Use leakage-safe shifted rolling features for snapshot construction.
+- Enforce nonnegative count projections and `hits <= plate_appearances` consistency before deriving `hit_rate`.
 - Keep pybaseball priors optional with cache-first/offline fallbacks.
+- Support model-family anti-churn selection (`modeling.selection_min_delta_mae`) using MAE/RMSE/abs-bias tie-breaks.
+- Support hit-rate interval calibration via residual scaling and sparse-bucket fallback controls.

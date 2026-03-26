@@ -147,6 +147,8 @@ Modules:
 - `src/fantasy/adapters/mlb/backtest.py`: walk-forward fold generation and MAE/RMSE/bias aggregation
 
 Runtime semantics:
-1. count metrics remain directly modeled
-2. rate metrics are derived from modeled count outputs
-3. uncertainty remains empirical and contract-stable (`p10/p50/p90/stddev`)
+1. `hits` and `plate_appearances` use cleaned regular-season batter-game inputs and snapshot/rest-of-season labels
+2. `hit_rate` is derived from constrained count outputs (`hits`, `plate_appearances`)
+3. uncertainty is sampled from count residual banks and transformed to bounded rate intervals with configurable residual scaling and sparse-bucket fallback
+4. output contract remains stable (`p10/p50/p90/stddev` + provenance fields)
+5. optional model-family selection can switch off default model only when MAE gain clears configured anti-churn threshold

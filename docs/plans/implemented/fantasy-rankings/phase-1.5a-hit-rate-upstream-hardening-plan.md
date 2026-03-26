@@ -1,6 +1,6 @@
 # Phase 1.5a Plan: Fix `hit_rate` by hardening upstream `hits` + `plate_appearances` first
 
-Status: Planned
+Status: Implemented
 
 ## Summary
 We will address the worst metric (`hit_rate`) by improving its upstream count predictions (`hits`, `plate_appearances`) end-to-end, then re-derive `hit_rate` from those improved counts.
@@ -170,3 +170,18 @@ For `hits` and `plate_appearances`, train on:
 - Baseline comparator for acceptance remains the current Phase 1.5 adapter e2e run artifacts.
 - Regular-season-only filtering is default and required for this metric pass.
 - Weekly anchors remain default for stability/performance balance.
+
+## Post-Implementation Findings (Pre-Fix)
+Date: 2026-02-14
+
+Implementation is complete, but two post-implementation defects were identified and
+must be fixed before final acceptance:
+- Anchor-day labeling bug in snapshot target construction (`src/fantasy/adapters/mlb/datasets.py`).
+- Hard-hit fallback conversion bug when only `hard_hit_rate` is available (`src/fantasy/adapters/mlb/datasets.py`).
+
+Detailed issue log, modeling results, and testing notes are documented in:
+- `docs/plans/implemented/fantasy-rankings/phase-1.5a-hit-rate-upstream-hardening-findings.md`
+
+## Follow-up Plan
+Next iteration planning for accuracy and interval calibration is tracked in:
+- `docs/plans/planned/fantasy-rankings/phase-1.5b-hit-rate-accuracy-calibration-plan.md`

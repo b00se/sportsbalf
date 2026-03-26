@@ -61,6 +61,13 @@ Aggregate backtest metrics:
 .venv/bin/python scripts/backtest_mlb_fantasy_projections.py --predictions /tmp/mlb_backtest_rows.csv --output /tmp/mlb_backtest_scores.csv
 ```
 
+Phase 1.5 quality controls (under `adapters.mlb_projection_phase15`) support:
+- regular-season + terminal-PA cleaning (`data_cleaning.*`)
+- count consistency constraints (`modeling.count_nonnegative_constraints`, `modeling.hits_leq_pa_constraint`)
+- count-derived `hit_rate` uncertainty draws (`modeling.hit_rate_uncertainty_draws`)
+- model-family anti-churn selection threshold (`modeling.selection_min_delta_mae`)
+- hit-rate calibration controls (`uncertainty.hit_rate_residual_scale_*`, `uncertainty.coverage_target`, `uncertainty.min_bucket_residual_count`)
+
 ## Documentation Map
 
 Core docs:

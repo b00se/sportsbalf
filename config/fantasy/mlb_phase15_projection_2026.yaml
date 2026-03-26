@@ -89,3 +89,20 @@ adapters:
     uncertainty_method: empirical_quantiles
     uncertainty_residual_bucket_col: season_to_date_pa
     uncertainty_bucket_edges: [0, 100, 250, 450, 700]
+    data_cleaning:
+      regular_season_only: true
+      require_batter_pa_dedup: true
+    modeling:
+      count_nonnegative_constraints: true
+      hits_leq_pa_constraint: true
+      hit_rate_derivation_source: counts_only
+      hit_rate_uncertainty_draws: 500
+      selection_min_delta_mae: 0.0
+    uncertainty:
+      hit_rate_residual_scale_global: 1.0
+      hit_rate_residual_scale_by_bucket: {}
+      coverage_target: 0.8
+      calibration_objective: coverage_width_tradeoff
+      min_bucket_residual_count: 100
+    evaluation:
+      primary_metric_focus: hit_rate
