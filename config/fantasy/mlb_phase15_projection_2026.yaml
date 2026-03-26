@@ -1,0 +1,108 @@
+contest:
+  contest_id: ud-mlb-2026-phase15-projections
+  provider: underdog
+  sport: mlb
+  mode: season_long_tournament
+  scoring_ruleset_id: ud_mlb_classic
+  mode_config:
+    roster:
+      slots: 18
+    advancement:
+      rounds: [12, 2]
+    payouts:
+      first: 100000
+  metadata:
+    season: 2026
+
+metrics:
+  base_metrics:
+    - metric_id: plate_appearances
+      horizon: season
+      adapter_key: mlb_plate_appearances_season
+    - metric_id: hits
+      horizon: season
+      adapter_key: mlb_hits_season
+    - metric_id: total_bases
+      horizon: season
+      adapter_key: mlb_total_bases_season
+    - metric_id: walks
+      horizon: season
+      adapter_key: mlb_walks_season
+    - metric_id: strikeouts
+      horizon: season
+      adapter_key: mlb_strikeouts_season
+    - metric_id: pa_vs_lhp
+      horizon: season
+      adapter_key: mlb_pa_vs_lhp_season
+    - metric_id: pa_vs_rhp
+      horizon: season
+      adapter_key: mlb_pa_vs_rhp_season
+    - metric_id: hard_hit_events
+      horizon: season
+      adapter_key: mlb_hard_hit_events_season
+    - metric_id: hit_rate
+      horizon: season
+      adapter_key: mlb_hit_rate_season
+    - metric_id: walk_rate
+      horizon: season
+      adapter_key: mlb_walk_rate_season
+    - metric_id: strikeout_rate
+      horizon: season
+      adapter_key: mlb_strikeout_rate_season
+    - metric_id: slugging_proxy
+      horizon: season
+      adapter_key: mlb_slugging_proxy_season
+
+mapping:
+  player_id_map_path: data/fantasy/mlb_player_mapping_2026.csv
+  unresolved_policy: warn
+
+markets:
+  mode: season_long_tournament
+  definitions:
+    - market_id: ud_mlb_2026_hits
+      metric_id: hits
+      horizon: season
+      window_start: "2026-03-01"
+      window_end: "2026-10-01"
+
+adapters:
+  mlb_projection_phase15:
+    input_dataset_path: data/mlb/reusable_batter_games_2026.csv
+    entity_id_col: batter
+    date_col: game_date
+    seed: 2026
+    min_history_games: 20
+    model_name: xgboost
+    train_end_date: "2025-12-31"
+    inference_anchor_date: "2026-08-01"
+    snapshot_anchor_frequency: weekly
+    snapshot_min_games: 5
+    model_selection_enabled: false
+    model_selection_candidates: [poisson, elastic_net, hist_gradient_boosting, xgboost]
+    model_selection_primary_metric: mae
+    model_selection_max_trials_per_model: 1
+    pybaseball_priors_enabled: false
+    pybaseball_priors_cache_path: data/processed/fantasy/mlb_batter_priors.parquet
+    pybaseball_priors_seasons: [2021, 2022, 2023, 2024, 2025]
+    pybaseball_priors_refresh: false
+    uncertainty_method: empirical_quantiles
+    uncertainty_residual_bucket_col: season_to_date_pa
+    uncertainty_bucket_edges: [0, 100, 250, 450, 700]
+    data_cleaning:
+      regular_season_only: true
+      require_batter_pa_dedup: true
+    modeling:
+      count_nonnegative_constraints: true
+      hits_leq_pa_constraint: true
+      hit_rate_derivation_source: counts_only
+      hit_rate_uncertainty_draws: 500
+      selection_min_delta_mae: 0.0
+    uncertainty:
+      hit_rate_residual_scale_global: 1.0
+      hit_rate_residual_scale_by_bucket: {}
+      coverage_target: 0.8
+      calibration_objective: coverage_width_tradeoff
+      min_bucket_residual_count: 100
+    evaluation:
+      primary_metric_focus: hit_rate

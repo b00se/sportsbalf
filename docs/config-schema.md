@@ -199,3 +199,41 @@ Phase 1 base metrics (`horizon = season`):
 - `walk_rate`
 - `strikeout_rate`
 - `slugging_proxy`
+
+## Fantasy MLB Projection Adapter Schema (Phase 1.5)
+
+Reference config:
+- `config/fantasy/mlb_phase15_projection_2026.yaml`
+
+Optional adapter section:
+- `adapters.mlb_projection_phase15`
+
+Additional supported keys beyond Phase 1:
+- `training_data_paths`
+- `snapshot_anchor_frequency` (default: `weekly`)
+- `snapshot_min_games` (default: `5`)
+- `model_selection_enabled` (default: `false`)
+- `model_selection_candidates`
+- `model_selection_primary_metric` (default: `mae`)
+- `model_selection_max_trials_per_model` (default: `1`)
+- `modeling.selection_min_delta_mae` (default: `0.0`)
+- `pybaseball_priors_enabled` (default: `false`)
+- `pybaseball_priors_cache_path`
+- `pybaseball_priors_seasons`
+- `pybaseball_priors_refresh` (default: `false`)
+- `uncertainty_residual_bucket_col` (default: `season_to_date_pa`)
+- `uncertainty_bucket_edges` (default: `[0, 100, 250, 450, 700]`)
+- `uncertainty.hit_rate_residual_scale_global` (default: `1.0`)
+- `uncertainty.hit_rate_residual_scale_by_bucket` (default: `{}`)
+- `uncertainty.coverage_target` (default: `0.80`)
+- `uncertainty.calibration_objective` (default: `coverage_width_tradeoff`)
+- `uncertainty.min_bucket_residual_count` (default: `100`)
+
+Nested quality controls:
+- `data_cleaning.regular_season_only` (default: `true`)
+- `data_cleaning.require_batter_pa_dedup` (default: `true`)
+- `modeling.count_nonnegative_constraints` (default: `true`)
+- `modeling.hits_leq_pa_constraint` (default: `true`)
+- `modeling.hit_rate_derivation_source` (default: `counts_only`)
+- `modeling.hit_rate_uncertainty_draws` (default: `500`)
+- `evaluation.primary_metric_focus` (default: `hit_rate`)
