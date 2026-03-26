@@ -63,6 +63,32 @@ Sports:
 - NFL: `src/nfl/*`
 - NHL: `src/nhl/*`
 
+## MLB Live Underdog Shadow Workflow
+
+The live Underdog path is an auxiliary orchestration layer that sits on top of
+the existing stat-specific MLB pitcher-prop pipelines. It is shadow/manual only
+and does not change the canonical `pipeline/main.py` runtime entrypoint.
+
+Target module responsibilities:
+- `src/mlb/data/underdog.py`: fetch and normalize Underdog `PickemStat_*`
+  payloads into stat-specific live line frames.
+- `src/mlb/pitcher_props/live_lines.py`: map live rows into dated snapshot files
+  that satisfy the stat-specific `lines_path` loaders.
+- `src/mlb/pitcher_props/slate.py`: run the supported stat pipelines, combine
+  successful outputs into one candidate frame, and record skipped or failed
+  stats in the run summary.
+- `src/mlb/slips.py`: consume the generic candidate-leg schema, allow
+  same-pitcher stacks, and enforce the hard `2-player / 2-team` slip rule.
+- `scripts/build_mlb_live_betslips.py`: write JSON slip artifacts for manual
+  review only.
+
+The orchestration should remain thin:
+1. fetch live stat lines
+2. persist optional dated snapshots
+3. score the available props with the existing MLB stat pipelines
+4. normalize scored rows into a shared candidate-leg table
+5. generate JSON slips that satisfy the validity rules
+
 ## NHL Runtime Topology
 
 Data layer:
@@ -82,6 +108,8 @@ Orchestration:
 
 - Existing output schema columns for MLB/NFL are backward-compatible commitments.
 - NHL output columns are contract-stable for current `shots_on_goal` pipeline.
+- MLB live Underdog runs are shadow/manual and must not auto-submit or mutate
+  downstream account workflows.
 - Model artifact compatibility is schema-hash based where implemented (NHL today).
 - Tests are offline by default; network behavior must be optional and guarded.
 

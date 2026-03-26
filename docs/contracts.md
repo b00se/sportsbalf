@@ -58,6 +58,35 @@ Shared naming is sport-neutral (`line`, `entity_id`) with caller-specified colum
 - Walks allowed: `predicted_bb_allowed`, `bb_line`
 - Mode metadata where applicable: `run_mode`, `lines_status`
 
+### MLB live Underdog shadow contract
+Live Underdog ingestion supports the full modeled MLB pitcher-prop slate:
+`strikeouts`, `outs_recorded`, `earned_runs`, `hits_allowed`, and `bb_allowed`.
+
+Normalized candidate legs share a stat-neutral schema built from live prop rows:
+- `player_id`
+- `player_name`
+- `team`
+- `opponent`
+- `game_id`
+- `scheduled_at`
+- `stat_id`
+- `line`
+- `side`
+- `prob_over`
+- `prob_under`
+- `ev_over`
+- `ev_under`
+- payout fields
+- model provenance / run metadata
+
+Slip contracts for the shadow workflow are stricter than the leg schema:
+- Same-pitcher stacking is allowed.
+- Every emitted slip must contain at least 2 distinct players.
+- Every emitted slip must contain at least 2 distinct teams.
+- Output artifacts are JSON-only and intended for manual review.
+- Dated line snapshots are operational inputs, not a change to the scoring
+  contract.
+
 ### NFL fields
 - `predicted_pass_attempts`
 - `attempts_line`
