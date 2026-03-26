@@ -1,9 +1,9 @@
-"""Helpers for loading Underdog strikeout prop lines."""
+"""Helpers for loading MLB pitcher prop lines."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,51 @@ def _coerce_numeric(df: pd.DataFrame, columns: Iterable[str]) -> None:
         df[column] = pd.to_numeric(df[column], errors="coerce")
 
 
+def normalize_pitcher_prop_lines(df: pd.DataFrame, line_col: str) -> pd.DataFrame:
+    """Normalize a pitcher-prop line frame for downstream loaders.
+
+    Args:
+        df: Raw line frame.
+        line_col: Stat-specific line column name.
+
+    Returns:
+        Normalized line frame with required numeric columns coerced.
+
+    Raises:
+        ValueError: If required columns are missing.
+    """
+
+    work = df.copy()
+    required = {"player", line_col}
+    missing = required - set(work.columns)
+    if missing:
+        raise ValueError(
+            f"Pitcher prop lines missing required columns: {sorted(missing)}"
+        )
+
+    for optional in (
+        "over_decimal_price",
+        "over_payout_multiplier",
+        "under_decimal_price",
+        "under_payout_multiplier",
+    ):
+        if optional not in work.columns:
+            work[optional] = np.nan
+
+    _coerce_numeric(
+        work,
+        [
+            line_col,
+            "over_decimal_price",
+            "over_payout_multiplier",
+            "under_decimal_price",
+            "under_payout_multiplier",
+        ],
+    )
+    work["player"] = work["player"].astype(str)
+    return work
+
+
 def load_strikeout_lines(path: str) -> pd.DataFrame:
     """Load raw Underdog strikeout lines and coerce numeric odds columns."""
 
@@ -41,17 +86,7 @@ def load_strikeout_lines(path: str) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Strikeout lines missing required columns: {sorted(missing)}")
 
-    numeric_columns = [
-        "k_line",
-        "over_decimal_price",
-        "over_payout_multiplier",
-        "under_decimal_price",
-        "under_payout_multiplier",
-    ]
-    _coerce_numeric(df, numeric_columns)
-
-    df["player"] = df["player"].astype(str)
-    return df
+    return normalize_pitcher_prop_lines(df, "k_line")
 
 
 def load_pitcher_prop_lines(path: str, line_col: str) -> pd.DataFrame:
@@ -74,17 +109,4 @@ def load_pitcher_prop_lines(path: str, line_col: str) -> pd.DataFrame:
     else:
         df = read_csv(str(file_path))
 
-    required = {"player", line_col}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(
-            f"Pitcher prop lines missing required columns: {sorted(missing)}"
-        )
-
-    for optional in ("over_decimal_price", "under_decimal_price"):
-        if optional not in df.columns:
-            df[optional] = np.nan  # type: ignore[name-defined]
-
-    _coerce_numeric(df, [line_col, "over_decimal_price", "under_decimal_price"])
-    df["player"] = df["player"].astype(str)
-    return df
+    return normalize_pitcher_prop_lines(df, line_col)
