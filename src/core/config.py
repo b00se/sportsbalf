@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from numbers import Integral
 from pathlib import Path
 from typing import Any
@@ -25,10 +26,35 @@ _MLB_RUNTIME_CRITICAL_STATS: frozenset[str] = frozenset(
     }
 )
 _MLB_REQUIRED_KEYS: tuple[str, ...] = ("pitch_data_path", "model_path", "lines_path")
+_MLB_LIVE_UNDERDOG_DEFAULT_SNAPSHOT_OUTPUT_DIR = "data/lines"
+_MLB_LIVE_UNDERDOG_DEFAULT_SNAPSHOT_FILENAME_TEMPLATE = "{stat}_{date}.csv"
+_MLB_LIVE_UNDERDOG_DEFAULT_ORCHESTRATION_DEFAULTS: dict[str, Any] = {
+    "same_pitcher_stacking": True,
+    "min_players_per_slip": 2,
+    "min_teams_per_slip": 2,
+    "json_only": True,
+}
 _SECTIONED_SCHEMA_MESSAGE = (
     "Config must use sectioned schema. Required fields: 'pipeline.sport', "
     "'pipeline.stat', and '{sport}.{stat}'. Legacy flat config is not supported."
 )
+
+
+@dataclass(slots=True)
+class MlbLiveUnderdogConfig:
+    """Normalized MLB live Underdog orchestration config.
+
+    Attributes:
+        stat_ids: Mapping of MLB stat name to Underdog ``PickemStat_*`` id.
+        snapshot_output_dir: Directory where dated line snapshots are written.
+        snapshot_filename_template: Filename template for dated snapshots.
+        orchestration_defaults: Shared slip-generation defaults.
+    """
+
+    stat_ids: dict[str, str]
+    snapshot_output_dir: str
+    snapshot_filename_template: str
+    orchestration_defaults: dict[str, Any]
 
 
 def _validate_sectioned_schema_root(raw_config: dict[str, Any]) -> dict[str, Any]:
@@ -281,6 +307,174 @@ def _validate_nhl_shots_on_goal_section(section: dict[str, Any], path: str) -> N
             )
 
 
+def _normalize_mlb_live_underdog_defaults(
+    section: dict[str, Any] | None,
+) -> MlbLiveUnderdogConfig:
+    """Normalize the optional MLB live Underdog config block.
+
+    Args:
+        section: Optional `mlb.live_underdog` mapping.
+
+    Returns:
+        Normalized MLB live Underdog config payload.
+
+    Raises:
+        ConfigValidationError: If a provided live Underdog subsection has an
+            invalid type.
+    """
+
+    if section is None:
+        return MlbLiveUnderdogConfig(
+            stat_ids={},
+            snapshot_output_dir=_MLB_LIVE_UNDERDOG_DEFAULT_SNAPSHOT_OUTPUT_DIR,
+            snapshot_filename_template=(
+                _MLB_LIVE_UNDERDOG_DEFAULT_SNAPSHOT_FILENAME_TEMPLATE
+            ),
+            orchestration_defaults=dict(
+                _MLB_LIVE_UNDERDOG_DEFAULT_ORCHESTRATION_DEFAULTS
+            ),
+        )
+
+    stat_ids_raw = section.get("stat_ids", {})
+    if not isinstance(stat_ids_raw, dict):
+        raise ConfigValidationError(
+            "Invalid optional field 'mlb.live_underdog.stat_ids': expected mapping."
+        )
+
+    stat_ids: dict[str, str] = {}
+    for stat, raw_object_id in stat_ids_raw.items():
+        if not isinstance(stat, str) or not stat.strip():
+            raise ConfigValidationError(
+                "Invalid optional field 'mlb.live_underdog.stat_ids': "
+                "expected non-empty stat names."
+            )
+        stat_name = stat.strip().lower()
+        if stat_name not in _MLB_RUNTIME_CRITICAL_STATS:
+            raise ConfigValidationError(
+                "Invalid optional field 'mlb.live_underdog.stat_ids."
+                f"{stat_name}': unsupported MLB stat."
+            )
+        if not isinstance(raw_object_id, str) or not raw_object_id.strip():
+            raise ConfigValidationError(
+                "Invalid optional field 'mlb.live_underdog.stat_ids."
+                f"{stat_name}': expected non-empty string."
+            )
+        stat_ids[stat_name] = raw_object_id.strip()
+
+    snapshot_output_dir_raw = section.get("snapshot_output_dir")
+    if snapshot_output_dir_raw is None:
+        snapshot_output_dir = _MLB_LIVE_UNDERDOG_DEFAULT_SNAPSHOT_OUTPUT_DIR
+    elif not isinstance(snapshot_output_dir_raw, str) or not (
+        snapshot_output_dir_raw.strip()
+    ):
+        raise ConfigValidationError(
+            "Invalid optional field 'mlb.live_underdog.snapshot_output_dir': "
+            "expected non-empty string."
+        )
+    else:
+        snapshot_output_dir = snapshot_output_dir_raw.strip()
+
+    snapshot_filename_template_raw = section.get("snapshot_filename_template")
+    if snapshot_filename_template_raw is None:
+        snapshot_filename_template = (
+            _MLB_LIVE_UNDERDOG_DEFAULT_SNAPSHOT_FILENAME_TEMPLATE
+        )
+    elif (
+        not isinstance(snapshot_filename_template_raw, str)
+        or not snapshot_filename_template_raw.strip()
+    ):
+        raise ConfigValidationError(
+            "Invalid optional field 'mlb.live_underdog.snapshot_filename_template': "
+            "expected non-empty string."
+        )
+    else:
+        snapshot_filename_template = snapshot_filename_template_raw.strip()
+
+    orchestration_defaults_raw = section.get("orchestration_defaults", {})
+    if not isinstance(orchestration_defaults_raw, dict):
+        raise ConfigValidationError(
+            "Invalid optional field 'mlb.live_underdog.orchestration_defaults': "
+            "expected mapping."
+        )
+
+    orchestration_defaults = _validate_mlb_live_underdog_orchestration_defaults(
+        orchestration_defaults_raw
+    )
+
+    return MlbLiveUnderdogConfig(
+        stat_ids=stat_ids,
+        snapshot_output_dir=snapshot_output_dir,
+        snapshot_filename_template=snapshot_filename_template,
+        orchestration_defaults=orchestration_defaults,
+    )
+
+
+def _validate_mlb_live_underdog_orchestration_defaults(
+    section: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate live Underdog orchestration defaults and apply fallback values."""
+
+    defaults = dict(_MLB_LIVE_UNDERDOG_DEFAULT_ORCHESTRATION_DEFAULTS)
+
+    same_pitcher_stacking = section.get("same_pitcher_stacking")
+    if same_pitcher_stacking is not None:
+        if not isinstance(same_pitcher_stacking, bool):
+            raise ConfigValidationError(
+                "Invalid optional field "
+                "'mlb.live_underdog.orchestration_defaults.same_pitcher_stacking': "
+                "expected boolean."
+            )
+        defaults["same_pitcher_stacking"] = same_pitcher_stacking
+
+    min_players_per_slip = section.get("min_players_per_slip")
+    if min_players_per_slip is not None:
+        if isinstance(min_players_per_slip, bool) or not isinstance(
+            min_players_per_slip, Integral
+        ):
+            raise ConfigValidationError(
+                "Invalid optional field "
+                "'mlb.live_underdog.orchestration_defaults.min_players_per_slip': "
+                "expected integer >= 1."
+            )
+        if int(min_players_per_slip) < 1:
+            raise ConfigValidationError(
+                "Invalid optional field "
+                "'mlb.live_underdog.orchestration_defaults.min_players_per_slip': "
+                "expected integer >= 1."
+            )
+        defaults["min_players_per_slip"] = int(min_players_per_slip)
+
+    min_teams_per_slip = section.get("min_teams_per_slip")
+    if min_teams_per_slip is not None:
+        if isinstance(min_teams_per_slip, bool) or not isinstance(
+            min_teams_per_slip, Integral
+        ):
+            raise ConfigValidationError(
+                "Invalid optional field "
+                "'mlb.live_underdog.orchestration_defaults.min_teams_per_slip': "
+                "expected integer >= 1."
+            )
+        if int(min_teams_per_slip) < 1:
+            raise ConfigValidationError(
+                "Invalid optional field "
+                "'mlb.live_underdog.orchestration_defaults.min_teams_per_slip': "
+                "expected integer >= 1."
+            )
+        defaults["min_teams_per_slip"] = int(min_teams_per_slip)
+
+    json_only = section.get("json_only")
+    if json_only is not None:
+        if not isinstance(json_only, bool):
+            raise ConfigValidationError(
+                "Invalid optional field "
+                "'mlb.live_underdog.orchestration_defaults.json_only': "
+                "expected boolean."
+            )
+        defaults["json_only"] = json_only
+
+    return defaults
+
+
 _VALIDATORS: dict[tuple[str, str], Callable[[dict[str, Any], str], None]] = {
     **{
         ("mlb", stat): _validate_mlb_stat_section
@@ -370,3 +564,34 @@ def load_pipeline_config(
         raw=raw,
         section=section,
     )
+
+
+def extract_mlb_live_underdog_config(
+    config: PipelineConfig | dict[str, Any],
+) -> MlbLiveUnderdogConfig:
+    """Return normalized MLB live Underdog config from a pipeline config.
+
+    Args:
+        config: Validated pipeline config or raw config mapping.
+
+    Returns:
+        Normalized live Underdog configuration with defaults applied.
+    """
+
+    raw_config = config.raw if isinstance(config, PipelineConfig) else config
+    if not isinstance(raw_config, dict):
+        raise ConfigValidationError("Config root must be a mapping.")
+
+    mlb_section = raw_config.get("mlb")
+    if not isinstance(mlb_section, dict):
+        return _normalize_mlb_live_underdog_defaults(None)
+
+    live_underdog_section = mlb_section.get("live_underdog")
+    if live_underdog_section is None:
+        return _normalize_mlb_live_underdog_defaults(None)
+    if not isinstance(live_underdog_section, dict):
+        raise ConfigValidationError(
+            "Invalid optional field 'mlb.live_underdog': expected mapping."
+        )
+
+    return _normalize_mlb_live_underdog_defaults(live_underdog_section)

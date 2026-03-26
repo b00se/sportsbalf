@@ -217,3 +217,17 @@ mlb:
     allow_missing_lines: true
     park_factor_min_samples: 20
     park_factor_half_life_games: 60
+  live_underdog:
+    stat_ids:
+      strikeouts: PickemStat_de868934-c920-405c-b827-693c15aa47a1
+      outs_recorded: PickemStat_0f4a1b3d-62d9-47f8-9f45-7c2ddf6c8d8e
+      earned_runs: PickemStat_a2f0d1e5-4c4a-4f4c-98f2-8f0f88f7a3d1
+      hits_allowed: PickemStat_9e7e7cb2-58a3-4a3f-86f2-6f07d7dd4d55
+      bb_allowed: PickemStat_7c1f6a0d-0f25-4e1d-8ce8-0c82ff1b0f44
+    snapshot_output_dir: data/lines
+    snapshot_filename_template: "{stat}_{date}.csv"
+    orchestration_defaults:
+      same_pitcher_stacking: true
+      min_players_per_slip: 2
+      min_teams_per_slip: 2
+      json_only: true

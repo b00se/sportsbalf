@@ -5,7 +5,11 @@ from typing import Any
 
 import pytest
 import yaml
-from src.core.config import ConfigValidationError, load_pipeline_config
+from src.core.config import (
+    ConfigValidationError,
+    extract_mlb_live_underdog_config,
+    load_pipeline_config,
+)
 
 MLB_IMPLEMENTED_STATS: tuple[str, ...] = (
     "strikeouts",
@@ -14,6 +18,19 @@ MLB_IMPLEMENTED_STATS: tuple[str, ...] = (
     "hits_allowed",
     "bb_allowed",
 )
+EXPECTED_MLB_LIVE_UNDERDOG_STAT_IDS: dict[str, str] = {
+    "strikeouts": "PickemStat_de868934-c920-405c-b827-693c15aa47a1",
+    "outs_recorded": "PickemStat_0f4a1b3d-62d9-47f8-9f45-7c2ddf6c8d8e",
+    "earned_runs": "PickemStat_a2f0d1e5-4c4a-4f4c-98f2-8f0f88f7a3d1",
+    "hits_allowed": "PickemStat_9e7e7cb2-58a3-4a3f-86f2-6f07d7dd4d55",
+    "bb_allowed": "PickemStat_7c1f6a0d-0f25-4e1d-8ce8-0c82ff1b0f44",
+}
+EXPECTED_MLB_LIVE_UNDERDOG_DEFAULTS: dict[str, Any] = {
+    "same_pitcher_stacking": True,
+    "min_players_per_slip": 2,
+    "min_teams_per_slip": 2,
+    "json_only": True,
+}
 _MIGRATION_MESSAGE_PATTERN = (
     "sectioned schema.*pipeline\\.sport.*pipeline\\.stat.*\\{sport\\}\\.\\{stat\\}"
 )
@@ -206,6 +223,136 @@ def test_mlb_config_loads_for_all_implemented_stats(stat: str) -> None:
     assert config.sport == "mlb"
     assert config.stat == stat
     assert isinstance(config.section, dict)
+
+
+def test_mlb_live_underdog_config_loads_from_repo_config() -> None:
+    config = load_pipeline_config(
+        "config/mlb.yaml",
+        sport_override="mlb",
+        stat_override="strikeouts",
+    )
+
+    live_underdog = extract_mlb_live_underdog_config(config)
+
+    assert live_underdog.stat_ids == EXPECTED_MLB_LIVE_UNDERDOG_STAT_IDS
+    assert live_underdog.snapshot_output_dir == "data/lines"
+    assert live_underdog.snapshot_filename_template == "{stat}_{date}.csv"
+    assert live_underdog.orchestration_defaults == EXPECTED_MLB_LIVE_UNDERDOG_DEFAULTS
+
+
+def test_mlb_live_underdog_config_defaults_missing_stat_ids(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "mlb_live_underdog_partial.yaml"
+    _write_yaml(
+        config_path,
+        {
+            "pipeline": {"sport": "mlb", "stat": "strikeouts"},
+            "mlb": {
+                "strikeouts": {
+                    "pitch_data_path": "data/pitch.csv",
+                    "model_path": "models/model.joblib",
+                    "lines_path": "data/lines.csv",
+                },
+                "live_underdog": {
+                    "stat_ids": {
+                        "strikeouts": "PickemStat_de868934-c920-405c-b827-693c15aa47a1",
+                        "outs_recorded": (
+                            "PickemStat_0f4a1b3d-62d9-47f8-9f45-7c2ddf6c8d8e"
+                        ),
+                    }
+                },
+            },
+        },
+    )
+
+    config = load_pipeline_config(
+        str(config_path),
+        sport_override="mlb",
+        stat_override="strikeouts",
+    )
+    live_underdog = extract_mlb_live_underdog_config(config)
+
+    assert live_underdog.stat_ids == {
+        "strikeouts": "PickemStat_de868934-c920-405c-b827-693c15aa47a1",
+        "outs_recorded": "PickemStat_0f4a1b3d-62d9-47f8-9f45-7c2ddf6c8d8e",
+    }
+    assert live_underdog.snapshot_output_dir == "data/lines"
+    assert live_underdog.snapshot_filename_template == "{stat}_{date}.csv"
+    assert live_underdog.orchestration_defaults == EXPECTED_MLB_LIVE_UNDERDOG_DEFAULTS
+
+
+def test_mlb_live_underdog_config_rejects_unsupported_stat_id_key(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "mlb_live_underdog_bad_stat_key.yaml"
+    _write_yaml(
+        config_path,
+        {
+            "pipeline": {"sport": "mlb", "stat": "strikeouts"},
+            "mlb": {
+                "strikeouts": {
+                    "pitch_data_path": "data/pitch.csv",
+                    "model_path": "models/model.joblib",
+                    "lines_path": "data/lines.csv",
+                },
+                "live_underdog": {
+                    "stat_ids": {
+                        "strikeouts": "PickemStat_de868934-c920-405c-b827-693c15aa47a1",
+                        "strikeoutz": "PickemStat_bad",
+                    }
+                },
+            },
+        },
+    )
+
+    config = load_pipeline_config(
+        str(config_path),
+        sport_override="mlb",
+        stat_override="strikeouts",
+    )
+
+    with pytest.raises(ConfigValidationError, match="mlb\\.live_underdog\\.stat_ids"):
+        extract_mlb_live_underdog_config(config)
+
+
+def test_mlb_live_underdog_config_rejects_mis_typed_orchestration_defaults(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "mlb_live_underdog_bad_defaults.yaml"
+    _write_yaml(
+        config_path,
+        {
+            "pipeline": {"sport": "mlb", "stat": "strikeouts"},
+            "mlb": {
+                "strikeouts": {
+                    "pitch_data_path": "data/pitch.csv",
+                    "model_path": "models/model.joblib",
+                    "lines_path": "data/lines.csv",
+                },
+                "live_underdog": {
+                    "stat_ids": {
+                        "strikeouts": "PickemStat_de868934-c920-405c-b827-693c15aa47a1",
+                    },
+                    "orchestration_defaults": {
+                        "same_pitcher_stacking": "true",
+                        "min_players_per_slip": "2",
+                    },
+                },
+            },
+        },
+    )
+
+    config = load_pipeline_config(
+        str(config_path),
+        sport_override="mlb",
+        stat_override="strikeouts",
+    )
+
+    with pytest.raises(
+        ConfigValidationError, match="mlb\\.live_underdog\\.orchestration_defaults"
+    ):
+        extract_mlb_live_underdog_config(config)
 
 
 def test_nfl_config_loads_for_pass_attempts() -> None:
