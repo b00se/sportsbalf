@@ -57,8 +57,35 @@ def _extract_mlbam_lookup(lookup_df: pd.DataFrame) -> dict[int, int]:
     return resolved
 
 
+def _derive_pitchers_from_raw(raw_df: pd.DataFrame) -> list[tuple[str, int]]:
+    """Derive starter-like pitcher identities directly from raw Statcast rows."""
+    from src.utils.names import from_last_first
+
+    required = {"pitcher", "player_name", "inning"}
+    if not required.issubset(raw_df.columns):
+        return []
+
+    work = raw_df.copy()
+    work["inning"] = pd.to_numeric(work["inning"], errors="coerce")
+    starters = work.loc[work["inning"] == 1, ["pitcher", "player_name"]].dropna()
+    if starters.empty:
+        return []
+
+    starters = starters.drop_duplicates(subset=["pitcher"], keep="first")
+    starters["display_name"] = starters["player_name"].map(from_last_first)
+    starters = starters.loc[starters["display_name"].astype(str).str.strip() != ""]
+    starters = starters.sort_values("display_name", kind="stable")
+    return [
+        (str(row.display_name), int(row.pitcher))
+        for row in starters.itertuples(index=False)
+    ]
+
+
 def load_pitcher_ids(csv_path: str, raw_df: pd.DataFrame) -> list[tuple[str, int]]:
     """Load starter names and MLBAM ids with a Statcast-based fallback."""
+    if not os.path.exists(csv_path):
+        return _derive_pitchers_from_raw(raw_df)
+
     df = pd.read_csv(csv_path)
     lookup = playerid_reverse_lookup(df["IDfg"].tolist(), key_type="fangraphs")
     lookup_map = _extract_mlbam_lookup(lookup)
