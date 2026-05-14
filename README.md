@@ -55,6 +55,13 @@ MLB live shadow run:
 This writes dated live line snapshots under `data/lines/` and JSON slip
 artifacts plus a run summary under `betslips/mlb_live/` by default.
 
+Print a saved live summary in app-entry format:
+
+```bash
+.venv/bin/python scripts/print_slips.py betslips/mlb_live/mlb_live_2026-05-14_summary.json
+.venv/bin/python scripts/print_slips.py betslips/mlb_live/mlb_live_2026-05-14_summary.json --tag fullsend
+```
+
 ### 3) Validate Changes
 
 ```bash
