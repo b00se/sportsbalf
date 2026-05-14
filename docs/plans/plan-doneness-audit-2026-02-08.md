@@ -5,6 +5,8 @@ Status: Audit Report (Not a Plan Spec)
 Note: This file is an audit artifact summarizing plan-completion evidence. It is not an executable plan specification.
 
 ## Scope audited
+- `docs/plans/implemented/2026-03-25-mlb-underdog-lines-betslips-design.md`
+- `docs/plans/implemented/2026-03-25-mlb-underdog-lines-betslips-implementation-plan.md`
 - `docs/plans/implemented/mlb-multi-stat-expansion-plan.md`
 - `docs/plans/implemented/mlb-multistat-tournament-plan.md`
 - `docs/plans/planned/mlb-pybaseball-live-features-plan.md`
@@ -15,6 +17,8 @@ Note: This file is an audit artifact summarizing plan-completion evidence. It is
 - `docs/plans/planned/nhl-pr4-nfl-decoupling-cleanup-plan.md`
 
 ## Summary verdict
+- `2026-03-25-mlb-underdog-lines-betslips-design.md`: **Implemented**.
+- `2026-03-25-mlb-underdog-lines-betslips-implementation-plan.md`: **Implemented**.
 - `mlb-multi-stat-expansion-plan.md`: **Implemented**.
 - `mlb-multistat-tournament-plan.md`: **Implemented** (acceptance criteria met by code + tests).
 - `mlb-pybaseball-live-features-plan.md`: **Partially implemented** (engineering scope implemented; strict MAE+ gate still not met).
@@ -25,6 +29,32 @@ Note: This file is an audit artifact summarizing plan-completion evidence. It is
 - `nhl-pr4-nfl-decoupling-cleanup-plan.md`: **Planned (Approved)** (decision-complete execution plan approved; not yet implemented).
 
 ## Evidence
+
+### 0) MLB Underdog Lines and Betslips Design + Implementation Plan
+Status: **Implemented**
+
+Implemented evidence:
+- Live Underdog MLB ingestion helpers added in `src/mlb/data/underdog.py`.
+- Multi-stat live line normalization and snapshot writing added in
+  `src/mlb/pitcher_props/live_lines.py` and `src/mlb/data/load_props.py`.
+- Unified multi-stat slate orchestration added in `src/mlb/pitcher_props/slate.py`.
+- Mixed-stat and same-pitcher MLB slip generation supported in `src/mlb/slips.py`.
+- Shadow-run CLI added in `scripts/build_mlb_live_betslips.py`.
+- Config contract and defaults wired in `src/core/config.py` and `config/mlb.yaml`.
+- Canonical docs updated in `README.md`, `docs/architecture.md`,
+  `docs/contracts.md`, and `docs/config-schema.md`.
+- Offline validation coverage added in:
+  - `tests/test_mlb_underdog_lines.py`
+  - `tests/test_mlb_pitcher_prop_live_lines.py`
+  - `tests/test_mlb_pitcher_prop_slate.py`
+  - `tests/test_mlb_mixed_prop_slips.py`
+  - `tests/test_build_mlb_live_betslips.py`
+  - `tests/test_core_config.py`
+
+Validation evidence:
+- Targeted Task 8 tests pass.
+- `.venv/bin/ruff check .` passes.
+- `.venv/bin/pytest -q` passes.
 
 ### 1) MLB Multi-Stat Expansion Plan
 Status: **Implemented**

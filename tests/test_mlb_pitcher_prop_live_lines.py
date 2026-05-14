@@ -114,6 +114,21 @@ def test_normalize_live_pitcher_prop_lines_falls_back_to_player_when_name_blank(
     assert list(frame["player_name"]) == ["Aaron Nola", "Zack Wheeler"]
 
 
+def test_normalize_live_pitcher_prop_lines_keeps_uuid_backed_provider_stat_ids(
+) -> None:
+    frame = _unified_rows("strikeouts").copy()
+    frame["stat_id"] = "311b6775-4d03-4466-8ab9-776442468b27"
+
+    normalized = normalize_live_pitcher_prop_lines(frame, "strikeouts")
+
+    assert list(normalized["player"]) == ["Aaron Nola", "Dylan Cease", "Zack Wheeler"]
+    assert normalized["stat_id"].tolist() == [
+        "311b6775-4d03-4466-8ab9-776442468b27",
+        "311b6775-4d03-4466-8ab9-776442468b27",
+        "311b6775-4d03-4466-8ab9-776442468b27",
+    ]
+
+
 @pytest.mark.parametrize("stat", SUPPORTED_STATS)
 def test_write_live_pitcher_prop_snapshot_writes_deterministic_csv(
     tmp_path: Path,

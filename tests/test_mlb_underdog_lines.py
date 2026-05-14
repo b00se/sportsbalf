@@ -98,6 +98,25 @@ def test_extract_lines_returns_empty_frame_for_non_matching_stat() -> None:
     assert frame.empty
 
 
+def test_extract_lines_falls_back_when_payload_appearance_ids_do_not_match() -> None:
+    payload = _payload("strikeouts")
+    payload["appearances"][0]["id"] = "current-appearance-id"
+    payload["players"][0]["team_id"] = "team-home"
+    payload["over_under_lines"][0]["over_under"]["appearance_stat"]["appearance_id"] = (
+        "legacy-appearance-id"
+    )
+    payload["over_under_lines"][0]["options"][0]["selection_header"] = "Gerrit Cole"
+    payload["over_under_lines"][0]["options"][1]["selection_header"] = "Gerrit Cole"
+
+    frame = _extract_lines(payload, "strikeouts")
+
+    assert len(frame) == 1
+    assert frame.loc[0, "appearance_id"] == "current-appearance-id"
+    assert frame.loc[0, "player_ud_id"] == "player-1"
+    assert frame.loc[0, "game_id"] == "game-1"
+    assert frame.loc[0, "team_id"] == "team-home"
+
+
 def test_import_ud_mlb_lines_uses_stat_id_from_algolia_object_id(
     monkeypatch: Any,
 ) -> None:

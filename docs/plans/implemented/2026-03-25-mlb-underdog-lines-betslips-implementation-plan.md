@@ -10,7 +10,7 @@
 
 ---
 
-Status: Planned
+Status: Implemented
 
 Date: 2026-03-25
 
@@ -84,7 +84,7 @@ Rules for every slice:
 ### Task 1: Lock the provider contract and planning docs
 
 **Files:**
-- Review: `docs/plans/planned/2026-03-25-mlb-underdog-lines-betslips-design.md`
+- Review: `docs/plans/implemented/2026-03-25-mlb-underdog-lines-betslips-design.md`
 - Modify: `docs/config-schema.md`
 - Modify: `docs/contracts.md`
 - Modify: `docs/architecture.md`

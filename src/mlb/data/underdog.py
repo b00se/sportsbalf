@@ -79,6 +79,54 @@ def _selection_value(options: list[dict[str, Any]], choice: str) -> dict[str, An
     return next((opt for opt in options if opt.get("choice") == choice), {})
 
 
+def _player_full_name(player: dict[str, Any]) -> str:
+    """Return the normalized full name for a player payload row."""
+
+    first = str(player.get("first_name") or "").strip()
+    last = str(player.get("last_name") or "").strip()
+    return f"{first} {last}".strip()
+
+
+def _resolve_appearance(
+    *,
+    line: dict[str, Any],
+    appearance_stat: dict[str, Any],
+    appearances: dict[str, dict[str, Any]],
+    appearance_by_player_id: dict[str, dict[str, Any]],
+    player_id_by_name: dict[str, str],
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Resolve the best available appearance id and appearance payload."""
+
+    appearance_id = appearance_stat.get("appearance_id") or line.get("appearance_id")
+    appearance = appearances.get(appearance_id)
+    if appearance is not None:
+        return str(appearance_id), appearance
+
+    selection_header = str(
+        (line.get("options") or [{}])[0].get("selection_header") or ""
+    ).strip()
+    if not selection_header:
+        return (
+            str(appearance_id) if appearance_id is not None else None,
+            None,
+        )
+
+    player_id = player_id_by_name.get(selection_header)
+    if not player_id:
+        return (
+            str(appearance_id) if appearance_id is not None else None,
+            None,
+        )
+
+    fallback_appearance = appearance_by_player_id.get(player_id)
+    if fallback_appearance is None:
+        return (
+            str(appearance_id) if appearance_id is not None else None,
+            None,
+        )
+    return str(fallback_appearance.get("id") or appearance_id), fallback_appearance
+
+
 def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
     """Parse Over/Under lines for a specific MLB pick'em stat id."""
 
@@ -95,6 +143,16 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
         for player in payload.get("players", [])
         if player.get("id")
     }
+    appearance_by_player_id = {
+        str(appearance.get("player_id")): appearance
+        for appearance in payload.get("appearances", [])
+        if appearance.get("player_id")
+    }
+    player_id_by_name = {
+        name: str(player_id)
+        for player_id, player in players.items()
+        if (name := _player_full_name(player))
+    }
 
     rows: list[dict[str, Any]] = []
     for line in payload.get("over_under_lines", []):
@@ -103,20 +161,18 @@ def _extract_lines(payload: dict[str, Any], stat_id: str) -> pd.DataFrame:
         if appearance_stat.get("pickem_stat_id") != stat_id:
             continue
 
-        appearance_id = (
-            appearance_stat.get("appearance_id") or line.get("appearance_id")
+        appearance_id, appearance = _resolve_appearance(
+            line=line,
+            appearance_stat=appearance_stat,
+            appearances=appearances,
+            appearance_by_player_id=appearance_by_player_id,
+            player_id_by_name=player_id_by_name,
         )
-        if not appearance_id:
-            continue
-
-        appearance = appearances.get(appearance_id)
         if appearance is None:
             continue
 
         player = players.get(appearance.get("player_id")) or {}
-        first = str(player.get("first_name") or "").strip()
-        last = str(player.get("last_name") or "").strip()
-        player_name = f"{first} {last}".strip()
+        player_name = _player_full_name(player)
         if not player_name:
             player_name = str(
                 (line.get("options") or [{}])[0].get("selection_header") or ""

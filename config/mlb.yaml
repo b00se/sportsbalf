@@ -4,16 +4,17 @@ pipeline:
 
 mlb:
   strikeouts:
-    lines_path: data/lines/strikeouts_2025-09-20.csv
+    lines_path: data/lines/strikeouts_2026-04-24.csv
     game_logs_path: tests/testdata/game_logs.csv
-    park_factors_path: data/raw/park_factors_2025.csv
-    pitch_data_path: data/processed/pitcher_game_data_2025.parquet
+    park_factors_path: data/raw/park_factors_2026.csv
+    pitch_data_path: data/processed/pitcher_game_data_2026.parquet
     training_data_paths:
       - data/processed/pitcher_game_data_2021.parquet
       - data/processed/pitcher_game_data_2022.parquet
       - data/processed/pitcher_game_data_2023.parquet
       - data/processed/pitcher_game_data_2024.parquet
       - data/processed/pitcher_game_data_2025.parquet
+      - data/processed/pitcher_game_data_2026.parquet
     model_path: models/xgb_tuned_pitcher_k_model.joblib
     model_selection:
       enabled: true
@@ -58,16 +59,17 @@ mlb:
         primary_source: pybaseball_team_game_logs
         secondary_source: statsapi_game_feed
   outs_recorded:
-    lines_path: data/lines/outs_recorded_2025-09-22.csv
-    pitch_data_path: data/raw/statcast/statcast_raw_2025.parquet
+    lines_path: data/lines/outs_recorded_2026-04-24.csv
+    pitch_data_path: data/raw/statcast/statcast_raw_2026.parquet
     training_data_paths:
       - data/raw/statcast/statcast_raw_2021.parquet
       - data/raw/statcast/statcast_raw_2022.parquet
       - data/raw/statcast/statcast_raw_2023.parquet
       - data/raw/statcast/statcast_raw_2024.parquet
       - data/raw/statcast/statcast_raw_2025.parquet
-    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2025.parquet
-    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2025.parquet
+      - data/raw/statcast/statcast_raw_2026.parquet
+    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2026.parquet
+    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2026.parquet
     model_path: models/mlb_outs_recorded_xgb.joblib
     model_selection:
       enabled: true
@@ -98,16 +100,17 @@ mlb:
     park_factor_min_samples: 20
     park_factor_half_life_games: 60
   earned_runs:
-    lines_path: data/lines/earned_runs_2025-09-22.csv
-    pitch_data_path: data/raw/statcast/statcast_raw_2025.parquet
+    lines_path: data/lines/earned_runs_2026-04-24.csv
+    pitch_data_path: data/raw/statcast/statcast_raw_2026.parquet
     training_data_paths:
       - data/raw/statcast/statcast_raw_2021.parquet
       - data/raw/statcast/statcast_raw_2022.parquet
       - data/raw/statcast/statcast_raw_2023.parquet
       - data/raw/statcast/statcast_raw_2024.parquet
       - data/raw/statcast/statcast_raw_2025.parquet
-    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2025.parquet
-    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2025.parquet
+      - data/raw/statcast/statcast_raw_2026.parquet
+    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2026.parquet
+    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2026.parquet
     model_path: models/mlb_earned_runs_xgb.joblib
     model_selection:
       enabled: true
@@ -138,16 +141,17 @@ mlb:
     park_factor_min_samples: 20
     park_factor_half_life_games: 60
   hits_allowed:
-    lines_path: data/lines/hits_allowed_2025-09-22.csv
-    pitch_data_path: data/raw/statcast/statcast_raw_2025.parquet
+    lines_path: data/lines/hits_allowed_2026-04-24.csv
+    pitch_data_path: data/raw/statcast/statcast_raw_2026.parquet
     training_data_paths:
       - data/raw/statcast/statcast_raw_2021.parquet
       - data/raw/statcast/statcast_raw_2022.parquet
       - data/raw/statcast/statcast_raw_2023.parquet
       - data/raw/statcast/statcast_raw_2024.parquet
       - data/raw/statcast/statcast_raw_2025.parquet
-    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2025.parquet
-    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2025.parquet
+      - data/raw/statcast/statcast_raw_2026.parquet
+    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2026.parquet
+    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2026.parquet
     model_path: models/mlb_hits_allowed_xgb.joblib
     model_selection:
       enabled: true
@@ -178,16 +182,17 @@ mlb:
     park_factor_min_samples: 20
     park_factor_half_life_games: 60
   bb_allowed:
-    lines_path: data/lines/bb_allowed_2025-09-22.csv
-    pitch_data_path: data/raw/statcast/statcast_raw_2025.parquet
+    lines_path: data/lines/bb_allowed_2026-04-24.csv
+    pitch_data_path: data/raw/statcast/statcast_raw_2026.parquet
     training_data_paths:
       - data/raw/statcast/statcast_raw_2021.parquet
       - data/raw/statcast/statcast_raw_2022.parquet
       - data/raw/statcast/statcast_raw_2023.parquet
       - data/raw/statcast/statcast_raw_2024.parquet
       - data/raw/statcast/statcast_raw_2025.parquet
-    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2025.parquet
-    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2025.parquet
+      - data/raw/statcast/statcast_raw_2026.parquet
+    pitcher_dataset_output_path: data/processed/mlb_pitcher_games_multi_target_2026.parquet
+    batter_dataset_output_path: data/processed/mlb_batter_games_foundation_2026.parquet
     model_path: models/mlb_bb_allowed_xgb.joblib
     model_selection:
       enabled: true
@@ -219,11 +224,11 @@ mlb:
     park_factor_half_life_games: 60
   live_underdog:
     stat_ids:
-      strikeouts: PickemStat_de868934-c920-405c-b827-693c15aa47a1
-      outs_recorded: PickemStat_0f4a1b3d-62d9-47f8-9f45-7c2ddf6c8d8e
-      earned_runs: PickemStat_a2f0d1e5-4c4a-4f4c-98f2-8f0f88f7a3d1
-      hits_allowed: PickemStat_9e7e7cb2-58a3-4a3f-86f2-6f07d7dd4d55
-      bb_allowed: PickemStat_7c1f6a0d-0f25-4e1d-8ce8-0c82ff1b0f44
+      strikeouts: PickemStat_311b6775-4d03-4466-8ab9-776442468b27
+      outs_recorded: PickemStat_a74cd651-437c-4e6c-b011-c58789b09db7
+      earned_runs: PickemStat_fccd12d8-bc08-4ec5-b6ee-f027a6ab55b5
+      hits_allowed: PickemStat_4dc8687c-fb40-486a-8be4-31c5a05dd3f1
+      bb_allowed: PickemStat_92390e5a-2c3e-4fc3-a31c-d71f51f97c5c
     snapshot_output_dir: data/lines
     snapshot_filename_template: "{stat}_{date}.csv"
     orchestration_defaults:

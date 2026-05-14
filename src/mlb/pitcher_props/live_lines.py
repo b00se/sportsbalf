@@ -9,7 +9,11 @@ from pathlib import Path
 import pandas as pd
 
 from src.mlb.data.load_props import normalize_pitcher_prop_lines
-from src.mlb.pitcher_props.descriptors import StatDescriptor, get_stat_descriptor
+from src.mlb.pitcher_props.descriptors import (
+    STAT_DESCRIPTORS,
+    StatDescriptor,
+    get_stat_descriptor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +108,10 @@ def normalize_live_pitcher_prop_lines(
     work = live_lines.copy()
 
     if "stat_id" in work.columns:
-        work = work.loc[work["stat_id"].astype(str) == descriptor.stat].copy()
+        stat_ids = work["stat_id"].astype(str)
+        canonical_stats = set(STAT_DESCRIPTORS)
+        if set(stat_ids) & canonical_stats:
+            work = work.loc[stat_ids == descriptor.stat].copy()
 
     if work.empty:
         return _empty_live_line_frame(descriptor)

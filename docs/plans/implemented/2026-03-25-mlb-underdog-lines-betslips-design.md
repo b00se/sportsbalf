@@ -1,6 +1,6 @@
 # MLB Underdog Lines and Betslips Design
 
-Status: Planned
+Status: Implemented
 
 Date: 2026-03-25
 
