@@ -110,3 +110,72 @@ def test_build_slip_sets_supports_mixed_stat_same_pitcher_stack() -> None:
     assert {leg["lines_status"] for leg in slip["legs"]} == {"present"}
     assert {leg["model_name"] for leg in slip["legs"]} == {"xgboost"}
     assert {leg["model_strategy"] for leg in slip["legs"]} == {"baseline"}
+
+
+def test_build_slip_sets_caps_same_pitcher_stack_at_three_legs() -> None:
+    results = pd.DataFrame(
+        [
+            *_mixed_candidate_rows().to_dict(orient="records"),
+            {
+                "player": "Gerrit Cole",
+                "player_id": "cole-1",
+                "team": "NYY",
+                "opponent": "BOS",
+                "game_date": pd.Timestamp("2026-03-25"),
+                "rest_days": 4,
+                "park_factor": 1.02,
+                "stat_id": "earned_runs",
+                "line": 2.5,
+                "play": "under",
+                "prob": 0.61,
+                "ev": 0.14,
+                "payout": 1.94,
+                "payout_multiplier": 0.94,
+                "run_mode": "prediction",
+                "lines_status": "present",
+                "model_name": "xgboost",
+                "model_strategy": "baseline",
+                "sport": "MLB",
+                "market": "earned_runs",
+            },
+            {
+                "player": "Gerrit Cole",
+                "player_id": "cole-1",
+                "team": "NYY",
+                "opponent": "BOS",
+                "game_date": pd.Timestamp("2026-03-25"),
+                "rest_days": 4,
+                "park_factor": 1.02,
+                "stat_id": "bb_allowed",
+                "line": 1.5,
+                "play": "over",
+                "prob": 0.59,
+                "ev": 0.12,
+                "payout": 1.91,
+                "payout_multiplier": 0.91,
+                "run_mode": "prediction",
+                "lines_status": "present",
+                "model_name": "xgboost",
+                "model_strategy": "baseline",
+                "sport": "MLB",
+                "market": "bb_allowed",
+            },
+        ]
+    )
+    config = SlipBuilderConfig(
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=10,
+        fullsend_min_size=4,
+        fullsend_max_size=4,
+        payout_table={4: 10.0},
+    )
+
+    slip_sets = build_slip_sets(results, config=config)
+
+    assert slip_sets["conservative"] == []
+    assert slip_sets["fullsend"], "Expected at least one valid mixed-stat slip"
+    assert all(
+        sum(leg["player"] == "Gerrit Cole" for leg in slip["legs"]) <= 3
+        for slip in slip_sets["fullsend"]
+    )

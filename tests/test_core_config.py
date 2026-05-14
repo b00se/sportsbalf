@@ -19,11 +19,11 @@ MLB_IMPLEMENTED_STATS: tuple[str, ...] = (
     "bb_allowed",
 )
 EXPECTED_MLB_LIVE_UNDERDOG_STAT_IDS: dict[str, str] = {
-    "strikeouts": "PickemStat_de868934-c920-405c-b827-693c15aa47a1",
-    "outs_recorded": "PickemStat_0f4a1b3d-62d9-47f8-9f45-7c2ddf6c8d8e",
-    "earned_runs": "PickemStat_a2f0d1e5-4c4a-4f4c-98f2-8f0f88f7a3d1",
-    "hits_allowed": "PickemStat_9e7e7cb2-58a3-4a3f-86f2-6f07d7dd4d55",
-    "bb_allowed": "PickemStat_7c1f6a0d-0f25-4e1d-8ce8-0c82ff1b0f44",
+    "strikeouts": "PickemStat_311b6775-4d03-4466-8ab9-776442468b27",
+    "outs_recorded": "PickemStat_a74cd651-437c-4e6c-b011-c58789b09db7",
+    "earned_runs": "PickemStat_fccd12d8-bc08-4ec5-b6ee-f027a6ab55b5",
+    "hits_allowed": "PickemStat_4dc8687c-fb40-486a-8be4-31c5a05dd3f1",
+    "bb_allowed": "PickemStat_92390e5a-2c3e-4fc3-a31c-d71f51f97c5c",
 }
 EXPECTED_MLB_LIVE_UNDERDOG_DEFAULTS: dict[str, Any] = {
     "same_pitcher_stacking": True,

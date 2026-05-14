@@ -126,6 +126,7 @@ def test_build_mlb_live_betslips_writes_snapshots_and_json_slips(
 
     args = Namespace(
         config="config/mlb.yaml",
+        mode="proof",
         retrain=False,
         output_dir=tmp_path / "betslips",
         snapshot_dir=tmp_path / "lines",
@@ -149,7 +150,9 @@ def test_build_mlb_live_betslips_writes_snapshots_and_json_slips(
             return _live_rows("strikeouts", "Gerrit Cole", "team-home")
         if algolia_object_id.endswith("outs_recorded"):
             return _live_rows("outs_recorded", "Gerrit Cole", "team-home")
-        return _live_rows("hits_allowed", "Aaron Nola", "team-away")
+        if algolia_object_id.endswith("hits_allowed"):
+            return _live_rows("hits_allowed", "Aaron Nola", "team-away")
+        return pd.DataFrame()
 
     monkeypatch.setattr(cli, "import_ud_mlb_lines", fake_import_ud_mlb_lines)
 
@@ -161,6 +164,23 @@ def test_build_mlb_live_betslips_writes_snapshots_and_json_slips(
         return _config(stat_override or "")
 
     monkeypatch.setattr(cli, "load_pipeline_config", fake_load_pipeline_config)
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type(
+            "LiveUnderdogConfig",
+            (),
+            {
+                "stat_ids": {
+                    "strikeouts": "PickemStat_config_strikeouts",
+                    "outs_recorded": "PickemStat_config_outs_recorded",
+                    "earned_runs": "PickemStat_config_earned_runs",
+                    "hits_allowed": "PickemStat_config_hits_allowed",
+                    "bb_allowed": "PickemStat_config_bb_allowed",
+                }
+            },
+        )(),
+    )
 
     def fake_run_mlb_pitcher_prop_slate(
         stat_configs: dict[str, PipelineConfig],
@@ -190,7 +210,9 @@ def test_build_mlb_live_betslips_writes_snapshots_and_json_slips(
     assert imported == [
         "PickemStat_strikeouts",
         "PickemStat_outs_recorded",
+        "PickemStat_config_earned_runs",
         "PickemStat_hits_allowed",
+        "PickemStat_config_bb_allowed",
     ]
 
     assert (tmp_path / "lines" / "strikeouts_2026-03-25.csv").exists()
@@ -215,12 +237,30 @@ def test_build_mlb_live_betslips_writes_snapshots_and_json_slips(
         "outs_recorded",
         "hits_allowed",
     ]
+    assert returned_summary["mode"] == "proof"
+    assert returned_summary["outcome"] == "passed"
+    assert returned_summary["failure_reasons"] == []
+    assert returned_summary["warnings"] == []
     assert returned_summary["combined_rows"] == 3
+    assert returned_summary["slip_eligible_rows"] == 3
+    assert returned_summary["stat_mix"] == {
+        "hits_allowed": pytest.approx(1 / 3),
+        "outs_recorded": pytest.approx(1 / 3),
+        "strikeouts": pytest.approx(1 / 3),
+    }
+    assert returned_summary["probability_extremes"] == {"max": 0.62, "min": 0.57}
+    assert returned_summary["ev_extreme"] == {"max": 0.16}
     assert returned_summary["slip_counts"] == {"conservative": 0, "fullsend": 1}
     assert returned_summary["summary_file"] == str(summary_path)
     assert persisted_summary["summary_file"] == str(summary_path)
     assert persisted_summary == returned_summary
     assert "MLB live shadow run" in captured.out
+    assert "FULLSEND SLIPS" in captured.out
+    assert "Slip 1" in captured.out
+    assert "Gerrit Cole" in captured.out
+    assert "strikeouts over 8.5" in captured.out.lower()
+    assert "Aaron Nola" in captured.out
+    assert "hits allowed under 6.5" in captured.out.lower()
 
 
 def test_build_mlb_live_betslips_continues_after_stat_level_failures(
@@ -230,6 +270,7 @@ def test_build_mlb_live_betslips_continues_after_stat_level_failures(
 
     args = Namespace(
         config="config/mlb.yaml",
+        mode="debug",
         retrain=False,
         output_dir=tmp_path / "betslips",
         snapshot_dir=tmp_path / "lines",
@@ -310,6 +351,10 @@ def test_build_mlb_live_betslips_continues_after_stat_level_failures(
     summary = json.loads(summary_path.read_text())
 
     assert summary["completed_stats"] == ["hits_allowed"]
+    assert summary["mode"] == "debug"
+    assert summary["outcome"] == "passed"
+    assert summary["failure_reasons"] == []
+    assert summary["warnings"] == []
     assert summary["skipped_stats"] == {"strikeouts": "no live lines returned"}
     assert summary["failed_stats"] == {
         "outs_recorded": "bad payload: line 1 column 1 (char 0)",
@@ -329,6 +374,7 @@ def test_build_mlb_live_betslips_propagates_unexpected_fetch_errors(
 
     args = Namespace(
         config="config/mlb.yaml",
+        mode="proof",
         retrain=False,
         output_dir=tmp_path / "betslips",
         snapshot_dir=tmp_path / "lines",
@@ -347,3 +393,595 @@ def test_build_mlb_live_betslips_propagates_unexpected_fetch_errors(
 
     with pytest.raises(TypeError, match="boom"):
         cli.run_live_shadow_workflow(args)
+
+
+def test_build_mlb_live_betslips_uses_config_stat_ids_by_default(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    from scripts import build_mlb_live_betslips as cli
+
+    args = Namespace(
+        config="config/mlb.yaml",
+        mode="proof",
+        retrain=False,
+        output_dir=tmp_path / "betslips",
+        snapshot_dir=tmp_path / "lines",
+        prefix="mlb_live",
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=1,
+        stat_ids=[],
+    )
+    monkeypatch.setattr(cli, "parse_args", lambda: args)
+
+    monkeypatch.setattr(
+        cli,
+        "load_pipeline_config",
+        lambda *_args, stat_override=None, **_kwargs: _config(stat_override or ""),
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type(
+            "LiveUnderdogConfig",
+            (),
+            {
+                "stat_ids": {
+                    "strikeouts": "PickemStat_config_strikeouts",
+                    "outs_recorded": "PickemStat_config_outs_recorded",
+                    "earned_runs": "PickemStat_config_earned_runs",
+                    "hits_allowed": "PickemStat_config_hits_allowed",
+                    "bb_allowed": "PickemStat_config_bb_allowed",
+                }
+            },
+        )(),
+    )
+
+    imported: list[str] = []
+
+    def fake_import_ud_mlb_lines(algolia_object_id: str) -> pd.DataFrame:
+        imported.append(algolia_object_id)
+        stat = algolia_object_id.removeprefix("PickemStat_config_")
+        return _live_rows(stat, "Pitcher", "team")
+
+    monkeypatch.setattr(cli, "import_ud_mlb_lines", fake_import_ud_mlb_lines)
+    monkeypatch.setattr(
+        cli,
+        "run_mlb_pitcher_prop_slate",
+        lambda stat_configs, **_kwargs: MlbPitcherPropSlateResult(
+            combined_frame=_slate_frame(),
+            completed_stats=tuple(stat_configs),
+            skipped_stats={},
+            failed_stats={},
+        ),
+    )
+
+    summary = cli.run_live_shadow_workflow(args)
+
+    assert imported == [
+        "PickemStat_config_strikeouts",
+        "PickemStat_config_outs_recorded",
+        "PickemStat_config_earned_runs",
+        "PickemStat_config_hits_allowed",
+        "PickemStat_config_bb_allowed",
+    ]
+    assert summary["mode"] == "proof"
+    assert summary["outcome"] == "passed"
+    assert summary["warnings"] == []
+
+
+def test_build_mlb_live_betslips_cli_overrides_config_stat_ids(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    from scripts import build_mlb_live_betslips as cli
+
+    args = Namespace(
+        config="config/mlb.yaml",
+        mode="debug",
+        retrain=False,
+        output_dir=tmp_path / "betslips",
+        snapshot_dir=tmp_path / "lines",
+        prefix="mlb_live",
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=1,
+        stat_ids=["strikeouts=PickemStat_cli_strikeouts"],
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "load_pipeline_config",
+        lambda *_args, stat_override=None, **_kwargs: _config(stat_override or ""),
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type(
+            "LiveUnderdogConfig",
+            (),
+            {
+                "stat_ids": {
+                    "strikeouts": "PickemStat_config_strikeouts",
+                    "outs_recorded": "PickemStat_config_outs_recorded",
+                }
+            },
+        )(),
+    )
+
+    imported: list[str] = []
+
+    def fake_import_ud_mlb_lines(algolia_object_id: str) -> pd.DataFrame:
+        imported.append(algolia_object_id)
+        return _live_rows("strikeouts", "Pitcher", "team")
+
+    monkeypatch.setattr(cli, "import_ud_mlb_lines", fake_import_ud_mlb_lines)
+    monkeypatch.setattr(
+        cli,
+        "run_mlb_pitcher_prop_slate",
+        lambda stat_configs, **_kwargs: MlbPitcherPropSlateResult(
+            combined_frame=_slate_frame(),
+            completed_stats=tuple(stat_configs),
+            skipped_stats={},
+            failed_stats={},
+        ),
+    )
+
+    summary = cli.run_live_shadow_workflow(args)
+
+    assert imported == ["PickemStat_cli_strikeouts", "PickemStat_config_outs_recorded"]
+    assert summary["mode"] == "debug"
+    assert summary["outcome"] == "passed"
+    assert summary["warnings"] == []
+
+
+def test_proof_mode_requires_full_supported_market_stat_id_coverage(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    from scripts import build_mlb_live_betslips as cli
+
+    args = Namespace(
+        config="config/mlb.yaml",
+        mode="proof",
+        retrain=False,
+        output_dir=tmp_path / "betslips",
+        snapshot_dir=tmp_path / "lines",
+        prefix="mlb_live",
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=1,
+        stat_ids=[],
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "load_pipeline_config",
+        lambda *_args, stat_override=None, **_kwargs: _config(stat_override or ""),
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type(
+            "LiveUnderdogConfig",
+            (),
+            {"stat_ids": {"strikeouts": "PickemStat_only_strikeouts"}},
+        )(),
+    )
+
+    with pytest.raises(ValueError, match="Missing required MLB stat-id mapping"):
+        cli.run_live_shadow_workflow(args)
+
+
+def test_debug_mode_allows_subset_stat_id_coverage(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    from scripts import build_mlb_live_betslips as cli
+
+    args = Namespace(
+        config="config/mlb.yaml",
+        mode="debug",
+        retrain=False,
+        output_dir=tmp_path / "betslips",
+        snapshot_dir=tmp_path / "lines",
+        prefix="mlb_live",
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=1,
+        stat_ids=[],
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "load_pipeline_config",
+        lambda *_args, stat_override=None, **_kwargs: _config(stat_override or ""),
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type(
+            "LiveUnderdogConfig",
+            (),
+            {"stat_ids": {"strikeouts": "PickemStat_only_strikeouts"}},
+        )(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "import_ud_mlb_lines",
+        lambda _algolia_object_id: _live_rows("strikeouts", "Pitcher", "team"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_mlb_pitcher_prop_slate",
+        lambda stat_configs, **_kwargs: MlbPitcherPropSlateResult(
+            combined_frame=_slate_frame(),
+            completed_stats=tuple(stat_configs),
+            skipped_stats={},
+            failed_stats={},
+        ),
+    )
+
+    summary = cli.run_live_shadow_workflow(args)
+
+    assert summary["mode"] == "debug"
+    assert summary["stat_ids"] == {"strikeouts": "PickemStat_only_strikeouts"}
+
+
+def test_build_mlb_live_betslips_reports_no_play_slate_explicitly(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    from scripts import build_mlb_live_betslips as cli
+
+    args = Namespace(
+        config="config/mlb.yaml",
+        mode="proof",
+        retrain=False,
+        output_dir=tmp_path / "betslips",
+        snapshot_dir=tmp_path / "lines",
+        prefix="mlb_live",
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=1,
+        stat_ids=[],
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "load_pipeline_config",
+        lambda *_args, stat_override=None, **_kwargs: _config(stat_override or ""),
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type(
+            "LiveUnderdogConfig",
+            (),
+            {
+                "stat_ids": {
+                    "strikeouts": "PickemStat_config_strikeouts",
+                    "outs_recorded": "PickemStat_config_outs_recorded",
+                    "earned_runs": "PickemStat_config_earned_runs",
+                    "hits_allowed": "PickemStat_config_hits_allowed",
+                    "bb_allowed": "PickemStat_config_bb_allowed",
+                }
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "import_ud_mlb_lines",
+        lambda algolia_object_id: _live_rows(
+            algolia_object_id.removeprefix("PickemStat_config_"), "Pitcher", "team"
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_mlb_pitcher_prop_slate",
+        lambda stat_configs, **_kwargs: MlbPitcherPropSlateResult(
+            combined_frame=pd.DataFrame(
+                [
+                    {
+                        "player": "Pitcher One",
+                        "player_id": "p1",
+                        "team": "NYY",
+                        "opponent": "BOS",
+                        "game_date": pd.Timestamp("2026-03-25"),
+                        "stat_id": "strikeouts",
+                        "line": 7.5,
+                        "play": "over",
+                        "prob": 0.53,
+                        "ev": -0.01,
+                        "payout": 1.92,
+                        "sport": "MLB",
+                        "market": "strikeouts",
+                        "run_mode": "prediction",
+                        "lines_status": "present",
+                    }
+                ]
+            ),
+            completed_stats=tuple(stat_configs),
+            skipped_stats={},
+            failed_stats={},
+        ),
+    )
+
+    summary = cli.run_live_shadow_workflow(args)
+
+    assert summary["outcome"] == "no_play_slate"
+    assert summary["failure_reasons"] == []
+    assert summary["warnings"] == []
+    assert summary["combined_rows"] == 1
+    assert summary["slip_eligible_rows"] == 0
+
+
+def test_proof_mode_fails_on_confidence_gate_extremes(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    from scripts import build_mlb_live_betslips as cli
+
+    args = Namespace(
+        config="config/mlb.yaml",
+        mode="proof",
+        retrain=False,
+        output_dir=tmp_path / "betslips",
+        snapshot_dir=tmp_path / "lines",
+        prefix="mlb_live",
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=1,
+        stat_ids=[],
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "load_pipeline_config",
+        lambda *_args, stat_override=None, **_kwargs: _config(stat_override or ""),
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type(
+            "LiveUnderdogConfig",
+            (),
+            {
+                "stat_ids": {
+                    "strikeouts": "PickemStat_config_strikeouts",
+                    "outs_recorded": "PickemStat_config_outs_recorded",
+                    "earned_runs": "PickemStat_config_earned_runs",
+                    "hits_allowed": "PickemStat_config_hits_allowed",
+                    "bb_allowed": "PickemStat_config_bb_allowed",
+                }
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "import_ud_mlb_lines",
+        lambda algolia_object_id: _live_rows(
+            algolia_object_id.removeprefix("PickemStat_config_"), "Pitcher", "team"
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_mlb_pitcher_prop_slate",
+        lambda stat_configs, **_kwargs: MlbPitcherPropSlateResult(
+            combined_frame=pd.DataFrame(
+                [
+                    {
+                        "player": "Pitcher One",
+                        "player_id": "p1",
+                        "team": "NYY",
+                        "opponent": "BOS",
+                        "game_date": pd.Timestamp("2026-03-25"),
+                        "stat_id": "strikeouts",
+                        "line": 7.5,
+                        "play": "over",
+                        "prob": 0.84,
+                        "ev": 0.36,
+                        "payout": 1.92,
+                        "sport": "MLB",
+                        "market": "strikeouts",
+                        "run_mode": "prediction",
+                        "lines_status": "present",
+                    },
+                    {
+                        "player": "Pitcher Two",
+                        "player_id": "p2",
+                        "team": "BOS",
+                        "opponent": "NYY",
+                        "game_date": pd.Timestamp("2026-03-25"),
+                        "stat_id": "hits_allowed",
+                        "line": 6.5,
+                        "play": "under",
+                        "prob": 0.61,
+                        "ev": 0.10,
+                        "payout": 1.95,
+                        "sport": "MLB",
+                        "market": "hits_allowed",
+                        "run_mode": "prediction",
+                        "lines_status": "present",
+                    },
+                ]
+            ),
+            completed_stats=tuple(stat_configs),
+            skipped_stats={},
+            failed_stats={},
+        ),
+    )
+
+    summary = cli.run_live_shadow_workflow(args)
+
+    assert summary["outcome"] == "failed"
+    assert summary["failure_reasons"] == ["confidence_gate_failed"]
+    assert summary["warnings"] == []
+
+
+def test_proof_mode_allows_hits_allowed_extremes_with_stat_aware_thresholds(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    from scripts import build_mlb_live_betslips as cli
+
+    args = Namespace(
+        config="config/mlb.yaml",
+        mode="proof",
+        retrain=False,
+        output_dir=tmp_path / "betslips",
+        snapshot_dir=tmp_path / "lines",
+        prefix="mlb_live",
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=1,
+        stat_ids=[],
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "load_pipeline_config",
+        lambda *_args, stat_override=None, **_kwargs: _config(stat_override or ""),
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type(
+            "LiveUnderdogConfig",
+            (),
+            {
+                "stat_ids": {
+                    "strikeouts": "PickemStat_config_strikeouts",
+                    "outs_recorded": "PickemStat_config_outs_recorded",
+                    "earned_runs": "PickemStat_config_earned_runs",
+                    "hits_allowed": "PickemStat_config_hits_allowed",
+                    "bb_allowed": "PickemStat_config_bb_allowed",
+                }
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "import_ud_mlb_lines",
+        lambda algolia_object_id: _live_rows(
+            algolia_object_id.removeprefix("PickemStat_config_"), "Pitcher", "team"
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_mlb_pitcher_prop_slate",
+        lambda stat_configs, **_kwargs: MlbPitcherPropSlateResult(
+            combined_frame=pd.DataFrame(
+                [
+                    {
+                        "player": "Michael McGreevy",
+                        "player_id": "p1",
+                        "team": "STL",
+                        "opponent": "MIA",
+                        "game_date": pd.Timestamp("2026-03-25"),
+                        "stat_id": "hits_allowed",
+                        "line": 7.5,
+                        "play": "under",
+                        "prob": 0.919,
+                        "ev": 0.81,
+                        "payout": 1.97,
+                        "sport": "MLB",
+                        "market": "hits_allowed",
+                        "run_mode": "prediction",
+                        "lines_status": "present",
+                    },
+                    {
+                        "player": "Pitcher Two",
+                        "player_id": "p2",
+                        "team": "BOS",
+                        "opponent": "NYY",
+                        "game_date": pd.Timestamp("2026-03-25"),
+                        "stat_id": "outs_recorded",
+                        "line": 17.5,
+                        "play": "under",
+                        "prob": 0.76,
+                        "ev": 0.21,
+                        "payout": 1.95,
+                        "sport": "MLB",
+                        "market": "outs_recorded",
+                        "run_mode": "prediction",
+                        "lines_status": "present",
+                    },
+                ]
+            ),
+            completed_stats=tuple(stat_configs),
+            skipped_stats={},
+            failed_stats={},
+        ),
+    )
+
+    summary = cli.run_live_shadow_workflow(args)
+
+    assert summary["outcome"] == "no_play_slate"
+    assert summary["failure_reasons"] == []
+    assert summary["warnings"] == []
+
+
+def test_debug_mode_downgrades_gate_failures_to_warnings(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    from scripts import build_mlb_live_betslips as cli
+
+    args = Namespace(
+        config="config/mlb.yaml",
+        mode="debug",
+        retrain=False,
+        output_dir=tmp_path / "betslips",
+        snapshot_dir=tmp_path / "lines",
+        prefix="mlb_live",
+        top_n=10,
+        conservative_count=0,
+        fullsend_count=1,
+        stat_ids=["strikeouts=PickemStat_only_strikeouts"],
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "load_pipeline_config",
+        lambda *_args, stat_override=None, **_kwargs: _config(stat_override or ""),
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_mlb_live_underdog_config",
+        lambda _config: type("LiveUnderdogConfig", (), {"stat_ids": {}})(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "import_ud_mlb_lines",
+        lambda _algolia_object_id: _live_rows("strikeouts", "Pitcher", "team"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_mlb_pitcher_prop_slate",
+        lambda stat_configs, **_kwargs: MlbPitcherPropSlateResult(
+            combined_frame=pd.DataFrame(
+                [
+                    {
+                        "player": "Pitcher One",
+                        "player_id": "p1",
+                        "team": "NYY",
+                        "opponent": "BOS",
+                        "game_date": pd.Timestamp("2026-03-25"),
+                        "stat_id": "strikeouts",
+                        "line": 7.5,
+                        "play": "over",
+                        "prob": 0.84,
+                        "ev": 0.36,
+                        "payout": 1.92,
+                        "sport": "MLB",
+                        "market": "strikeouts",
+                        "run_mode": "prediction",
+                        "lines_status": "present",
+                    }
+                ]
+            ),
+            completed_stats=tuple(stat_configs),
+            skipped_stats={},
+            failed_stats={},
+        ),
+    )
+
+    summary = cli.run_live_shadow_workflow(args)
+
+    assert summary["outcome"] == "no_play_slate"
+    assert summary["failure_reasons"] == []
+    assert summary["warnings"] == ["stat_mix_gate_failed", "confidence_gate_failed"]

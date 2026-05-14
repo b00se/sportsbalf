@@ -332,6 +332,13 @@ def _build_training_games(
             batter_output_path=str(batter_out) if batter_out else None,
             earned_runs_source=earned_runs_source,
         )
+        if "is_starter" in games.columns:
+            games = games.loc[
+                pd.to_numeric(games["is_starter"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+                .eq(1)
+            ].copy()
         games = add_rolling_features(games)
         games = _add_rolling_pressure_features(games)
         games = _add_opponent_tendency(

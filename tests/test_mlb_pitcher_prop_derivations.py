@@ -9,6 +9,7 @@ def test_build_pitcher_game_table_derives_multi_targets() -> None:
         [
             {
                 "pitcher": 1,
+                "player_name": "Cole, Gerrit",
                 "game_date": "2024-04-01",
                 "description": "called_strike",
                 "events": "strikeout",
@@ -29,6 +30,7 @@ def test_build_pitcher_game_table_derives_multi_targets() -> None:
             },
             {
                 "pitcher": 1,
+                "player_name": "Cole, Gerrit",
                 "game_date": "2024-04-01",
                 "description": "hit_into_play",
                 "events": "grounded_into_double_play",
@@ -49,6 +51,7 @@ def test_build_pitcher_game_table_derives_multi_targets() -> None:
             },
             {
                 "pitcher": 1,
+                "player_name": "Cole, Gerrit",
                 "game_date": "2024-04-01",
                 "description": "ball",
                 "events": "walk",
@@ -69,6 +72,7 @@ def test_build_pitcher_game_table_derives_multi_targets() -> None:
             },
             {
                 "pitcher": 1,
+                "player_name": "Cole, Gerrit",
                 "game_date": "2024-04-01",
                 "description": "hit_into_play",
                 "events": "single",
@@ -97,6 +101,8 @@ def test_build_pitcher_game_table_derives_multi_targets() -> None:
     assert float(row["hits_allowed"]) == 1.0
     assert float(row["bb_allowed"]) == 1.0
     assert float(row["earned_runs"]) == 1.0
+    assert row["pitcher_id"] == 1
+    assert row["pitcher_name"] == "Gerrit Cole"
 
 
 def test_build_batter_game_table_builds_foundation_columns() -> None:

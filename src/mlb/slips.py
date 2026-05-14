@@ -9,6 +9,8 @@ from itertools import combinations
 import numpy as np
 import pandas as pd
 
+from src.mlb.pitcher_props.descriptors import STAT_DESCRIPTORS
+
 _CANDIDATE_COLUMNS: tuple[str, ...] = (
     "player",
     "player_id",
@@ -50,7 +52,6 @@ _LEGACY_REQUIRED_COLUMNS: tuple[str, ...] = (
     "player",
     "pitcher_id",
     "pitcher_team",
-    "k_line",
     "prob_over",
     "prob_under",
     "ev_over",
@@ -67,6 +68,7 @@ class SlipBuilderConfig:
     fullsend_count: int = 5
     fullsend_min_size: int = 3
     fullsend_max_size: int = 6
+    max_legs_per_player: int = 3
     max_shared_legs: int = 3
     min_leg_ev: float = 0.0
     payout_table: dict[int, float] = None
@@ -86,6 +88,44 @@ def _has_candidate_leg_schema(df: pd.DataFrame) -> bool:
     """Return whether a frame already contains candidate-leg columns."""
 
     return {"play", "prob", "ev", "payout"}.issubset(df.columns)
+
+
+def _resolve_legacy_stat_descriptor(df: pd.DataFrame) -> tuple[str, str, str]:
+    """Infer stat id, line column, and park-factor column for legacy rows."""
+
+    stat_id = "strikeouts"
+    if "stat_id" in df.columns:
+        stat_values = (
+            df["stat_id"].dropna().astype(str).str.strip().str.lower().unique().tolist()
+        )
+        if len(stat_values) == 1 and stat_values[0] in STAT_DESCRIPTORS:
+            stat_id = stat_values[0]
+
+    descriptor = STAT_DESCRIPTORS[stat_id]
+    return (
+        stat_id,
+        descriptor.line_col,
+        f"upcoming_{descriptor.park_factor_col}",
+    )
+
+
+def _legacy_stat_subframes(df: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
+    """Split legacy scorer rows into stat-specific frames."""
+
+    if "stat_id" not in df.columns:
+        return [("strikeouts", df.copy())]
+
+    stat_values = (
+        df["stat_id"].fillna("strikeouts").astype(str).str.strip().str.lower()
+    )
+    work = df.copy()
+    work["stat_id"] = stat_values
+
+    frames: list[tuple[str, pd.DataFrame]] = []
+    for stat_id, group in work.groupby("stat_id", sort=False, dropna=False):
+        resolved = stat_id if stat_id in STAT_DESCRIPTORS else "strikeouts"
+        frames.append((resolved, group.copy()))
+    return frames
 
 
 def _standardize_candidate_frame(
@@ -119,65 +159,71 @@ def _standardize_candidate_frame(
         if "market" not in df.columns:
             df["market"] = df["stat_id"]
     else:
-        missing = set(_LEGACY_REQUIRED_COLUMNS) - set(df.columns)
-        if missing:
-            raise ValueError(
-                f"Results DataFrame missing required columns: {sorted(missing)}"
+        normalized_frames: list[pd.DataFrame] = []
+        for stat_id, subset in _legacy_stat_subframes(df):
+            _, line_col, park_factor_col = _resolve_legacy_stat_descriptor(subset)
+            required_columns = set(_LEGACY_REQUIRED_COLUMNS) | {line_col}
+            missing = required_columns - set(subset.columns)
+            if missing:
+                raise ValueError(
+                    f"Results DataFrame missing required columns: {sorted(missing)}"
+                )
+
+            over = subset.copy()
+            over = over.assign(
+                player=subset["player"],
+                player_id=subset["pitcher_id"],
+                team=subset["pitcher_team"],
+                opponent=subset.get("upcoming_opponent"),
+                game_date=subset.get("upcoming_game_date"),
+                rest_days=subset.get("upcoming_rest_days"),
+                park_factor=subset.get(park_factor_col),
+                play="over",
+                prob=subset["prob_over"],
+                ev=subset["ev_over"],
+                payout=subset["over_decimal_price"],
+                payout_multiplier=subset.get("over_payout_multiplier"),
+                american_price=subset.get("over_american_price"),
+                line=subset[line_col],
+                stat_id=stat_id,
+                sport="MLB",
+                market=stat_id,
             )
 
-        over = df.copy()
-        over = over.assign(
-            player=df["player"],
-            player_id=df["pitcher_id"],
-            team=df["pitcher_team"],
-            opponent=df.get("upcoming_opponent"),
-            game_date=df.get("upcoming_game_date"),
-            rest_days=df.get("upcoming_rest_days"),
-            park_factor=df.get("upcoming_park_factor_K"),
-            play="over",
-            prob=df["prob_over"],
-            ev=df["ev_over"],
-            payout=df["over_decimal_price"],
-            payout_multiplier=df.get("over_payout_multiplier"),
-            american_price=df.get("over_american_price"),
-            line=df["k_line"],
-            stat_id="strikeouts",
-            sport="MLB",
-            market="strikeouts",
-        )
+            under = subset.copy()
+            under = under.assign(
+                player=subset["player"],
+                player_id=subset["pitcher_id"],
+                team=subset["pitcher_team"],
+                opponent=subset.get("upcoming_opponent"),
+                game_date=subset.get("upcoming_game_date"),
+                rest_days=subset.get("upcoming_rest_days"),
+                park_factor=subset.get(park_factor_col),
+                play="under",
+                prob=subset["prob_under"],
+                ev=subset["ev_under"],
+                payout=subset["under_decimal_price"],
+                payout_multiplier=subset.get("under_payout_multiplier"),
+                american_price=subset.get("under_american_price"),
+                line=subset[line_col],
+                stat_id=stat_id,
+                sport="MLB",
+                market=stat_id,
+            )
 
-        under = df.copy()
-        under = under.assign(
-            player=df["player"],
-            player_id=df["pitcher_id"],
-            team=df["pitcher_team"],
-            opponent=df.get("upcoming_opponent"),
-            game_date=df.get("upcoming_game_date"),
-            rest_days=df.get("upcoming_rest_days"),
-            park_factor=df.get("upcoming_park_factor_K"),
-            play="under",
-            prob=df["prob_under"],
-            ev=df["ev_under"],
-            payout=df["under_decimal_price"],
-            payout_multiplier=df.get("under_payout_multiplier"),
-            american_price=df.get("under_american_price"),
-            line=df["k_line"],
-            stat_id="strikeouts",
-            sport="MLB",
-            market="strikeouts",
-        )
+            for frame in (over, under):
+                if "pitcher_name" not in frame.columns:
+                    frame["pitcher_name"] = frame["player"]
+                if "pitcher_id" not in frame.columns:
+                    frame["pitcher_id"] = frame["player_id"]
+                if "pitcher_team" not in frame.columns:
+                    frame["pitcher_team"] = frame["team"]
+                if "k_line" not in frame.columns:
+                    frame["k_line"] = frame["line"]
 
-        for frame in (over, under):
-            if "pitcher_name" not in frame.columns:
-                frame["pitcher_name"] = frame["player"]
-            if "pitcher_id" not in frame.columns:
-                frame["pitcher_id"] = frame["player_id"]
-            if "pitcher_team" not in frame.columns:
-                frame["pitcher_team"] = frame["team"]
-            if "k_line" not in frame.columns:
-                frame["k_line"] = frame["line"]
+            normalized_frames.extend([over, under])
 
-        df = pd.concat([over, under], ignore_index=True)
+        df = pd.concat(normalized_frames, ignore_index=True)
 
     df = df.loc[df["ev"] > min_ev].copy()
     df = df.sort_values("ev", ascending=False).reset_index(drop=True)
@@ -279,8 +325,28 @@ def _team_count(combo: tuple[object, ...]) -> int:
     return len(teams)
 
 
+def _max_legs_for_any_player(combo: tuple[object, ...]) -> int:
+    """Return the largest number of legs assigned to any one player."""
+
+    counts: dict[str, int] = {}
+    for row in combo:
+        player = _coalesce(
+            getattr(row, "player", None),
+            getattr(row, "pitcher_name", None),
+        )
+        if player is None:
+            continue
+        player_key = str(player)
+        counts[player_key] = counts.get(player_key, 0) + 1
+    return max(counts.values(), default=0)
+
+
 def generate_slips(
-    df: pd.DataFrame, slip_size: int, payout_table: dict[int, float]
+    df: pd.DataFrame,
+    slip_size: int,
+    payout_table: dict[int, float],
+    *,
+    max_legs_per_player: int = 3,
 ) -> list[dict]:
     """Generate slip combinations of a given size from candidate legs."""
 
@@ -293,6 +359,8 @@ def generate_slips(
 
     for combo in combinations(normalized.itertuples(index=False), slip_size):
         if _player_count(combo) < 2 or _team_count(combo) < 2:
+            continue
+        if _max_legs_for_any_player(combo) > max_legs_per_player:
             continue
 
         probs = [float(x.prob) for x in combo]
@@ -414,7 +482,10 @@ def build_slip_sets(
     )
 
     conservative_candidates = generate_slips(
-        long_df, slip_size=2, payout_table=cfg.payout_table
+        long_df,
+        slip_size=2,
+        payout_table=cfg.payout_table,
+        max_legs_per_player=cfg.max_legs_per_player,
     )
     conservative_ranked = sorted(
         conservative_candidates, key=lambda x: x["total_ev"], reverse=True
@@ -429,7 +500,12 @@ def build_slip_sets(
     for size in range(cfg.fullsend_min_size, cfg.fullsend_max_size + 1):
         if len(long_df) >= size:
             fullsend_candidates.extend(
-                generate_slips(long_df, slip_size=size, payout_table=cfg.payout_table)
+                generate_slips(
+                    long_df,
+                    slip_size=size,
+                    payout_table=cfg.payout_table,
+                    max_legs_per_player=cfg.max_legs_per_player,
+                )
             )
     fullsend_ranked = sorted(
         fullsend_candidates, key=lambda x: x["total_ev"], reverse=True

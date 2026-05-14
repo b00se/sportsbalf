@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.mlb.features import aggregate_pitcher_games
+from src.utils.names import from_last_first
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +262,40 @@ def build_pitcher_game_table(
 
     if "game_date" in games.columns:
         games["game_date"] = pd.to_datetime(games["game_date"], errors="coerce")
+    if "pitcher" in games.columns and "pitcher_id" not in games.columns:
+        games["pitcher_id"] = pd.to_numeric(games["pitcher"], errors="coerce").fillna(
+            games["pitcher"]
+        )
+
+    if {"pitcher", "game_date", "player_name"}.issubset(source.columns):
+        pitcher_identity = (
+            source[["pitcher", "game_date", "player_name"]]
+            .dropna(subset=["pitcher", "game_date", "player_name"])
+            .copy()
+        )
+        pitcher_identity["game_date"] = pd.to_datetime(
+            pitcher_identity["game_date"], errors="coerce"
+        )
+        pitcher_identity["pitcher_name"] = pitcher_identity["player_name"].map(
+            from_last_first
+        )
+        pitcher_identity = pitcher_identity.loc[
+            pitcher_identity["pitcher_name"].astype(str).str.strip() != ""
+        ]
+        pitcher_identity = pitcher_identity.drop_duplicates(
+            subset=["pitcher", "game_date"], keep="first"
+        )[["pitcher", "game_date", "pitcher_name"]]
+        games = games.merge(
+            pitcher_identity,
+            on=["pitcher", "game_date"],
+            how="left",
+        )
+
+    if "pitcher_name" not in games.columns:
+        games["pitcher_name"] = pd.NA
+    games["pitcher_name"] = games["pitcher_name"].fillna(
+        games["pitcher_id"].astype(str)
+    )
 
     required_pitch_cols = {"events", "pitcher", "game_date"}
     if not required_pitch_cols.issubset(source.columns):
@@ -303,6 +338,24 @@ def build_pitcher_game_table(
         .sum(min_count=1)
         .rename(columns={"runs_allowed_play": "earned_runs"})
     )
+    if "inning" in source.columns:
+        starter_flags = (
+            source.groupby(["pitcher", "game_date"], as_index=False)["inning"]
+            .min()
+            .rename(columns={"inning": "first_inning"})
+        )
+        starter_flags["is_starter"] = (
+            pd.to_numeric(starter_flags["first_inning"], errors="coerce")
+            .eq(1)
+            .astype(int)
+        )
+        grouped = grouped.merge(
+            starter_flags[["pitcher", "game_date", "is_starter"]],
+            on=["pitcher", "game_date"],
+            how="left",
+        )
+    else:
+        grouped["is_starter"] = 0
 
     if "launch_speed" in source.columns:
         contact = source[source["launch_speed"].notna()].copy()
@@ -322,6 +375,11 @@ def build_pitcher_game_table(
             )
 
     games = games.merge(grouped, on=["pitcher", "game_date"], how="left")
+    if "is_starter" not in games.columns:
+        games["is_starter"] = 0
+    games["is_starter"] = (
+        pd.to_numeric(games["is_starter"], errors="coerce").fillna(0).astype(int)
+    )
 
     high_fidelity = _normalize_earned_runs_source_frame(
         earned_runs_source if earned_runs_source is not None else pd.DataFrame()
