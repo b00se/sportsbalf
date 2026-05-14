@@ -6,6 +6,7 @@ from src.mlb.pitcher_props.descriptors import get_stat_descriptor
 from src.mlb.pitcher_props.pipeline import (
     _add_opponent_tendency,
     _build_prediction_rows,
+    _build_training_games,
 )
 
 
@@ -185,6 +186,116 @@ def test_build_pitcher_game_table_deduplicates_terminal_plate_appearances() -> N
 
     assert float(row["hits_allowed"]) == 1.0
     assert float(row["outs_recorded"]) == 1.0
+
+
+def test_build_pitcher_game_table_marks_starter_from_first_inning() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "pitcher": 1,
+                "player_name": "Starter, Sam",
+                "game_date": "2024-04-01",
+                "game_pk": 1001,
+                "at_bat_number": 1,
+                "pitch_number": 1,
+                "events": "single",
+                "description": "hit_into_play",
+                "inning": 1,
+                "pitch_type": "FF",
+                "home_team": "NYM",
+                "away_team": "ATL",
+                "pitcher_days_since_prev_game": 5,
+                "inning_topbot": "Top",
+            },
+            {
+                "pitcher": 2,
+                "player_name": "Reliever, Ron",
+                "game_date": "2024-04-01",
+                "game_pk": 1001,
+                "at_bat_number": 2,
+                "pitch_number": 1,
+                "events": "single",
+                "description": "hit_into_play",
+                "inning": 6,
+                "pitch_type": "SL",
+                "home_team": "NYM",
+                "away_team": "ATL",
+                "pitcher_days_since_prev_game": 2,
+                "inning_topbot": "Top",
+            },
+        ]
+    )
+
+    games = (
+        build_pitcher_game_table(frame)
+        .sort_values("pitcher_id")
+        .reset_index(drop=True)
+    )
+
+    assert int(games.loc[0, "is_starter"]) == 1
+    assert int(games.loc[1, "is_starter"]) == 0
+
+
+def test_build_training_games_filters_non_starters_for_pitcher_props(
+    monkeypatch,
+) -> None:
+    descriptor = get_stat_descriptor("outs_recorded")
+
+    games = pd.DataFrame(
+        [
+            {
+                "pitcher": 1,
+                "pitcher_id": 1,
+                "pitcher_name": "Starter Sam",
+                "game_date": "2024-04-01",
+                "pitch_count": 92,
+                "strikeouts": 6,
+                "outs_recorded": 18,
+                "on_base_events_allowed": 4,
+                "hard_contact_rate_allowed": 0.30,
+                "rest_days": 5,
+                "home_team": "NYM",
+                "opponent_team": "ATL",
+                "is_starter": 1,
+            },
+            {
+                "pitcher": 2,
+                "pitcher_id": 2,
+                "pitcher_name": "Reliever Ron",
+                "game_date": "2024-04-01",
+                "pitch_count": 18,
+                "strikeouts": 1,
+                "outs_recorded": 2,
+                "on_base_events_allowed": 1,
+                "hard_contact_rate_allowed": 0.10,
+                "rest_days": 2,
+                "home_team": "NYM",
+                "opponent_team": "ATL",
+                "is_starter": 0,
+            },
+        ]
+    )
+    games["game_date"] = pd.to_datetime(games["game_date"])
+
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.read_csv",
+        lambda _path: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.persist_reusable_tables",
+        lambda *args, **kwargs: (games.copy(), pd.DataFrame()),
+    )
+
+    training_games = _build_training_games(
+        {
+            "pitch_data_path": "data/raw/statcast/statcast_raw_2026.parquet",
+            "training_data_paths": ["data/raw/statcast/statcast_raw_2026.parquet"],
+        },
+        descriptor,
+    )
+
+    assert training_games["pitcher_name"].tolist() == ["Starter Sam"]
+    assert training_games["outs_recorded"].tolist() == [18]
 
 
 def test_build_pitcher_game_table_earned_runs_fallback_uses_game_level_value() -> None:

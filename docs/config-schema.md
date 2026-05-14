@@ -52,6 +52,24 @@ Common optional keys (defaults/fallbacks exist in code):
 - `fallback_std`
 - `live_features.*` (where applicable)
 
+## MLB Live Underdog Shadow-Run Contract
+
+This section describes an auxiliary workflow contract, not loader-enforced
+runtime-critical keys.
+
+- `mlb.live_underdog.stat_ids.<stat>`: configured `PickemStat_*` id for each
+  supported MLB stat.
+- `mlb.live_underdog.snapshot_output_dir`: optional dated snapshot directory for
+  live line exports.
+- `mlb.live_underdog.snapshot_filename_template`: optional filename template for
+  dated snapshots.
+- `mlb.live_underdog.orchestration_defaults.*`: shared shadow-run defaults for
+  mixed-stat slip generation, including same-pitcher stacking enabled by
+  default, JSON-only output, and the hard `2-player / 2-team` minimum.
+
+The live workflow may materialize dated line snapshots into the stat-specific
+`lines_path` inputs consumed by the existing MLB pitcher-prop pipelines.
+
 ### NFL (`nfl.pass_attempts`)
 Required:
 - `training_years` (non-empty `list[int]`)
@@ -97,6 +115,30 @@ mlb:
     pitch_data_path: tests/testdata/pitches.csv
     model_path: /tmp/mlb_strikeouts_model.joblib
     lines_path: tests/testdata/lines_with_odds.csv
+```
+
+### MLB live Underdog shadow workflow fragment
+
+This fragment is intended to be merged into a complete sectioned MLB config
+that already includes `pipeline.sport`, `pipeline.stat`, and the active
+`mlb.{stat}` runtime section.
+
+```yaml
+mlb:
+  live_underdog:
+    stat_ids:
+      strikeouts: PickemStat_de868934-c920-405c-b827-693c15aa47a1
+      outs_recorded: PickemStat_...
+      earned_runs: PickemStat_...
+      hits_allowed: PickemStat_...
+      bb_allowed: PickemStat_...
+    snapshot_output_dir: data/lines
+    snapshot_filename_template: "{stat}_{date}.csv"
+    orchestration_defaults:
+      same_pitcher_stacking: true
+      min_players_per_slip: 2
+      min_teams_per_slip: 2
+      json_only: true
 ```
 
 ### NFL

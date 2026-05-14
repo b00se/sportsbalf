@@ -1,10 +1,10 @@
 #!/usr/bin/env python
+# ruff: noqa: I001
 """Generate conservative and full-send bet slips from the MLB pipeline output."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +25,7 @@ def _derive_target_date(df: pd.DataFrame) -> datetime:
 
 
 def main() -> None:
+    from scripts.build_mlb_live_betslips import write_slip_artifacts
     from src.mlb.pipeline import run
     from src.mlb.slips import SlipBuilderConfig, build_slip_sets
 
@@ -86,17 +87,20 @@ def main() -> None:
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for tag, slips in slip_sets.items():
-        filename = f"{args.prefix}_{target_date}_{tag}.json"
-        path = output_dir / filename
-        payload = {
+    paths = write_slip_artifacts(
+        output_dir=output_dir,
+        prefix=args.prefix,
+        target_date=target_date,
+        slip_sets=slip_sets,
+        payload_common={
             "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
             "config_path": args.config,
             "retrained": args.retrain,
-            "slips": slips,
-        }
-        path.write_text(json.dumps(payload, indent=2))
-        print(f"Wrote {len(slips)} {tag} slips to {path}")
+        },
+    )
+
+    for tag, slips in slip_sets.items():
+        print(f"Wrote {len(slips)} {tag} slips to {paths[tag]}")
 
 
 if __name__ == "__main__":

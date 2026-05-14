@@ -40,6 +40,28 @@ Force retrain before inference:
 .venv/bin/python -m pipeline.main --sport nhl --stat shots_on_goal --config config/nhl.yaml --retrain
 ```
 
+MLB live shadow run:
+
+```bash
+.venv/bin/python scripts/build_mlb_live_betslips.py \
+  --config config/mlb.yaml \
+  --stat-id strikeouts=PickemStat_... \
+  --stat-id outs_recorded=PickemStat_... \
+  --stat-id earned_runs=PickemStat_... \
+  --stat-id hits_allowed=PickemStat_... \
+  --stat-id bb_allowed=PickemStat_...
+```
+
+This writes dated live line snapshots under `data/lines/` and JSON slip
+artifacts plus a run summary under `betslips/mlb_live/` by default.
+
+Print a saved live summary in app-entry format:
+
+```bash
+.venv/bin/python scripts/print_slips.py betslips/mlb_live/mlb_live_2026-05-14_summary.json
+.venv/bin/python scripts/print_slips.py betslips/mlb_live/mlb_live_2026-05-14_summary.json --tag fullsend
+```
+
 ### 3) Validate Changes
 
 ```bash

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
 
 import pandas as pd
@@ -420,6 +421,86 @@ def test_primary_fetch_uses_target_date_weather(
     assert not result.empty
     assert float(result.loc[0, "game_temp_f"]) == 70.0
     assert int(result.loc[0, "wind_out_to_cf_flag"]) == 1
+
+
+def test_primary_fetch_deduplicates_schedule_lookups_by_opponent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = LiveContextService({"enabled": True})
+    schedule = pd.DataFrame([{"Date": "Mon, Apr 14", "Temp": 70, "Wind": "9, Out"}])
+    calls: list[tuple[int, str]] = []
+
+    def fake_schedule_and_record(year: int, team: str) -> pd.DataFrame:
+        calls.append((year, team))
+        return schedule.copy()
+
+    monkeypatch.setattr(
+        live_context_module,
+        "schedule_and_record",
+        fake_schedule_and_record,
+    )
+
+    rows = pd.DataFrame(
+        [
+            {"pitcher_id": 101, "opponent_team": "BOS"},
+            {"pitcher_id": 102, "opponent_team": "BOS"},
+            {"pitcher_id": 103, "opponent_team": "NYY"},
+        ]
+    )
+    result = service._fetch_primary(rows, datetime(2025, 4, 14))
+
+    assert len(result) == 3
+    assert calls == [(2025, "BOS"), (2025, "NYY")]
+
+
+def test_primary_fetch_reuses_service_schedule_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = LiveContextService({"enabled": True})
+    schedule = pd.DataFrame([{"Date": "Mon, Apr 14", "Temp": 70, "Wind": "9, Out"}])
+    calls: list[tuple[int, str]] = []
+
+    def fake_schedule_and_record(year: int, team: str) -> pd.DataFrame:
+        calls.append((year, team))
+        return schedule.copy()
+
+    monkeypatch.setattr(
+        live_context_module,
+        "schedule_and_record",
+        fake_schedule_and_record,
+    )
+
+    rows = pd.DataFrame([{"pitcher_id": 101, "opponent_team": "BOS"}])
+    first = service._fetch_primary(rows, datetime(2025, 4, 14))
+    second = service._fetch_primary(rows, datetime(2025, 4, 14))
+
+    assert not first.empty
+    assert not second.empty
+    assert calls == [(2025, "BOS")]
+
+
+def test_primary_fetch_does_not_mutate_process_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = LiveContextService({"enabled": True})
+    schedule = pd.DataFrame([{"Date": "Mon, Apr 14", "Temp": 70, "Wind": "9, Out"}])
+
+    monkeypatch.setattr(
+        live_context_module,
+        "schedule_and_record",
+        lambda _year, _team: schedule.copy(),
+    )
+
+    original_stdout = sys.stdout
+    rows = pd.DataFrame(
+        [
+            {"pitcher_id": 101, "opponent_team": "BOS"},
+            {"pitcher_id": 102, "opponent_team": "NYY"},
+        ]
+    )
+    _ = service._fetch_primary(rows, datetime(2025, 4, 14))
+
+    assert sys.stdout is original_stdout
 
 
 def test_secondary_fetch_matches_team_and_date(monkeypatch: pytest.MonkeyPatch) -> None:

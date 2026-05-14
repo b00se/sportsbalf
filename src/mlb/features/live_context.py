@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -83,6 +85,8 @@ class LiveContextService:
         self.secondary_weather_source = str(
             weather_cfg.get("secondary_source", "statsapi_game_feed")
         )
+        self._schedule_cache: dict[tuple[int, str], pd.DataFrame | None] = {}
+        self._schedule_cache_lock = threading.Lock()
 
     def fetch(
         self, rows: pd.DataFrame, target_date: datetime
@@ -388,65 +392,46 @@ class LiveContextService:
         if schedule_and_record is None:
             return pd.DataFrame()
 
+        target_day = pd.Timestamp(target_date).normalize()
+        unique_opponents = sorted(
+            {
+                str(opponent).strip()
+                for opponent in rows.get("opponent_team", pd.Series(dtype=object))
+                if str(opponent).strip()
+            }
+        )
+        if not unique_opponents:
+            return pd.DataFrame()
+
+        max_workers = min(8, len(unique_opponents))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            opponent_payloads = dict(
+                zip(
+                    unique_opponents,
+                    executor.map(
+                        lambda opponent: self._primary_payload_for_opponent(
+                            opponent,
+                            target_date.year,
+                            target_day,
+                        ),
+                        unique_opponents,
+                    ),
+                )
+            )
+
         records: list[dict[str, Any]] = []
         for row in rows.itertuples(index=False):
             opponent = str(getattr(row, "opponent_team", "")).strip()
             if not opponent:
                 continue
+            opponent_payload = opponent_payloads.get(opponent)
+            if opponent_payload is None:
+                continue
             payload: dict[str, Any] = {
                 "pitcher_id": getattr(row, "pitcher_id", None),
                 "opponent_team": opponent,
             }
-            try:
-                schedule = schedule_and_record(target_date.year, opponent)
-                if schedule is not None and not schedule.empty:
-                    schedule = schedule.copy()
-                    if "Date" not in schedule.columns:
-                        continue
-                    schedule["game_date"] = schedule["Date"].map(
-                        lambda value: _coerce_schedule_date(value, target_date.year)
-                    )
-                    target_day = pd.Timestamp(target_date).normalize()
-                    same_day = schedule[
-                        schedule["game_date"].dt.normalize() == target_day
-                    ]
-                    if same_day.empty:
-                        continue
-                    weather_row = same_day.iloc[0].to_dict()
-                    wind_speed, wind_direction = _extract_wind_components(
-                        weather_row.get("Wind")
-                    )
-                    weather = normalize_weather_payload(
-                        {
-                            "game_temp_f": weather_row.get("Temp")
-                            or weather_row.get("temperature"),
-                            "wind_speed_mph": wind_speed
-                            or weather_row.get("wind_speed_mph"),
-                            "humidity_pct": weather_row.get("Humidity")
-                            or weather_row.get("humidity_pct"),
-                            "wind_direction": weather_row.get("WindDir")
-                            or wind_direction
-                            or weather_row.get("wind_direction"),
-                        },
-                        use_defaults=False,
-                    )
-                    payload.update(weather)
-                else:
-                    payload.update(normalize_weather_payload({}, use_defaults=False))
-
-                venue = normalize_venue_payload({"roof_state": None})
-                payload.update(venue)
-                weather_values = [
-                    payload.get("game_temp_f"),
-                    payload.get("humidity_pct"),
-                    payload.get("wind_speed_mph"),
-                ]
-                payload["weather_known_flag"] = int(
-                    all(pd.notna(value) for value in weather_values)
-                )
-            except Exception:
-                logger.debug("Primary live feature fetch failed for team=%s", opponent)
-                continue
+            payload.update(opponent_payload)
             records.append(payload)
 
         if not records:
@@ -457,6 +442,83 @@ class LiveContextService:
             if col not in frame.columns:
                 frame[col] = pd.NA
         return frame
+
+    def _primary_payload_for_opponent(
+        self,
+        opponent: str,
+        year: int,
+        target_day: pd.Timestamp,
+    ) -> dict[str, Any] | None:
+        """Fetch and normalize one opponent's same-day schedule payload."""
+
+        try:
+            schedule = self._load_schedule_for_team(year, opponent)
+            if schedule is not None and not schedule.empty:
+                schedule = schedule.copy()
+                if "Date" not in schedule.columns:
+                    return None
+                schedule["game_date"] = schedule["Date"].map(
+                    lambda value: _coerce_schedule_date(value, year)
+                )
+                same_day = schedule[schedule["game_date"].dt.normalize() == target_day]
+                if same_day.empty:
+                    return None
+                weather_row = same_day.iloc[0].to_dict()
+                wind_speed, wind_direction = _extract_wind_components(
+                    weather_row.get("Wind")
+                )
+                weather = normalize_weather_payload(
+                    {
+                        "game_temp_f": weather_row.get("Temp")
+                        or weather_row.get("temperature"),
+                        "wind_speed_mph": wind_speed
+                        or weather_row.get("wind_speed_mph"),
+                        "humidity_pct": weather_row.get("Humidity")
+                        or weather_row.get("humidity_pct"),
+                        "wind_direction": weather_row.get("WindDir")
+                        or wind_direction
+                        or weather_row.get("wind_direction"),
+                    },
+                    use_defaults=False,
+                )
+            else:
+                weather = normalize_weather_payload({}, use_defaults=False)
+
+            payload = normalize_venue_payload({"roof_state": None})
+            payload.update(weather)
+            weather_values = [
+                payload.get("game_temp_f"),
+                payload.get("humidity_pct"),
+                payload.get("wind_speed_mph"),
+            ]
+            payload["weather_known_flag"] = int(
+                all(pd.notna(value) for value in weather_values)
+            )
+            return payload
+        except Exception:
+            logger.debug("Primary live feature fetch failed for team=%s", opponent)
+            return None
+
+    def _load_schedule_for_team(self, year: int, opponent: str) -> pd.DataFrame | None:
+        """Return cached or freshly fetched schedule data for one team/year."""
+
+        cache_key = (year, opponent)
+        with self._schedule_cache_lock:
+            if cache_key in self._schedule_cache:
+                cached = self._schedule_cache[cache_key]
+                return None if cached is None else cached.copy()
+
+        fetched: pd.DataFrame | None = None
+        schedule = schedule_and_record(year, opponent)
+        if schedule is not None and not schedule.empty:
+            fetched = schedule.copy()
+
+        with self._schedule_cache_lock:
+            self._schedule_cache[cache_key] = (
+                None if fetched is None else fetched.copy()
+            )
+
+        return None if fetched is None else fetched.copy()
 
     def _fetch_secondary(
         self, rows: pd.DataFrame, target_date: datetime
