@@ -54,3 +54,61 @@ def test_generate_script_load_pitcher_ids_fallback(monkeypatch) -> None:
 def test_update_script_load_pitcher_ids_fallback(monkeypatch) -> None:
     fixture_path = Path("tests/testdata/top_starters_fixture.csv")
     _assert_resolution(upd_script, fixture_path, monkeypatch)
+
+
+def test_generate_script_load_pitcher_ids_derives_from_raw_when_csv_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(gen_script, "playerid_reverse_lookup", _fake_reverse_lookup)
+    raw_df = pd.DataFrame(
+        {
+            "player_name": [
+                "Cole, Gerrit",
+                "Cole, Gerrit",
+                "Wheeler, Zack",
+                "Hader, Josh",
+            ],
+            "pitcher": [1, 1, 2, 3],
+            "inning": [1, 2, 1, 9],
+            "game_date": [
+                "2026-04-01",
+                "2026-04-01",
+                "2026-04-02",
+                "2026-04-02",
+            ],
+            "game_pk": [100, 100, 200, 200],
+        }
+    )
+
+    resolved = gen_script.load_pitcher_ids("missing.csv", raw_df)
+
+    assert resolved == [("Gerrit Cole", 1), ("Zack Wheeler", 2)]
+
+
+def test_update_script_load_pitcher_ids_derives_from_raw_when_csv_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(upd_script, "playerid_reverse_lookup", _fake_reverse_lookup)
+    raw_df = pd.DataFrame(
+        {
+            "player_name": [
+                "Cole, Gerrit",
+                "Cole, Gerrit",
+                "Wheeler, Zack",
+                "Hader, Josh",
+            ],
+            "pitcher": [1, 1, 2, 3],
+            "inning": [1, 2, 1, 9],
+            "game_date": [
+                "2026-04-01",
+                "2026-04-01",
+                "2026-04-02",
+                "2026-04-02",
+            ],
+            "game_pk": [100, 100, 200, 200],
+        }
+    )
+
+    resolved = upd_script.load_pitcher_ids("missing.csv", raw_df)
+
+    assert resolved == [("Gerrit Cole", 1), ("Zack Wheeler", 2)]
