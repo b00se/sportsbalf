@@ -235,9 +235,116 @@ def test_pipeline_retrains_when_loaded_artifact_is_incompatible(monkeypatch) -> 
             "fallback_std": 1.0,
         },
     )
+    run_mlb_pitcher_prop_pipeline(config, retrain=False)
+    assert train_or_load_calls == [False, True]
+
+
+def test_outs_pipeline_builds_sampler_from_outs_target(monkeypatch) -> None:
+    descriptor = get_stat_descriptor("outs_recorded")
+    model_frame = _synthetic_pitcher_prop_frame(descriptor.target_col).copy()
+    model_frame["game_date"] = pd.to_datetime(model_frame["game_date"])
+    features = _model_features(descriptor)
+    for column in features:
+        if column not in model_frame.columns:
+            model_frame[column] = 0.0
+
+    captured: dict[str, object] = {}
+
+    def _fake_train_or_load(frame, *, section, descriptor, retrain):
+        return "model-artifact", "xgboost", "global"
+
+    def _fake_predict(frame, *, artifact, features, name="prediction"):
+        return pd.Series(np.full(len(frame), 10.0), index=frame.index, name=name)
+
+    def _fake_from_games(
+        games,
+        prediction_col="prediction",
+        target_col="strikeouts",
+        **kwargs,
+    ):
+        captured["columns"] = list(games.columns)
+        captured["prediction_col"] = prediction_col
+        captured["target_col"] = target_col
+        return object()
+
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._build_training_games",
+        lambda section, descriptor: model_frame.copy(),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._persist_label_quality_report",
+        lambda games, descriptor, report_path: None,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._train_or_load",
+        _fake_train_or_load,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.predict_with_strategy_artifact",
+        _fake_predict,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.load_pitcher_prop_lines",
+        lambda _path, line_col: pd.DataFrame(
+            [
+                {
+                    "player": "123",
+                    line_col: 15.5,
+                    "over_decimal_price": 1.9,
+                    "under_decimal_price": 1.9,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline._build_prediction_rows",
+        lambda lines, games, descriptor, target_date: pd.DataFrame(
+            [
+                {
+                    "player": "123",
+                    "pitcher_id": 123,
+                    descriptor.line_col: 15.5,
+                    "prediction": 10.0,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.ResidualBootstrapper.from_games",
+        _fake_from_games,
+    )
+    monkeypatch.setattr(
+        "src.mlb.pitcher_props.pipeline.apply_simulations",
+        lambda lines, **kwargs: lines.assign(
+            prob_over=0.5,
+            prob_under=0.5,
+            prob_push=0.0,
+            ev_over=0.0,
+            ev_under=0.0,
+            edge_over=0.0,
+            edge_under=0.0,
+            simulated_mean=10.0,
+            simulated_std=1.0,
+            simulated_median=10.0,
+        ),
+    )
+
+    config = PipelineConfig(
+        config_path=Path("config/mlb.yaml"),
+        sport="mlb",
+        stat="outs_recorded",
+        raw={},
+        section={
+            "model_path": "models/tmp.joblib",
+            "lines_path": "tests/testdata/outs_lines.csv",
+            "fallback_std": 1.0,
+        },
+    )
     result = run_mlb_pitcher_prop_pipeline(config, retrain=False)
 
-    assert train_or_load_calls == [False, True]
+    assert result["predicted_outs_recorded"].notna().all()
+    assert captured["target_col"] == "outs_recorded"
+    assert "outs_recorded" in captured["columns"]
     assert "predicted_outs_recorded" in result.columns
 
 

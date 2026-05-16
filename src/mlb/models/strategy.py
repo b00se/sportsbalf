@@ -9,6 +9,10 @@ import pandas as pd
 from src.mlb.models.buckets import SegmentationConfig, fit_bucket_model
 from src.mlb.models.registry import ModelSpec
 from src.mlb.models.trainers import fit_estimator, predict_estimator
+from src.mlb.pitcher_props.outs_features import (
+    OUTS_FEATURE_COLUMNS,
+    ensure_outs_feature_defaults,
+)
 
 
 def train_strategy_artifact(
@@ -91,6 +95,9 @@ def predict_with_strategy_artifact(
     name: str = "prediction",
 ) -> pd.Series:
     """Predict using either a raw estimator or strategy artifact."""
+
+    if any(column in features for column in OUTS_FEATURE_COLUMNS):
+        frame = ensure_outs_feature_defaults(frame)
 
     # Backward compatibility for older artifacts that store estimator only.
     if not isinstance(artifact, dict) or "bucket_models" not in artifact:

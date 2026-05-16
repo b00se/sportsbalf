@@ -299,20 +299,33 @@ def build_pitcher_game_table(
 
     required_pitch_cols = {"events", "pitcher", "game_date"}
     if not required_pitch_cols.issubset(source.columns):
-        for target in ["outs_recorded", "earned_runs", "hits_allowed", "bb_allowed"]:
+        for target in [
+            "batters_faced",
+            "outs_recorded",
+            "earned_runs",
+            "hits_allowed",
+            "bb_allowed",
+        ]:
             if target not in games.columns:
                 games[target] = 0.0
         return games
 
     terminal = _terminal_plate_appearances(source)
     if terminal.empty:
-        for target in ["outs_recorded", "earned_runs", "hits_allowed", "bb_allowed"]:
+        for target in [
+            "batters_faced",
+            "outs_recorded",
+            "earned_runs",
+            "hits_allowed",
+            "bb_allowed",
+        ]:
             if target not in games.columns:
                 games[target] = 0.0
         return games
 
     terminal = terminal.copy()
     terminal["game_date"] = pd.to_datetime(terminal["game_date"], errors="coerce")
+    terminal["batters_faced"] = 1
     terminal["outs_recorded"] = _outs_from_events(terminal["events"])
     terminal["hits_allowed"] = (
         terminal["events"].astype(str).isin(HIT_EVENTS).astype(int)
@@ -328,6 +341,7 @@ def build_pitcher_game_table(
     grouped = (
         terminal.groupby(["pitcher", "game_date"], as_index=False)[
             [
+                "batters_faced",
                 "outs_recorded",
                 "hits_allowed",
                 "bb_allowed",
@@ -449,6 +463,7 @@ def build_pitcher_game_table(
         games.drop(columns=["earned_runs_fallback"], inplace=True)
 
     fill_zero = [
+        "batters_faced",
         "outs_recorded",
         "hits_allowed",
         "bb_allowed",

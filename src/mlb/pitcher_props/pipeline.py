@@ -43,8 +43,14 @@ from src.mlb.models.strategy import (
     train_strategy_artifact,
 )
 from src.mlb.models.trainers import fit_estimator
+from src.mlb.pitcher_props.calibration import persist_outs_calibration_report
 from src.mlb.pitcher_props.data import persist_reusable_tables
 from src.mlb.pitcher_props.descriptors import StatDescriptor, get_stat_descriptor
+from src.mlb.pitcher_props.outs_features import (
+    OUTS_FEATURE_COLUMNS,
+    add_outs_workload_features,
+    ensure_outs_feature_defaults,
+)
 from src.mlb.pitcher_props.park_factors import (
     add_rolling_park_factor,
     park_factor_lookup,
@@ -89,7 +95,13 @@ def _model_features(descriptor: StatDescriptor) -> list[str]:
         Ordered model feature list.
     """
 
-    return BASE_FEATURES + [descriptor.opponent_feature_col, descriptor.park_factor_col]
+    features = BASE_FEATURES + [
+        descriptor.opponent_feature_col,
+        descriptor.park_factor_col,
+    ]
+    if descriptor.stat == "outs_recorded":
+        features += OUTS_FEATURE_COLUMNS
+    return features
 
 
 def _person_lookup_key(name: object, *, fallback_id: object | None = None) -> str:
@@ -341,6 +353,9 @@ def _build_training_games(
             ].copy()
         games = add_rolling_features(games)
         games = _add_rolling_pressure_features(games)
+        if descriptor.stat == "outs_recorded":
+            games = add_outs_workload_features(games)
+            games = ensure_outs_feature_defaults(games)
         games = _add_opponent_tendency(
             games,
             target_col=descriptor.target_col,
@@ -385,6 +400,8 @@ def _clean_for_model(games: pd.DataFrame, descriptor: StatDescriptor) -> pd.Data
 
     features = _model_features(descriptor)
     frame = ensure_live_feature_defaults(games.replace([np.inf, -np.inf], np.nan))
+    if descriptor.stat == "outs_recorded":
+        frame = ensure_outs_feature_defaults(frame)
     required = [descriptor.target_col] + features
     return frame.dropna(subset=required).copy()
 
@@ -598,6 +615,9 @@ def _train_or_load(
     retrain: bool,
 ) -> tuple[object, str, str]:
     """Train or load a model artifact for the supplied stat."""
+
+    if descriptor.stat == "outs_recorded":
+        frame = ensure_outs_feature_defaults(frame)
 
     model_path = Path(str(section["model_path"]))
     features = _model_features(descriptor)
@@ -1071,6 +1091,8 @@ def run_mlb_pitcher_prop_pipeline(
             section=section,
             target_date=target_date,
         )
+    elif descriptor.stat == "outs_recorded":
+        prediction_rows = ensure_outs_feature_defaults(prediction_rows)
 
     prediction_rows["prediction"] = predict_with_strategy_artifact(
         prediction_rows,
@@ -1087,7 +1109,8 @@ def run_mlb_pitcher_prop_pipeline(
     sampler = None
     try:
         sampler = ResidualBootstrapper.from_games(
-            model_frame.rename(columns={descriptor.target_col: "strikeouts"})
+            model_frame,
+            target_col=descriptor.target_col,
         )
     except Exception:
         sampler = None
@@ -1116,4 +1139,20 @@ def run_mlb_pitcher_prop_pipeline(
         },
         inplace=True,
     )
+
+    if descriptor.stat == "outs_recorded":
+        try:
+            persist_outs_calibration_report(
+                model=model,
+                section=section,
+                descriptor=descriptor,
+                features=_model_features(descriptor),
+                std_dev=sigma,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to write outs calibration report for '%s': %s",
+                descriptor.stat,
+                exc,
+            )
     return simulated
