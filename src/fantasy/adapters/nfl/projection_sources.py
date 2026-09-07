@@ -58,7 +58,9 @@ class ProjectionSource:
 
         host = self.access_url.split("//", 1)[-1].split("/", 1)[0].lower()
         domain = re.sub(r"^www\.", "", host)
-        return f"{re.sub(r'[^a-z0-9]+', '', self.publisher.lower())}:{domain}"
+        registrable = ".".join(domain.split(".")[-2:])
+        publisher = re.sub(r"[^a-z0-9]+", "", self.publisher.lower())
+        return f"{publisher}:{registrable}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,6 +365,7 @@ def score_rolling_origin_snapshot(
         "projection",
         "actual",
         "as_of_utc",
+        "target_cutoff_utc",
     }
     required |= {"historical_player_mean", "public_projection", "consensus_projection"}
     if not rows or not required.issubset(rows[0]):
@@ -406,25 +409,45 @@ def score_rolling_origin_snapshot(
         key = (row["player_id"], row["game_id"], row["season"], row["week"])
         if key not in public_by_key or key not in consensus_by_key:
             raise SourceAuditError("baseline snapshot is missing an evaluation key")
-    covered = sum(
-        row["player_id"] in material and row["projection"] != "" for row in rows
-    )
+        target_cutoff = _parse_timestamp(row["target_cutoff_utc"])
+        for baseline in (public_by_key[key], consensus_by_key[key]):
+            if _parse_timestamp(baseline["as_of_utc"]) > target_cutoff:
+                raise SourceAuditError("baseline timestamp is after target cutoff")
+            numeric(baseline, "projection")
+    covered_ids = {
+        row["player_id"]
+        for row in rows
+        if row["player_id"].strip()
+        and row["player_id"] in material
+        and row["projection"] != ""
+        and 0 <= numeric(row, "projection")
+    }
     errors = [abs(numeric(row, "projection") - numeric(row, "actual")) for row in rows]
-    historical = [
-        abs(numeric(row, "historical_player_mean") - numeric(row, "actual"))
-        for row in rows
-    ]
-    public = [
-        abs(numeric(row, "public_projection") - numeric(row, "actual")) for row in rows
-    ]
-    consensus = [
-        abs(numeric(row, "consensus_projection") - numeric(row, "actual"))
-        for row in rows
-    ]
+    historical, public, consensus = [], [], []
+    for row in rows:
+        earlier = [
+            numeric(previous, "actual")
+            for previous in rows
+            if previous["player_id"] == row["player_id"]
+            and (int(previous["season"]), int(previous["week"]))
+            < (int(row["season"]), int(row["week"]))
+        ]
+        if not earlier:
+            continue
+        historical.append(abs(sum(earlier) / len(earlier) - numeric(row, "actual")))
+        key = (row["player_id"], row["game_id"], row["season"], row["week"])
+        public.append(
+            abs(numeric(public_by_key[key], "projection") - numeric(row, "actual"))
+        )
+        consensus.append(
+            abs(numeric(consensus_by_key[key], "projection") - numeric(row, "actual"))
+        )
+    if not historical:
+        raise SourceAuditError("historical mean requires an earlier observation")
     return EvaluationResult(
         len(rows),
         sum(errors) / len(errors),
-        covered / max(len(material), 1),
+        min(len(covered_ids) / max(len(material), 1), 1.0),
         sum(historical) / len(rows),
         sum(public) / len(rows),
         sum(consensus) / len(rows),

@@ -28,7 +28,7 @@ def _source(**overrides: object) -> ProjectionSource:
         "retrieval_method": "manual_download",
         "source_timestamp_utc": "2026-09-01T12:00:00Z",
         "content_sha256": (
-            "56fa2d32b2b3b57cef8b1e28c9d59dcfda168362e26dc2c81cd4e2e1735b185c"
+            "3cc634e802d868801a77b6cc94fa2b72a5a19191fbe39b168328fe0d66707e59"
         ),
         "coverage_score": 0.9,
         "baseline_role": "public_projection",
@@ -41,6 +41,7 @@ def _source(**overrides: object) -> ProjectionSource:
             "projection",
             "actual",
             "as_of_utc",
+            "target_cutoff_utc",
             "historical_player_mean",
             "public_projection",
             "consensus_projection",
@@ -92,6 +93,7 @@ def test_tournament_is_deterministic_and_excludes_stale_or_paid_sources() -> Non
     consensus = _source(
         source_id="consensus",
         publisher="Other Publisher",
+        access_url="https://other.example.test/consensus.csv",
         baseline_role="consensus_reference",
     )
     tournament = run_projection_source_tournament(
@@ -113,8 +115,8 @@ def test_rolling_origin_fixture_scores_required_schema() -> None:
     result = score_rolling_origin_snapshot(
         "tests/testdata/fantasy/nfl/projections/nflverse_week01.csv"
     )
-    assert result.rows == 1
-    assert result.mean_absolute_error == 1.5
+    assert result.rows == 2
+    assert result.mean_absolute_error == 0.75
     assert result.coverage == 1.0
 
 

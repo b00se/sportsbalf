@@ -14,12 +14,12 @@ projection_sources:
     version: 2026-week-01
     retrieval_method: manual_download
     source_timestamp_utc: 2026-09-01T12:00:00Z
-    content_sha256: 56fa2d32b2b3b57cef8b1e28c9d59dcfda168362e26dc2c81cd4e2e1735b185c
+    content_sha256: 3cc634e802d868801a77b6cc94fa2b72a5a19191fbe39b168328fe0d66707e59
     coverage_score: 0.95
     max_age_hours: 168
     baseline_role: public_projection
     snapshot_path: ../../tests/testdata/fantasy/nfl/projections/nflverse_week01.csv
-    snapshot_schema: player_id,game_id,season,week,projection,actual,as_of_utc,historical_player_mean,public_projection,consensus_projection
+    snapshot_schema: player_id,game_id,season,week,projection,actual,as_of_utc,target_cutoff_utc,historical_player_mean,public_projection,consensus_projection
     policy: noncommercial
   - source_id: fantasypros-consensus
     publisher: FantasyPros
@@ -33,10 +33,10 @@ projection_sources:
     version: 2026-week-01
     retrieval_method: manual_download
     source_timestamp_utc: 2026-09-01T12:00:00Z
-    content_sha256: 56d00f4752dea86bc11d793ae7c1c0dbcddbe5b41e703ea2ae508d936c92540d
+    content_sha256: 8bd8020c36edb7298b1d61a2c56bf0ef389ded1e73c585cdb393d557af1be0c1
     coverage_score: 0.90
     max_age_hours: 168
     baseline_role: consensus_reference
     snapshot_path: ../../tests/testdata/fantasy/nfl/projections/consensus_week01.csv
-    snapshot_schema: player_id,game_id,season,week,projection,actual,as_of_utc,historical_player_mean,public_projection,consensus_projection
+    snapshot_schema: player_id,game_id,season,week,projection,actual,as_of_utc,target_cutoff_utc,historical_player_mean,public_projection,consensus_projection
     policy: noncommercial
