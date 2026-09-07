@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -55,12 +56,23 @@ class ProjectionSource:
     @property
     def lineage(self) -> str:
         """Return normalized publisher/domain lineage for independence checks."""
+        return f"{self.lineage_publisher}:{self.lineage_domain}"
 
-        host = self.access_url.split("//", 1)[-1].split("/", 1)[0].lower()
-        domain = re.sub(r"^www\.", "", host)
-        registrable = ".".join(domain.split(".")[-2:])
-        publisher = re.sub(r"[^a-z0-9]+", "", self.publisher.lower())
-        return f"{publisher}:{registrable}"
+    @property
+    def lineage_publisher(self) -> str:
+        """Return a normalized publisher lineage token."""
+
+        return re.sub(r"[^a-z0-9]+", "", self.publisher.casefold())
+
+    @property
+    def lineage_domain(self) -> str:
+        """Return the normalized registrable domain from the access URL."""
+
+        host = (
+            (urlparse(self.access_url).hostname or "").casefold().removeprefix("www.")
+        )
+        parts = [part for part in host.split(".") if part]
+        return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,8 +233,13 @@ def run_projection_source_tournament(
         and audit.source.baseline_role in {"public_projection", "consensus_reference"}
     ]
     roles = {audit.source.baseline_role for audit in eligible}
-    lineages = {audit.source.lineage for audit in eligible}
-    if roles != {"public_projection", "consensus_reference"} or len(lineages) < 2:
+    publishers = {audit.source.lineage_publisher for audit in eligible}
+    domains = {audit.source.lineage_domain for audit in eligible}
+    if (
+        roles != {"public_projection", "consensus_reference"}
+        or len(publishers) < 2
+        or len(domains) < 2
+    ):
         raise SourceAuditError(
             "at least two independent eligible baseline roles are required"
         )
@@ -367,7 +384,6 @@ def score_rolling_origin_snapshot(
         "as_of_utc",
         "target_cutoff_utc",
     }
-    required |= {"historical_player_mean", "public_projection", "consensus_projection"}
     if not rows or not required.issubset(rows[0]):
         raise SourceAuditError("evaluation snapshot is missing required columns")
     if cutoff_utc is not None:
@@ -375,80 +391,108 @@ def score_rolling_origin_snapshot(
             cutoff_utc
         ):
             raise SourceAuditError("cutoff_utc must be timezone-aware UTC")
-        rows = [row for row in rows if _parse_timestamp(row["as_of_utc"]) <= cutoff_utc]
-        if not rows:
-            raise SourceAuditError(
-                "evaluation snapshot has no rows at or before cutoff"
-            )
 
     def numeric(row: dict[str, str], key: str) -> float:
         try:
-            return float(row[key])
+            value = float(row[key])
         except (KeyError, TypeError, ValueError) as exc:
             raise SourceAuditError(f"evaluation field '{key}' must be numeric") from exc
+        if value != value or value in (float("inf"), float("-inf")):
+            raise SourceAuditError(f"evaluation field '{key}' must be finite")
+        return value
 
-    def cutoff_rows(source_rows: list[dict[str, str]]) -> list[dict[str, str]]:
-        if cutoff_utc is None:
-            return source_rows
-        return [
-            row
-            for row in source_rows
-            if _parse_timestamp(row["as_of_utc"]) <= cutoff_utc
-        ]
+    def integer(row: dict[str, str], key: str) -> int:
+        try:
+            value = int(row[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SourceAuditError(
+                f"evaluation field '{key}' must be an integer"
+            ) from exc
+        if value < 0:
+            raise SourceAuditError(f"evaluation field '{key}' must be non-negative")
+        return value
+
+    def normalize(row: dict[str, str], *, target: bool) -> dict[str, Any]:
+        player = str(row.get("player_id", "")).strip().casefold()
+        game = str(row.get("game_id", "")).strip().casefold()
+        season, week = integer(row, "season"), integer(row, "week")
+        as_of = _parse_timestamp(row.get("as_of_utc", ""))
+        numeric(row, "projection")
+        target_cutoff = (
+            _parse_timestamp(row.get("target_cutoff_utc", "")) if target else None
+        )
+        if target:
+            numeric(row, "actual")
+        return {
+            **row,
+            "_player": player,
+            "_game": game,
+            "_season": season,
+            "_week": week,
+            "_as_of": as_of,
+            "_target": target_cutoff,
+        }
+
+    rows = [normalize(row, target=True) for row in rows]
+    public_rows = [normalize(row, target=False) for row in public_rows]
+    consensus_rows = [normalize(row, target=False) for row in consensus_rows]
+    if cutoff_utc is not None:
+        rows = [row for row in rows if row["_as_of"] <= cutoff_utc]
+    if not rows:
+        raise SourceAuditError("evaluation snapshot has no rows at or before cutoff")
+
+    def key(row: dict[str, Any]) -> tuple[str, str, int, int]:
+        return row["_player"], row["_game"], row["_season"], row["_week"]
 
     public_by_key = {
-        (r["player_id"], r["game_id"], r["season"], r["week"]): r
-        for r in cutoff_rows(public_rows)
+        key(row): row
+        for row in public_rows
+        if cutoff_utc is None or row["_as_of"] <= cutoff_utc
     }
     consensus_by_key = {
-        (r["player_id"], r["game_id"], r["season"], r["week"]): r
-        for r in cutoff_rows(consensus_rows)
+        key(row): row
+        for row in consensus_rows
+        if cutoff_utc is None or row["_as_of"] <= cutoff_utc
     }
-    material = set(material_player_ids or {row["player_id"] for row in rows})
+    material = {
+        str(player).strip().casefold()
+        for player in (material_player_ids or (row["_player"] for row in rows))
+        if str(player).strip()
+    }
+    covered_ids: set[str] = set()
+    errors, historical, public, consensus = [], [], [], []
     for row in rows:
-        key = (row["player_id"], row["game_id"], row["season"], row["week"])
-        if key not in public_by_key or key not in consensus_by_key:
-            raise SourceAuditError("baseline snapshot is missing an evaluation key")
-        target_cutoff = _parse_timestamp(row["target_cutoff_utc"])
-        for baseline in (public_by_key[key], consensus_by_key[key]):
-            if _parse_timestamp(baseline["as_of_utc"]) > target_cutoff:
+        row_key = key(row)
+        baselines = []
+        for lookup in (public_by_key, consensus_by_key):
+            if row_key not in lookup:
+                raise SourceAuditError("baseline snapshot is missing an evaluation key")
+            baseline = lookup[row_key]
+            if baseline["_as_of"] > row["_target"]:
                 raise SourceAuditError("baseline timestamp is after target cutoff")
-            numeric(baseline, "projection")
-    covered_ids = {
-        row["player_id"]
-        for row in rows
-        if row["player_id"].strip()
-        and row["player_id"] in material
-        and row["projection"] != ""
-        and 0 <= numeric(row, "projection")
-    }
-    errors = [abs(numeric(row, "projection") - numeric(row, "actual")) for row in rows]
-    historical, public, consensus = [], [], []
-    for row in rows:
+            baselines.append(numeric(baseline, "projection"))
+        projection, actual = numeric(row, "projection"), numeric(row, "actual")
+        errors.append(abs(projection - actual))
+        if row["_player"] in material and row["_player"]:
+            covered_ids.add(row["_player"])
         earlier = [
             numeric(previous, "actual")
             for previous in rows
-            if previous["player_id"] == row["player_id"]
-            and (int(previous["season"]), int(previous["week"]))
-            < (int(row["season"]), int(row["week"]))
+            if previous["_player"] == row["_player"]
+            and (previous["_season"], previous["_week"])
+            < (row["_season"], row["_week"])
         ]
-        if not earlier:
-            continue
-        historical.append(abs(sum(earlier) / len(earlier) - numeric(row, "actual")))
-        key = (row["player_id"], row["game_id"], row["season"], row["week"])
-        public.append(
-            abs(numeric(public_by_key[key], "projection") - numeric(row, "actual"))
-        )
-        consensus.append(
-            abs(numeric(consensus_by_key[key], "projection") - numeric(row, "actual"))
-        )
+        if earlier:
+            historical.append(abs(sum(earlier) / len(earlier) - actual))
+        public.append(abs(baselines[0] - actual))
+        consensus.append(abs(baselines[1] - actual))
     if not historical:
         raise SourceAuditError("historical mean requires an earlier observation")
     return EvaluationResult(
         len(rows),
         sum(errors) / len(errors),
         min(len(covered_ids) / max(len(material), 1), 1.0),
-        sum(historical) / len(rows),
-        sum(public) / len(rows),
-        sum(consensus) / len(rows),
+        sum(historical) / len(historical),
+        sum(public) / len(public),
+        sum(consensus) / len(consensus),
     )

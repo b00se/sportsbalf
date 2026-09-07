@@ -1,5 +1,6 @@
 """Offline tests for the NFL projection-source audit contract."""
 
+import csv
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -93,7 +94,7 @@ def test_tournament_is_deterministic_and_excludes_stale_or_paid_sources() -> Non
     consensus = _source(
         source_id="consensus",
         publisher="Other Publisher",
-        access_url="https://other.example.test/consensus.csv",
+        access_url="https://other.test/consensus.csv",
         baseline_role="consensus_reference",
     )
     tournament = run_projection_source_tournament(
@@ -187,3 +188,142 @@ def test_config_loader_rejects_string_booleans(tmp_path) -> None:
     )
     with pytest.raises(SourceAuditError, match="boolean"):
         load_projection_sources(path)
+
+
+def _write_eval(path, rows):
+    fields = [
+        "player_id",
+        "game_id",
+        "season",
+        "week",
+        "projection",
+        "actual",
+        "as_of_utc",
+        "target_cutoff_utc",
+    ]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def test_scoring_includes_first_row_and_uses_separate_denominators(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    public = tmp_path / "public.csv"
+    consensus = tmp_path / "consensus.csv"
+    base = {
+        "game_id": "g",
+        "season": "2026",
+        "as_of_utc": "2026-08-01T00:00:00Z",
+        "target_cutoff_utc": "2026-08-01T00:00:00Z",
+    }
+    _write_eval(
+        target,
+        [
+            {
+                **base,
+                "player_id": " P1 ",
+                "week": "1",
+                "projection": "10",
+                "actual": "12",
+            },
+            {
+                **base,
+                "player_id": "P1",
+                "week": "2",
+                "projection": "10",
+                "actual": "13",
+                "target_cutoff_utc": "2026-08-08T00:00:00Z",
+                "as_of_utc": "2026-08-08T00:00:00Z",
+            },
+        ],
+    )
+    _write_eval(
+        public,
+        [
+            {**base, "player_id": "P1", "week": "1", "projection": "11", "actual": "0"},
+            {
+                **base,
+                "player_id": "P1",
+                "week": "2",
+                "projection": "15",
+                "actual": "0",
+                "target_cutoff_utc": "2026-08-08T00:00:00Z",
+                "as_of_utc": "2026-08-08T00:00:00Z",
+            },
+        ],
+    )
+    _write_eval(
+        consensus,
+        [
+            {**base, "player_id": "P1", "week": "1", "projection": "10", "actual": "0"},
+            {
+                **base,
+                "player_id": "P1",
+                "week": "2",
+                "projection": "14",
+                "actual": "0",
+                "target_cutoff_utc": "2026-08-08T00:00:00Z",
+                "as_of_utc": "2026-08-08T00:00:00Z",
+            },
+        ],
+    )
+    result = score_rolling_origin_snapshot(
+        target, public_path=public, consensus_path=consensus
+    )
+    assert result.public_baseline_mae == 1.5
+    assert result.consensus_baseline_mae == 1.5
+    assert result.historical_mean_mae == 1.0
+
+
+def test_scoring_normalizes_ids_and_clamps_unique_coverage(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    rows = [
+        {
+            "player_id": p,
+            "game_id": "g",
+            "season": "2026",
+            "week": "1",
+            "projection": proj,
+            "actual": "1",
+            "as_of_utc": "2026-08-01T00:00:00Z",
+            "target_cutoff_utc": "2026-08-01T00:00:00Z",
+        }
+        for p, proj in [(" p1 ", "1"), ("P1", "nan"), ("", "2"), ("P2", "inf")]
+    ]
+    _write_eval(target, rows)
+    with pytest.raises(SourceAuditError, match="finite"):
+        score_rolling_origin_snapshot(target, material_player_ids=["p1", "P2"])
+
+
+def test_scoring_rejects_future_baseline_and_malformed_fields(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    rows = [
+        {
+            "player_id": "p",
+            "game_id": "g",
+            "season": "bad",
+            "week": "1",
+            "projection": "1",
+            "actual": "1",
+            "as_of_utc": "2026-08-01T00:00:00Z",
+            "target_cutoff_utc": "2026-08-01T00:00:00Z",
+        }
+    ]
+    _write_eval(target, rows)
+    with pytest.raises(SourceAuditError, match="season"):
+        score_rolling_origin_snapshot(target)
+
+
+def test_tournament_checks_publisher_and_domain_independently() -> None:
+    public = _source(publisher="Same", access_url="https://one.example.com/a")
+    consensus = _source(
+        source_id="c",
+        baseline_role="consensus_reference",
+        publisher="Same",
+        access_url="https://two.other.net/a",
+    )
+    with pytest.raises(SourceAuditError, match="independent"):
+        run_projection_source_tournament(
+            (public, consensus), as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC)
+        )
