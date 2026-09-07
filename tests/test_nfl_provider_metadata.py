@@ -300,19 +300,31 @@ def test_advertised_datasets_map_to_callable_loaders():
     ("dataset", "fixture_name", "expected"),
     [
         (
+            "player_stats",
+            "nflreadpy_weekly.csv",
+            {"attempts": 30, "player_id": "QB-1"},
+        ),
+        (
             "schedules",
             "nflreadpy_schedules_aliases.csv",
-            {"game_id": "g-2", "home_team": "DEN", "away_team": "OAK"},
+            {
+                "game_id": "g-2", "home_team": "DEN", "away_team": "OAK",
+                "week": 2, "spread_line": -3.5, "div_game": 0,
+            },
         ),
         (
             "pbp",
             "nflreadpy_pbp_aliases.csv",
-            {"game_id": "g-2", "pass_attempt": 1, "posteam": "DEN"},
+            {"game_id": "g-2", "pass_attempt": 1, "posteam": "DEN", "defteam": "OAK"},
         ),
         (
             "ngs",
             "nflreadpy_ngs_aliases.csv",
-            {"player_gsis_id": "QB-2", "avg_time_to_throw": 2.75},
+            {
+                "player_gsis_id": "QB-2",
+                "avg_time_to_throw": 2.75,
+                "avg_intended_air_yards": 8.4,
+            },
         ),
     ],
 )
@@ -324,6 +336,9 @@ def test_alias_fixtures_are_transformed_by_normalization(
     fixture = pd.read_csv(Path(__file__).parent / "testdata" / fixture_name)
 
     class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            return fixture
+
         def load_schedules(self, years):
             return fixture
 
@@ -340,6 +355,19 @@ def test_alias_fixtures_are_transformed_by_normalization(
         assert row[column] == value
     assert str(result.data["season"].dtype) == "Int64"
     assert str(result.data["week"].dtype) == "Int64"
+
+
+def test_alias_fixtures_are_hash_verified_by_manifest():
+    fixture_dir = Path(__file__).parent / "testdata"
+    manifest = json.loads(
+        (fixture_dir / "nflreadpy_provider_manifest.json").read_text()
+    )
+    for entry in manifest["alias_fixtures"].values():
+        payload = (fixture_dir / entry["fixture"]).read_bytes()
+        assert hashlib.sha256(payload).hexdigest() == entry["sha256"]
+        assert list(pd.read_csv(fixture_dir / entry["fixture"]).columns) == entry[
+            "columns"
+        ]
 
 
 @pytest.mark.parametrize("provider_kind", ["nflreadpy", "nfl_data_py"])
