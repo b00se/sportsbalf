@@ -168,6 +168,18 @@ def _failure_for_exception(exc: Exception, year: int) -> FailureMetadata:
     )
 
 
+def _retain_requested_seasons(
+    frame: pd.DataFrame, years: Sequence[int]
+) -> pd.DataFrame:
+    """Drop provider rows whose season is outside the requested set."""
+    if "season" not in frame.columns:
+        return frame.copy()
+    seasons = pd.to_numeric(frame["season"], errors="coerce")
+    return frame.loc[seasons.isin({int(year) for year in years})].copy().reset_index(
+        drop=True
+    )
+
+
 def _fetch_with_fallback(
     label: str,
     fetch_fn: Callable[[list[int]], Any],
@@ -179,7 +191,6 @@ def _fetch_with_fallback(
         return LoadResult.empty()
 
     failures: list[FailureMetadata] = []
-
     try:
         frame = _to_pandas(fetch_fn(list(years_list)))
     except Exception:  # pragma: no cover - network exception path
@@ -187,53 +198,48 @@ def _fetch_with_fallback(
         # shared reconciliation contract create the final typed records.
         frame = None
     else:
-        if frame is not None and not frame.empty:
-            result = reconcile_seasons(frame, years_list)
-            if result.skipped_years:
-                warnings.warn(
-                    f"Skipping {label} data for unavailable seasons: "
-                    f"{result.skipped_years}",
-                    RuntimeWarning,
-                    stacklevel=3,
-                )
-            return result
+        frame = _retain_requested_seasons(frame, years_list)
+        available = set()
+        if "season" in frame:
+            available = set(
+                pd.to_numeric(frame["season"], errors="coerce").dropna().astype(int)
+            )
+        if frame is not None and all(year in available for year in years_list):
+            return reconcile_seasons(frame, years_list)
 
     frames: list[pd.DataFrame] = []
-    skipped: list[int] = []
-    for year in years_list:
+    bulk_frame = frame if frame is not None else pd.DataFrame()
+    bulk_available = set()
+    if "season" in bulk_frame:
+        bulk_available = set(
+            pd.to_numeric(bulk_frame["season"], errors="coerce").dropna().astype(int)
+        )
+    retry_years = [year for year in years_list if year not in bulk_available]
+    for year in retry_years:
         try:
             frame = _to_pandas(fetch_fn([int(year)]))
         except HTTPError as exc:  # pragma: no cover - network exception path
-            skipped.append(year)
             failures.append(_failure_for_exception(exc, year))
             continue
         except Exception as exc:  # pragma: no cover - unexpected network error
-            skipped.append(year)
             failures.append(_failure_for_exception(exc, year))
             continue
+        frame = _retain_requested_seasons(frame, [year])
         if frame.empty:
-            skipped.append(year)
             failures.append(
                 FailureMetadata("unavailable", "empty response", "EmptyResponse", year)
             )
             continue
         frames.append(frame)
 
-    if not frames:
-        return reconcile_seasons(pd.DataFrame(), years_list, failures)
-
-    if skipped:
-        warnings.warn(
-            f"Skipping {label} data for unavailable seasons: {sorted(set(skipped))}",
-            RuntimeWarning,
-            stacklevel=3,
-        )
-
-    data = pd.concat(frames, ignore_index=True)
+    frames.insert(0, bulk_frame)
+    frames = [item for item in frames if not item.empty]
+    data = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     result = reconcile_seasons(data, years_list, failures)
     if result.skipped_years:
         warnings.warn(
-            f"Skipping {label} data for unavailable seasons: {result.skipped_years}",
+            f"Skipping {label} data for unavailable seasons: "
+            f"{result.skipped_years}",
             RuntimeWarning,
             stacklevel=3,
         )

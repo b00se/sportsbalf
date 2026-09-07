@@ -223,3 +223,57 @@ def test_legacy_empty_and_partial_responses_reconcile_seasons(monkeypatch):
     result = NflDataPyProvider().load_weekly([2024, 2025])
     assert result.skipped_years == [2025]
     assert [failure.year for failure in result.failures] == [2025]
+
+
+def test_bulk_partial_and_foreign_seasons_retry_only_missing(monkeypatch):
+    calls = []
+
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            calls.append(years)
+            if len(years) > 1:
+                return pd.DataFrame({"season": [2023, 2024], "week": [1, 1]})
+            return pd.DataFrame({"season": years, "week": [2]})
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_weekly([2024, 2025])
+    assert calls == [[2024, 2025], [2025]]
+    assert set(result.data["season"].dropna().astype(int)) == {2024, 2025}
+    assert result.freshness.available_years == (2024, 2025)
+
+
+def test_per_season_foreign_rows_are_unavailable(monkeypatch):
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            if len(years) > 1:
+                raise RuntimeError("bulk unavailable")
+            return pd.DataFrame({"season": [2023], "week": [1]})
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_weekly([2024])
+    assert result.data.empty
+    assert result.skipped_years == [2024]
+    assert result.failures[0].year == 2024
+
+
+def test_partial_fallback_emits_one_warning(monkeypatch):
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            if len(years) > 1:
+                raise RuntimeError("bulk unavailable")
+            if years == [2025]:
+                raise RuntimeError("404 Not Found")
+            return pd.DataFrame({"season": years, "week": [1]})
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    import pytest
+
+    with pytest.warns(RuntimeWarning) as records:
+        NFLReadPyProvider().load_weekly([2024, 2025])
+    assert len(records) == 1
