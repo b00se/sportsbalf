@@ -4,6 +4,7 @@ from datetime import UTC
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from src.nfl.data.providers.base import (
     FailureMetadata,
     FreshnessMetadata,
@@ -239,6 +240,60 @@ def test_advertised_nflreadpy_datasets_have_fixture_contracts():
         assert list(pd.read_csv(fixture_dir / entry["fixture"]).columns) == entry[
             "columns"
         ]
+
+
+@pytest.mark.parametrize(
+    ("dataset", "expected_columns"),
+    [
+        ("player_stats", {"season", "week", "attempts"}),
+        ("schedules", {"season", "week", "game_id", "div_game"}),
+        ("pbp", {"season", "week", "game_id", "pass_attempt"}),
+        ("ngs", {"season", "week", "player_gsis_id", "avg_time_to_throw"}),
+    ],
+)
+def test_each_advertised_fixture_exercises_real_loader_normalization(
+    monkeypatch, dataset, expected_columns
+):
+    import src.nfl.data.providers.readpy as module
+
+    fixture_dir = Path(__file__).parent / "testdata"
+    manifest = json.loads(
+        (fixture_dir / "nflreadpy_provider_manifest.json").read_text()
+    )
+    fixture = pd.read_csv(fixture_dir / manifest["fixtures"][dataset]["fixture"])
+
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            return fixture
+
+        def load_schedules(self, years):
+            return fixture
+
+        def load_pbp(self, years):
+            return fixture
+
+        def load_nextgen_stats(self, years, stat_type="passing"):
+            return fixture
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    loader_name = module.DATASET_LOADERS[dataset]
+    loader = getattr(NFLReadPyProvider(), loader_name)
+    result = loader([2024])
+
+    assert result.freshness.available_years == (2024,)
+    assert expected_columns <= set(result.data.columns)
+
+
+def test_advertised_datasets_map_to_callable_loaders():
+    from src.nfl.data.providers.nfl_data_py_provider import DATASET_LOADERS as legacy
+    from src.nfl.data.providers.readpy import DATASET_LOADERS as modern
+
+    for provider, mapping in (
+        (NFLReadPyProvider(), modern),
+        (NflDataPyProvider(), legacy),
+    ):
+        assert set(mapping) == set(provider.capabilities.datasets)
+        assert all(callable(getattr(provider, name)) for name in mapping.values())
 
 
 def test_legacy_empty_and_partial_responses_reconcile_seasons(monkeypatch):

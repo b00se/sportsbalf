@@ -21,6 +21,12 @@ from .base import (
 # These are the datasets for which this adapter has a concrete loader and
 # normalization contract.  Do not advertise provider surfaces we cannot load.
 SUPPORTED_DATASETS = ("schedules", "player_stats", "pbp", "ngs")
+DATASET_LOADERS = {
+    "schedules": "load_schedules",
+    "player_stats": "load_weekly",
+    "pbp": "load_pbp",
+    "ngs": "load_ngs_passing",
+}
 
 try:  # pragma: no cover - optional dependency
     import nflreadpy as nfl  # type: ignore

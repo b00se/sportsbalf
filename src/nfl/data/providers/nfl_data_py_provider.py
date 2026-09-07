@@ -17,6 +17,11 @@ from .base import (
 )
 
 SUPPORTED_DATASETS = ("schedules", "player_stats", "pbp")
+DATASET_LOADERS = {
+    "schedules": "load_schedules",
+    "player_stats": "load_weekly",
+    "pbp": "load_pbp",
+}
 
 try:  # pragma: no cover - optional dependency
     import nfl_data_py as nfl
