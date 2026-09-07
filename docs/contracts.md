@@ -249,11 +249,14 @@ Phase 1.5 policy:
   changes only row order. It never overwrites the source input.
 - Exposure input has an exact validated 27-column schema. User entries are
   reconstructed by `Draft Entry` with ordered, unique picks; nullable
-  tournament fields remain nullable.
+  tournament fields remain nullable. One export must contain one non-empty
+  pool ID across every reconstructed entry.
 - Snapshot manifests record SHA-256 hashes for source inputs, configuration,
   and outputs plus source timestamps and non-sensitive run metadata. Canonical
   JSON serialization makes identical runs byte-stable. Credentials, cookies,
   secrets, passwords, and tokens are rejected.
+- Manifest artifacts are written with exclusive-create semantics, so a prior
+  manifest, source input, or generated output is never overwritten.
 - Autopilot row-order/cap behavior is a human-operated validation gate, not an
   automated-draft feature. See `docs/plans/planned/nfl-2026/evidence/R1.2-autopilot-proof.md`.
 - NFL contest configurations retain scoring coefficients, roster/draft terms,

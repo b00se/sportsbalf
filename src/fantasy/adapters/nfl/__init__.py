@@ -19,6 +19,12 @@ from src.fantasy.adapters.nfl.exposure import (
     parse_exposure_csv,
     reconstruct_user_entries,
 )
+from src.fantasy.adapters.nfl.provenance import (
+    SnapshotInput,
+    SnapshotManifest,
+    build_snapshot_manifest,
+    write_snapshot_manifest,
+)
 from src.fantasy.adapters.nfl.rankings import (
     RANKINGS_COLUMNS,
     RankingsSchemaError,
@@ -52,4 +58,8 @@ __all__ = [
     "normalize_rankings",
     "parse_rankings_csv",
     "reorder_rankings",
+    "SnapshotInput",
+    "SnapshotManifest",
+    "build_snapshot_manifest",
+    "write_snapshot_manifest",
 ]

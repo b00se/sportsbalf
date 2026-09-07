@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-_SENSITIVE_KEY_TOKENS = frozenset(
+_SENSITIVE_NAME_TOKENS = frozenset(
     {
         "account",
         "api_key",
@@ -20,6 +22,12 @@ _SENSITIVE_KEY_TOKENS = frozenset(
         "password",
         "secret",
         "token",
+        "user",
+        "user_id",
+        "username",
+        "member",
+        "email",
+        "profile",
     }
 )
 _UTC_TIMESTAMP_ERROR = "Snapshot inputs require an ISO-8601 UTC timestamp ending in Z."
@@ -51,6 +59,43 @@ class SnapshotManifest:
         """Serialize the manifest using its canonical byte representation."""
 
         return _canonical_json_bytes(_thaw(self.payload))
+
+
+def write_snapshot_manifest(
+    manifest: SnapshotManifest, destination: str | os.PathLike[str]
+) -> Path:
+    """Write a manifest as an immutable, canonical artifact.
+
+    The destination is created with exclusive-create semantics. This prevents
+    a manifest writer from overwriting a source or previously recorded output,
+    while preserving the exact bytes returned by :meth:`to_json_bytes`.
+
+    Args:
+        manifest: Immutable manifest to serialize.
+        destination: File path for the manifest artifact. Its parent must
+            already exist.
+
+    Returns:
+        The normalized destination path.
+
+    Raises:
+        TypeError: If ``manifest`` is not a :class:`SnapshotManifest`.
+        FileExistsError: If the destination already exists.
+        IsADirectoryError: If the destination is a directory.
+        FileNotFoundError: If the destination parent does not exist.
+    """
+
+    if not isinstance(manifest, SnapshotManifest):
+        raise TypeError("manifest must be a SnapshotManifest.")
+    path = Path(destination)
+    if path.is_dir():
+        raise IsADirectoryError(path)
+    canonical_bytes = manifest.to_json_bytes()
+    # ``xb`` is the important safety property: it never truncates an existing
+    # source/output artifact, including when another process races this write.
+    with path.open("xb") as handle:
+        handle.write(canonical_bytes)
+    return path
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -106,22 +151,31 @@ def _validate_no_sensitive_keys(value: Any, *, path: str = "") -> None:
     for key, nested_value in value.items():
         if not isinstance(key, str):
             raise ValueError(f"Manifest {path or 'payload'} keys must be strings.")
-        normalized = key.lower()
-        if any(token in normalized for token in _SENSITIVE_KEY_TOKENS):
-            raise ValueError(f"Manifest contains sensitive metadata key '{key}'.")
+        _validate_safe_name(key, label="metadata key")
         child_path = f"{path}.{key}" if path else key
         _validate_no_sensitive_keys(nested_value, path=child_path)
+
+
+def _validate_safe_name(value: str, *, label: str) -> None:
+    """Reject empty, non-string, or sensitive artifact/metadata names."""
+
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Manifest {label}s must be non-empty strings.")
+    normalized = value.lower()
+    if any(token in normalized for token in _SENSITIVE_NAME_TOKENS):
+        raise ValueError(f"Manifest contains sensitive {label} '{value}'.")
 
 
 def _artifact_hashes(
     artifacts: Mapping[str, bytes], *, label: str
 ) -> list[dict[str, str]]:
     records: list[dict[str, str]] = []
-    for name, content in sorted(artifacts.items()):
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"{label} artifact names must be non-empty strings.")
+    artifact_items = list(artifacts.items())
+    for name, content in artifact_items:
+        _validate_safe_name(name, label=f"{label.lower()} artifact name")
         if not isinstance(content, bytes):
             raise ValueError(f"{label} artifact '{name}' must contain bytes.")
+    for name, content in sorted(artifact_items, key=lambda item: item[0]):
         records.append({"name": name, "sha256": _sha256(content)})
     return records
 
@@ -151,12 +205,21 @@ def build_snapshot_manifest(
     _validate_no_sensitive_keys(configuration, path="configuration")
     _validate_no_sensitive_keys(run_metadata, path="run_metadata")
     input_records: list[dict[str, str]] = []
-    for source in sorted(inputs, key=lambda item: item.name):
-        if not source.name or not source.source_timestamp_utc:
+    input_names: set[str] = set()
+    input_sources = list(inputs)
+    for source in input_sources:
+        _validate_safe_name(source.name, label="input artifact name")
+        if source.name in input_names:
+            raise ValueError(
+                f"Manifest contains duplicate input artifact name '{source.name}'."
+            )
+        input_names.add(source.name)
+        if not source.source_timestamp_utc:
             raise ValueError(
                 "Snapshot inputs require non-empty names and UTC timestamps."
             )
         _validate_utc_timestamp(source.source_timestamp_utc)
+    for source in sorted(input_sources, key=lambda item: item.name):
         input_records.append(
             {
                 "name": source.name,

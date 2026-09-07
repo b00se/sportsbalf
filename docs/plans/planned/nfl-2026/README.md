@@ -14,6 +14,8 @@ Ship a verified Underdog NFL Daily rankings workflow, then build a pregame 6box 
   full-PPR requires an explicit override, and unknown scoring is rejected.
 - Snapshot manifests canonically hash source inputs, configuration, outputs,
   source timestamps, and non-sensitive run metadata.
+- R1.4/R1.5 closeout evidence, including the local controlled-CSV manifest, is
+  recorded in [R1.4-R1.5-closeout.md](evidence/R1.4-R1.5-closeout.md).
 - The controlled Autopilot proof and the operator's upload/order acceptance
   record are documented in
   [R1.2-autopilot-proof.md](evidence/R1.2-autopilot-proof.md).
