@@ -1,6 +1,7 @@
 """Acceptance tests for snapshot-backed NFL feature construction."""
 
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 
 import pandas as pd
 import pytest
@@ -40,7 +41,8 @@ def _source() -> SnapshotEvidence:
             "provenance": ["fixture:prior", "fixture:future", "fixture:prior"],
         }
     )
-    return SnapshotEvidence(frame, "snap-1", "sha-1", "manifest-1")
+    digest = sha256(frame.to_csv(index=False).encode("utf-8")).hexdigest()
+    return SnapshotEvidence(frame, "snap-1", digest, "manifest-1")
 
 
 def _targets() -> pd.DataFrame:
@@ -72,16 +74,26 @@ def test_future_same_player_perturbation_is_inert() -> None:
     changed.loc[1, "availability"] = "inactive"
     after = build_nfl_feature_store(
         _targets(),
-        {"stats": SnapshotEvidence(changed, "snap-1", "sha-1", "manifest-1")},
+        {
+            "stats": SnapshotEvidence(
+                changed,
+                "snap-1",
+                sha256(changed.to_csv(index=False).encode("utf-8")).hexdigest(),
+                "manifest-1",
+            )
+        },
     )
-    pd.testing.assert_frame_equal(before, after)
+    audit = {"source_snapshot_sha256"}
+    pd.testing.assert_frame_equal(before.drop(columns=audit), after.drop(columns=audit))
 
 
 def test_unscoped_source_requires_explicit_global_safe() -> None:
     source = _source().frame.drop(columns=["game_id"])
+    digest = sha256(source.to_csv(index=False).encode("utf-8")).hexdigest()
     with pytest.raises(FeatureStoreError, match="unscoped"):
         build_nfl_feature_store(
-            _targets(), {"stats": SnapshotEvidence(source, "s", "h", "m")}
+            _targets(),
+            {"stats": SnapshotEvidence(source, "s", digest, "m")},
         )
 
 

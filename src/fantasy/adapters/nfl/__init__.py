@@ -19,11 +19,11 @@ from src.fantasy.adapters.nfl.exposure import (
     parse_exposure_csv,
     reconstruct_user_entries,
 )
-from src.fantasy.adapters.nfl.provenance import (
-    SnapshotInput,
-    SnapshotManifest,
-    build_snapshot_manifest,
-    write_snapshot_manifest,
+from src.fantasy.adapters.nfl.feature_store import (
+    FEATURE_COLUMNS,
+    FeatureStoreError,
+    SnapshotEvidence,
+    build_nfl_feature_store,
 )
 from src.fantasy.adapters.nfl.projection_sources import (
     ProjectionSource,
@@ -33,6 +33,12 @@ from src.fantasy.adapters.nfl.projection_sources import (
     audit_projection_source,
     load_projection_sources,
     run_projection_source_tournament,
+)
+from src.fantasy.adapters.nfl.provenance import (
+    SnapshotInput,
+    SnapshotManifest,
+    build_snapshot_manifest,
+    write_snapshot_manifest,
 )
 from src.fantasy.adapters.nfl.rankings import (
     RANKINGS_COLUMNS,
@@ -54,6 +60,10 @@ __all__ = [
     "ScoringConfig",
     "UnknownScoringError",
     "load_nfl_contest_config",
+    "FEATURE_COLUMNS",
+    "FeatureStoreError",
+    "SnapshotEvidence",
+    "build_nfl_feature_store",
     "EXPOSURE_COLUMNS",
     "ExposureExport",
     "ExposurePick",

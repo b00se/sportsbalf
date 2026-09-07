@@ -6,6 +6,8 @@ tables and the adapter refuses evidence that cannot be dated and audited.
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
@@ -35,6 +37,16 @@ class SnapshotEvidence:
         ):
             raise FeatureStoreError(
                 "snapshot_id, snapshot_sha256, and manifest_ref are required"
+            )
+        if not re.fullmatch(r"[0-9a-f]{64}", self.snapshot_sha256):
+            raise FeatureStoreError(
+                "snapshot_sha256 must be lowercase 64-character hex"
+            )
+        calculated = _hash_frame(self.frame)
+        pinned = str(self.frame.attrs.get("manifest_sha256", ""))
+        if self.snapshot_sha256 not in {calculated, pinned}:
+            raise FeatureStoreError(
+                "snapshot_sha256 does not match source frame or manifest"
             )
 
     @classmethod
@@ -108,6 +120,37 @@ def _hash_frame(frame: pd.DataFrame) -> str:
     return sha256(payload).hexdigest()
 
 
+def _fallback_values(
+    feature: str,
+    target: pd.Series,
+    normalized: list[tuple[str, SnapshotEvidence, pd.DataFrame]],
+    *,
+    cutoff: pd.Timestamp,
+) -> Any:
+    """Return a deterministic prior-season, then global hierarchical value."""
+    prior: list[Any] = []
+    global_prior: list[Any] = []
+    for _, evidence, frame in normalized:
+        eligible = frame.loc[frame["source_timestamp_utc"] <= cutoff]
+        if "game_id" in frame.columns and "game_id" in target.index:
+            eligible = eligible.loc[eligible["game_id"] != target["game_id"]]
+        if feature not in eligible.columns:
+            continue
+        numeric = pd.to_numeric(eligible[feature], errors="coerce").dropna()
+        global_prior.extend(numeric.tolist())
+        if "season" in frame.columns and "season" in target.index:
+            numeric = pd.to_numeric(
+                eligible.loc[eligible["season"] < target["season"], feature],
+                errors="coerce",
+            ).dropna()
+            prior.extend(numeric.tolist())
+    if prior:
+        return float(pd.Series(prior).mean())
+    if global_prior:
+        return float(pd.Series(global_prior).mean())
+    return pd.NA
+
+
 def build_nfl_feature_store(
     targets: pd.DataFrame,
     sources: Mapping[str, SnapshotEvidence | pd.DataFrame],
@@ -129,9 +172,7 @@ def build_nfl_feature_store(
     _canonical(targets, "targets")
     cutoff = _strict_timestamp(targets, "as_of_utc", "targets")
     if not sources and availability is None and projections is None:
-        if require_evidence:
-            raise FeatureStoreError("at least one source snapshot is required")
-        return targets.copy()
+        raise FeatureStoreError("at least one source snapshot is required")
     all_sources: dict[str, SnapshotEvidence] = {
         name: _as_evidence(name, evidence) for name, evidence in sources.items()
     }
@@ -144,8 +185,15 @@ def build_nfl_feature_store(
         frame = evidence.frame.copy()
         _canonical(frame, f"source {name}")
         _strict_timestamp(frame, "source_timestamp_utc", f"source {name}")
-        if "provenance" not in frame.columns or frame["provenance"].isna().any():
+        if (
+            "provenance" not in frame.columns
+            or frame["provenance"].isna().any()
+            or frame["provenance"].astype(str).str.strip().eq("").any()
+        ):
             raise FeatureStoreError(f"source {name} requires nonempty provenance")
+        for scope in ("game_id", "event_id", "slate_id"):
+            if scope in frame.columns and frame[scope].isna().any():
+                raise FeatureStoreError(f"source {name} contains blank {scope}")
         if "game_id" not in frame.columns and not evidence.global_safe:
             raise FeatureStoreError(
                 f"source {name} is unscoped; mark it global_safe explicitly"
@@ -168,6 +216,9 @@ def build_nfl_feature_store(
                 raise FeatureStoreError(f"source {name} lacks safe target scope")
             if candidates.empty:
                 continue
+            candidates = candidates.sort_values(
+                "source_timestamp_utc", kind="mergesort"
+            )
             for _, candidate in candidates.iterrows():
                 eligible.append((name, evidence, candidate))
         if require_evidence and not eligible:
@@ -190,7 +241,10 @@ def build_nfl_feature_store(
                     output[feature] = float(numeric.mean())
                     output[f"{feature}_fallback"] = False
                 else:
-                    output[feature] = pd.NA
+                    prior = _fallback_values(
+                        feature, target, normalized, cutoff=target["as_of_utc"]
+                    )
+                    output[feature] = prior
                     output[f"{feature}_fallback"] = True
             else:
                 output[f"{feature}_missing_rate"] = 1.0 - (
@@ -208,6 +262,11 @@ def build_nfl_feature_store(
         output["source_snapshot_sha256"] = "|".join(item[1] for item in snapshots)
         output["source_manifest_ref"] = "|".join(item[2] for item in snapshots)
         output["source_count"] = len(snapshots)
+        summary = {
+            feature: output[f"{feature}_missing_rate"] for feature in FEATURE_COLUMNS
+        }
+        output["feature_missingness_summary"] = json.dumps(summary, sort_keys=True)
+        output["season"] = target.get("season", pd.NA)
         output["as_of_utc"] = target["as_of_utc"]
         rows.append(output)
     features = pd.DataFrame(rows, index=result.index)
