@@ -93,6 +93,11 @@ def reconcile_seasons(
     """Reconcile requested seasons and emit one typed failure per missing year."""
     requested = tuple(dict.fromkeys(int(year) for year in years))
     normalized = data.copy().drop_duplicates(ignore_index=True)
+    if "season" in normalized:
+        season_values = pd.to_numeric(normalized["season"], errors="coerce")
+        normalized = normalized.loc[
+            season_values.isin(requested)
+        ].reset_index(drop=True)
     available_values: set[int] = set()
     if "season" in normalized:
         values = pd.to_numeric(normalized["season"], errors="coerce").dropna()

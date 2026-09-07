@@ -225,6 +225,35 @@ def test_legacy_empty_and_partial_responses_reconcile_seasons(monkeypatch):
     assert [failure.year for failure in result.failures] == [2025]
 
 
+def test_legacy_foreign_only_response_is_unavailable(monkeypatch):
+    class Stub:
+        def import_weekly_data(self, years):
+            return pd.DataFrame({"season": [2023], "week": [1]})
+
+    import src.nfl.data.providers.nfl_data_py_provider as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NflDataPyProvider().load_weekly([2024])
+    assert result.data.empty
+    assert result.freshness.available_years == ()
+    assert result.skipped_years == [2024]
+    assert [failure.year for failure in result.failures] == [2024]
+
+
+def test_legacy_mixed_response_discards_foreign_rows(monkeypatch):
+    class Stub:
+        def import_weekly_data(self, years):
+            return pd.DataFrame({"season": [2023, 2024], "week": [1, 2]})
+
+    import src.nfl.data.providers.nfl_data_py_provider as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NflDataPyProvider().load_weekly([2024])
+    assert result.data["season"].tolist() == [2024]
+    assert result.freshness.available_years == (2024,)
+    assert result.failures == ()
+
+
 def test_bulk_partial_and_foreign_seasons_retry_only_missing(monkeypatch):
     calls = []
 
