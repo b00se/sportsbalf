@@ -525,3 +525,72 @@ def test_tournament_rejects_malformed_access_domain() -> None:
             (_source(access_url="https://not-a-domain"),),
             as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC),
         )
+
+
+@pytest.mark.parametrize(
+    "access_url",
+    [
+        "https://bad..example.com/x",
+        "https://-bad.example.com/x",
+        "https://bad-.example.com/x",
+        "https://[broken/x",
+    ],
+)
+def test_tournament_rejects_malformed_hosts(access_url: str) -> None:
+    with pytest.raises(SourceAuditError, match="domain"):
+        run_projection_source_tournament(
+            (_source(access_url=access_url),),
+            as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC),
+        )
+
+
+def test_tournament_rejects_non_string_family() -> None:
+    with pytest.raises(SourceAuditError, match="source_family"):
+        run_projection_source_tournament(
+            (_source(source_family=None),),
+            as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC),
+        )
+
+
+def test_tournament_rejects_different_families_on_same_domain() -> None:
+    public = _source(source_family="public", access_url="https://one.example.test/a")
+    consensus = _source(
+        source_id="c",
+        source_family="consensus",
+        baseline_role="consensus_reference",
+        access_url="https://two.example.test/a",
+    )
+    with pytest.raises(SourceAuditError, match="independent"):
+        run_projection_source_tournament(
+            (public, consensus), as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC)
+        )
+
+
+def test_scoring_rejects_each_baseline_path_alias(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    _write_eval(target, [{
+        "player_id": "p", "game_id": "g", "season": "2026", "week": "1",
+        "projection": "1", "actual": "1", "as_of_utc": "2026-08-01T00:00:00Z",
+        "target_cutoff_utc": "2026-08-01T00:00:00Z",
+    }])
+    other = tmp_path / "other.csv"
+    shutil.copyfile(target, other)
+    with pytest.raises(SourceAuditError, match="alias"):
+        score_rolling_origin_snapshot(target, public_path=target, consensus_path=other)
+    with pytest.raises(SourceAuditError, match="alias"):
+        score_rolling_origin_snapshot(target, public_path=other, consensus_path=target)
+
+
+def test_scoring_rejects_public_consensus_path_alias(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    _write_eval(target, [{
+        "player_id": "p", "game_id": "g", "season": "2026", "week": "1",
+        "projection": "1", "actual": "1", "as_of_utc": "2026-08-01T00:00:00Z",
+        "target_cutoff_utc": "2026-08-01T00:00:00Z",
+    }])
+    with pytest.raises(SourceAuditError, match="distinct"):
+        score_rolling_origin_snapshot(
+            target,
+            public_path=target.with_name("p.csv"),
+            consensus_path=target.with_name("p.csv"),
+        )

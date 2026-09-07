@@ -69,6 +69,8 @@ class ProjectionSource:
     def normalized_source_family(self) -> str:
         """Return the declared, canonical source-family token."""
 
+        if not isinstance(self.source_family, str):
+            return ""
         normalized = re.sub(r"[^a-z0-9]+", "", self.source_family.casefold())
         if normalized in {"fantasypros", "dynastyprocess"}:
             return "fantasypros"
@@ -78,13 +80,24 @@ class ProjectionSource:
     def lineage_domain(self) -> str:
         """Return the normalized registrable domain from the access URL."""
 
-        parsed = urlparse(self.access_url)
-        if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password:
+        try:
+            parsed = urlparse(self.access_url)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or parsed.username
+                or parsed.password
+            ):
+                return ""
+            raw_host = parsed.hostname
+        except (AttributeError, TypeError, ValueError):
             return ""
-        host = (parsed.hostname or "").casefold().removeprefix("www.")
-        parts = [part for part in host.split(".") if part]
+        if not raw_host:
+            return ""
+        host = raw_host.casefold().removeprefix("www.")
+        parts = host.split(".")
         if len(parts) < 2 or any(
-            not re.fullmatch(r"[a-z0-9-]+", part) for part in parts
+            not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", part)
+            for part in parts
         ):
             return ""
         suffix = (
