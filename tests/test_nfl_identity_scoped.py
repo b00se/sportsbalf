@@ -67,13 +67,15 @@ def test_ambiguous_material_row_blocks_without_writing(tmp_path, scoped_graph):
 def test_wrong_scope_preserves_existing_destination(tmp_path):
     """A blocked scoped lookup must not overwrite an existing export."""
     graph = build_identity_graph(
-        players=[],
+        players=[
+            {"nflverse_id": "nfl-other", "ud_id": "b", "season": 2026}
+        ],
         teams=[],
         games=[],
         appearances=[
             {
                 "nflverse_id": "nfl-scoped",
-                "ud_id": "scoped-row",
+                "ud_player_id": "scoped-row",
                 "appearance_id": "appearance-1",
                 "slate_id": "slate-1",
                 "season": 2026,
@@ -94,6 +96,31 @@ def test_wrong_scope_preserves_existing_destination(tmp_path):
             table, destination, identity_graph=graph, season=2026
         )
     assert destination.read_bytes() == sentinel
+
+
+def test_scoped_ud_player_resolves_only_with_matching_slate():
+    graph = build_identity_graph(
+        players=[],
+        teams=[],
+        games=[],
+        appearances=[
+            {
+                "nflverse_id": "nfl-scoped",
+                "ud_player_id": "scoped-row",
+                "slate_id": "slate-1",
+                "season": 2026,
+            }
+        ],
+    )
+    resolved = graph.resolve_player(
+        "scoped-row", 2026, source="ud_player_id", slate_id="slate-1"
+    )
+    assert resolved.status is IdentityStatus.RESOLVED
+    assert resolved.nflverse_id == "nfl-scoped"
+    wrong_scope = graph.resolve_player(
+        "scoped-row", 2026, source="ud_player_id", slate_id="slate-2"
+    )
+    assert wrong_scope.status is IdentityStatus.UNRESOLVED
 
 
 def test_appearance_requires_matching_scope(scoped_graph):
