@@ -309,7 +309,8 @@ def test_advertised_datasets_map_to_callable_loaders():
             "nflreadpy_schedules_aliases.csv",
             {
                 "game_id": "g-2", "home_team": "DEN", "away_team": "OAK",
-                "week": 2, "spread_line": -3.5, "div_game": 0,
+                "season": 2024, "week": 2, "gameday": "2024-09-15",
+                "spread_line": -3.5, "div_game": 0,
             },
         ),
         (
