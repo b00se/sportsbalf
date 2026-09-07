@@ -119,6 +119,41 @@ def test_explicit_material_flag_overrides_rank_cutoff(tmp_path: Path) -> None:
     )
 
 
+def test_default_cutoff_blocks_adp_60_but_override_accepts(tmp_path: Path) -> None:
+    flagged = _table(("p1", "60", ""))
+    row = {key: value for key, value in flagged.rows[0].items() if key != "is_material"}
+    table = RankingsTable(RANKINGS_COLUMNS, (row,))
+    graph = _graph("p1")
+    with pytest.raises(RankingsSchemaError, match="no material players"):
+        export_unattended_rankings_csv(
+            table, tmp_path / "blocked.csv", identity_graph=graph, season=2026,
+            availability_decisions={"p1": _decision("p1")}, high_impact_players=(),
+            availability_as_of_utc=AS_OF,
+        )
+    export_unattended_rankings_csv(
+        table, tmp_path / "accepted.csv", identity_graph=graph, season=2026,
+        availability_decisions={"p1": _decision("p1")}, high_impact_players=(),
+        availability_as_of_utc=AS_OF, material_rank_cutoff=60,
+    )
+
+
+def test_valid_timestamp_high_impact_unknown_preserves_destination(
+    tmp_path: Path,
+) -> None:
+    table = _table(("p1", "1", "true"))
+    destination = tmp_path / "existing.csv"
+    destination.write_bytes(b"sentinel")
+    with pytest.raises(RankingsSchemaError, match="unknown"):
+        export_unattended_rankings_csv(
+            table, destination, identity_graph=_graph("p1"), season=2026,
+            availability_decisions={
+                "p1": _decision("p1", status=AvailabilityStatus.UNKNOWN)
+            },
+            high_impact_players=("p1",), availability_as_of_utc=AS_OF,
+        )
+    assert destination.read_bytes() == b"sentinel"
+
+
 @pytest.mark.parametrize(
     "bad_as_of",
     [None, "2026-09-07T12:00:00Z", 123, datetime(2026, 9, 7, 12)],
