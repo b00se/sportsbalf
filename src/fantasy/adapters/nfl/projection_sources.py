@@ -232,9 +232,24 @@ def run_projection_source_tournament(
         if audit.eligible
         and audit.source.baseline_role in {"public_projection", "consensus_reference"}
     ]
-    roles = {audit.source.baseline_role for audit in eligible}
-    publishers = {audit.source.lineage_publisher for audit in eligible}
-    domains = {audit.source.lineage_domain for audit in eligible}
+    ordered = sorted(
+        eligible,
+        key=lambda audit: (
+            -float(audit.source.coverage_score),
+            audit.freshness_hours,
+            audit.source.source_id,
+        ),
+    )
+    selected = {
+        role: next(
+            (audit for audit in ordered if audit.source.baseline_role == role), None
+        )
+        for role in ("public_projection", "consensus_reference")
+    }
+    pair = [audit for audit in selected.values() if audit is not None]
+    roles = {audit.source.baseline_role for audit in pair}
+    publishers = {audit.source.lineage_publisher for audit in pair}
+    domains = {audit.source.lineage_domain for audit in pair}
     if (
         roles != {"public_projection", "consensus_reference"}
         or len(publishers) < 2
@@ -243,14 +258,6 @@ def run_projection_source_tournament(
         raise SourceAuditError(
             "at least two independent eligible baseline roles are required"
         )
-    ranked = sorted(
-        eligible,
-        key=lambda audit: (
-            -float(audit.source.coverage_score),
-            audit.freshness_hours,
-            audit.source.source_id,
-        ),
-    )
     return tuple(
         TournamentEntry(
             rank=index,
@@ -258,7 +265,7 @@ def run_projection_source_tournament(
             audit=audit,
             score=audit.source.coverage_score,
         )
-        for index, audit in enumerate(ranked, start=1)
+        for index, audit in enumerate(ordered, start=1)
     )
 
 
@@ -454,9 +461,14 @@ def score_rolling_origin_snapshot(
         for row in consensus_rows
         if cutoff_utc is None or row["_as_of"] <= cutoff_utc
     }
+    material_input = (
+        (row["_player"] for row in rows)
+        if material_player_ids is None
+        else material_player_ids
+    )
     material = {
         str(player).strip().casefold()
-        for player in (material_player_ids or (row["_player"] for row in rows))
+        for player in material_input
         if str(player).strip()
     }
     covered_ids: set[str] = set()
@@ -481,6 +493,7 @@ def score_rolling_origin_snapshot(
             if previous["_player"] == row["_player"]
             and (previous["_season"], previous["_week"])
             < (row["_season"], row["_week"])
+            and previous["_as_of"] <= row["_target"]
         ]
         if earlier:
             historical.append(abs(sum(earlier) / len(earlier) - actual))
@@ -491,7 +504,7 @@ def score_rolling_origin_snapshot(
     return EvaluationResult(
         len(rows),
         sum(errors) / len(errors),
-        min(len(covered_ids) / max(len(material), 1), 1.0),
+        (len(covered_ids) / len(material)) if material else 0.0,
         sum(historical) / len(historical),
         sum(public) / len(public),
         sum(consensus) / len(consensus),

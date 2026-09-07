@@ -286,8 +286,8 @@ def test_scoring_normalizes_ids_and_clamps_unique_coverage(tmp_path) -> None:
             "week": "1",
             "projection": proj,
             "actual": "1",
-            "as_of_utc": "2026-08-01T00:00:00Z",
-            "target_cutoff_utc": "2026-08-01T00:00:00Z",
+            "as_of_utc": "2026-08-03T00:00:00Z",
+            "target_cutoff_utc": "2026-08-03T00:00:00Z",
         }
         for p, proj in [(" p1 ", "1"), ("P1", "nan"), ("", "2"), ("P2", "inf")]
     ]
@@ -306,8 +306,8 @@ def test_scoring_rejects_future_baseline_and_malformed_fields(tmp_path) -> None:
             "week": "1",
             "projection": "1",
             "actual": "1",
-            "as_of_utc": "2026-08-01T00:00:00Z",
-            "target_cutoff_utc": "2026-08-01T00:00:00Z",
+            "as_of_utc": "2026-08-03T00:00:00Z",
+            "target_cutoff_utc": "2026-08-03T00:00:00Z",
         }
     ]
     _write_eval(target, rows)
@@ -327,3 +327,82 @@ def test_tournament_checks_publisher_and_domain_independently() -> None:
         run_projection_source_tournament(
             (public, consensus), as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC)
         )
+
+
+def test_tournament_does_not_use_unrelated_source_to_prove_pair_independence() -> None:
+    public = _source(publisher="Same", access_url="https://one.example.test/a")
+    consensus = _source(
+        source_id="c",
+        baseline_role="consensus_reference",
+        publisher="Same",
+        access_url="https://two.example.test/a",
+    )
+    unrelated = _source(
+        source_id="u",
+        baseline_role="public_projection",
+        publisher="Different",
+        access_url="https://third.other.test/a",
+    )
+    with pytest.raises(SourceAuditError, match="independent"):
+        run_projection_source_tournament(
+            (public, consensus, unrelated),
+            as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC),
+        )
+
+
+def test_empty_material_ids_have_stable_zero_coverage(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    rows = [
+        {
+            "player_id": "p",
+            "game_id": "g",
+            "season": "2026",
+            "week": str(week),
+            "projection": "1",
+            "actual": "1",
+            "as_of_utc": f"2026-08-{week:02d}T00:00:00Z",
+            "target_cutoff_utc": f"2026-08-{week:02d}T00:00:00Z",
+        }
+        for week in (1, 2)
+    ]
+    _write_eval(target, rows)
+    assert score_rolling_origin_snapshot(target, material_player_ids=[]).coverage == 0.0
+
+
+def test_historical_mean_excludes_prior_as_of_after_target_cutoff(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    rows = [
+        {
+            "player_id": "p",
+            "game_id": "g",
+            "season": "2026",
+            "week": "1",
+            "projection": "1",
+            "actual": "10",
+            "as_of_utc": "2026-08-09T00:00:00Z",
+            "target_cutoff_utc": "2026-08-09T00:00:00Z",
+        },
+        {
+            "player_id": "p",
+            "game_id": "g",
+            "season": "2026",
+            "week": "2",
+            "projection": "1",
+            "actual": "4",
+            "as_of_utc": "2026-08-08T00:00:00Z",
+            "target_cutoff_utc": "2026-08-08T00:00:00Z",
+        },
+        {
+            "player_id": "p",
+            "game_id": "g",
+            "season": "2026",
+            "week": "3",
+            "projection": "1",
+            "actual": "6",
+            "as_of_utc": "2026-08-10T00:00:00Z",
+            "target_cutoff_utc": "2026-08-10T00:00:00Z",
+        },
+    ]
+    _write_eval(target, rows)
+    result = score_rolling_origin_snapshot(target)
+    assert result.historical_mean_mae == 1.0
