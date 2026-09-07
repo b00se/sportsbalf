@@ -64,11 +64,27 @@ def test_ambiguous_material_row_blocks_without_writing(tmp_path, scoped_graph):
     assert not destination.exists()
 
 
+def test_scoped_target_is_only_unresolved_material_row(scoped_graph):
+    """The acceptance fixture proves non-target ``a`` resolves independently."""
+    report = scoped_graph.check_material_players(
+        [
+            {"id": "a", "slate_id": "slate-1"},
+            {"id": "scoped-row", "slate_id": "slate-2"},
+        ],
+        2026,
+    )
+    assert report.total == 2
+    assert report.resolved == 1
+    assert report.unresolved == ("scoped-row",)
+    assert report.ambiguous == ()
+
+
 def test_wrong_scope_preserves_existing_destination(tmp_path):
     """A blocked scoped lookup must not overwrite an existing export."""
     graph = build_identity_graph(
         players=[
-            {"nflverse_id": "nfl-other", "ud_id": "b", "season": 2026}
+            {"nflverse_id": "nfl-other", "ud_id": "b", "season": 2026},
+            {"nflverse_id": "nfl-a", "ud_id": "a", "season": 2026},
         ],
         teams=[],
         games=[],
@@ -83,10 +99,10 @@ def test_wrong_scope_preserves_existing_destination(tmp_path):
         ],
     )
     table = parse_rankings_csv(Path("tests/testdata/fantasy/nfl/rankings.csv"))
-    # The fixture's first row is deliberately replaced with the scoped ID;
-    # export rows carry no slate, so validation must fail closed.
+    # The fixture's first row is deliberately replaced with the scoped ID and
+    # given a wrong slate; validation must fail closed at the real boundary.
     rows = list(table.rows)
-    rows[0] = {**rows[0], "id": "scoped-row"}
+    rows[0] = {**rows[0], "id": "scoped-row", "slate_id": "slate-2"}
     table = RankingsTable(table.columns, tuple(rows), table.source_path)
     destination = tmp_path / "existing.csv"
     sentinel = b"do-not-overwrite\n"
