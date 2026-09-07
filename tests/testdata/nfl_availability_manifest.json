@@ -1,0 +1,5 @@
+{
+  "fixture": "nfl_availability_fixture.json",
+  "sha256": "004658f6efb4af57f56e4c73d5c347161d4962ebc434c79b01f0229742e17720",
+  "schema": ["nflverse_id", "source", "status", "confidence", "observed_at_utc", "provenance", "season", "game_id", "slate_id"]
+}

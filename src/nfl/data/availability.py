@@ -7,9 +7,13 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.nfl.data.identity import IdentityGraph
 
 
 class AvailabilityStatus(StrEnum):
@@ -45,15 +49,18 @@ class AvailabilityRecord:
             raise ValueError(
                 "availability identity, source, and provenance are required"
             )
+        if self.source not in ALLOWED_SOURCES:
+            raise ValueError(f"unknown availability source: {self.source!r}")
         if not 0 <= self.confidence <= 1:
             raise ValueError("confidence must be between 0 and 1")
         if self.observed_at_utc.tzinfo is None:
             raise ValueError("observed_at_utc must be timezone-aware")
+        if self.fresh_until_utc is not None and self.fresh_until_utc.tzinfo is None:
+            raise ValueError("fresh_until_utc must be timezone-aware")
 
-    @property
-    def is_fresh(self) -> bool:
+    def is_fresh(self, as_of_utc: datetime) -> bool:
         """Return whether the observation is within its declared freshness window."""
-        return self.fresh_until_utc is None or datetime.now(UTC) <= self.fresh_until_utc
+        return self.fresh_until_utc is None or as_of_utc <= self.fresh_until_utc
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +81,7 @@ SOURCE_WEIGHTS: Mapping[str, float] = {
     "espn": 0.8,
     "roster_depth": 0.7,
 }
+ALLOWED_SOURCES = frozenset(SOURCE_WEIGHTS)
 
 
 def load_fixture(path: str | Path) -> list[AvailabilityRecord]:
@@ -116,15 +124,63 @@ def fixture_sha256(path: str | Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def record_from_source(
+    source: str,
+    source_id: str,
+    identity_graph: IdentityGraph,
+    *,
+    status: AvailabilityStatus,
+    confidence: float,
+    observed_at_utc: datetime,
+    provenance: str,
+    season: int,
+    game_id: str | None = None,
+    slate_id: str | None = None,
+    fresh_until_utc: datetime | None = None,
+) -> AvailabilityRecord:
+    """Canonicalize a source ID through the accepted identity graph."""
+    source_key = "ud_player_id" if source == "ud" else f"{source}_id"
+    outcome = identity_graph.resolve_player(
+        source_id,
+        season,
+        source=source_key,
+        game_id=game_id,
+        slate_id=slate_id,
+    )
+    if outcome.status.value != "resolved" or not outcome.nflverse_id:
+        raise AvailabilityGateError(
+            f"availability identity unresolved for {source}:{source_id}"
+        )
+    return AvailabilityRecord(
+        outcome.nflverse_id,
+        source,
+        status,
+        confidence,
+        observed_at_utc,
+        provenance,
+        season,
+        game_id,
+        slate_id,
+        fresh_until_utc,
+    )
+
+
 def reconcile_availability(
-    records: Iterable[AvailabilityRecord], *, max_age_hours: float = 36
+    records: Iterable[AvailabilityRecord],
+    *,
+    season: int,
+    as_of_utc: datetime,
+    max_age_hours: float = 36,
 ) -> dict[str, AvailabilityDecision]:
     """Tournament observations by weighted, confidence-adjusted vote."""
-    now = datetime.now(UTC)
+    if as_of_utc.tzinfo is None:
+        raise ValueError("as_of_utc must be timezone-aware")
     grouped: dict[str, list[AvailabilityRecord]] = {}
     for record in records:
-        age = (now - record.observed_at_utc).total_seconds() / 3600
-        if age > max_age_hours or age < -1 / 60 or not record.is_fresh:
+        if record.season != season:
+            continue
+        age = (as_of_utc - record.observed_at_utc).total_seconds() / 3600
+        if age > max_age_hours or age < -1 / 60 or not record.is_fresh(as_of_utc):
             continue
         grouped.setdefault(record.nflverse_id, []).append(record)
     decisions: dict[str, AvailabilityDecision] = {}
