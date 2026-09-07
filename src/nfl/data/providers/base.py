@@ -22,6 +22,18 @@ class ProviderCapabilities:
     datasets: tuple[str, ...]
     supports_current_season: bool
     source_license: str
+    audit: tuple[CapabilityRecord, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityRecord:
+    """Capability and fallback facts for one provider dataset."""
+
+    dataset: str
+    seasons: str
+    cadence: str
+    license: str
+    fallback: str | None
 
 
 @dataclass(frozen=True, slots=True)

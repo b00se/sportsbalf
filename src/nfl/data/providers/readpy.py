@@ -11,6 +11,7 @@ from urllib.error import HTTPError
 import pandas as pd
 
 from .base import (
+    CapabilityRecord,
     FailureMetadata,
     FreshnessMetadata,
     LoadResult,
@@ -236,8 +237,16 @@ def _fetch_with_fallback(
         frames.append(frame)
 
     if not frames:
-        raise ValueError(
-            f"No {label} data available for seasons {sorted(set(years_list))}"
+        failures = [
+            FailureMetadata(f.kind, f.message, f.exception_type, f.year or year)
+            for f, year in zip(failures, years_list)
+        ]
+        freshness = FreshnessMetadata(tuple(years_list), (), datetime.now(UTC), "empty")
+        return LoadResult(
+            pd.DataFrame(),
+            sorted(set(years_list)),
+            freshness,
+            tuple(failures),
         )
 
     if skipped:
@@ -310,6 +319,25 @@ class NFLReadPyProvider(NFLDataProvider):
             datasets=("weekly", "schedule", "pbp", "ngs_passing"),
             supports_current_season=True,
             source_license="nflverse data license",
+            audit=tuple(
+                CapabilityRecord(
+                    dataset,
+                    "1999-present",
+                    "weekly or per-season",
+                    "nflverse data license",
+                    "skip unavailable season",
+                )
+                for dataset in (
+                    "schedules",
+                    "player_stats",
+                    "pbp",
+                    "rosters",
+                    "depth_charts",
+                    "ngs",
+                    "participation",
+                    "betting_lines",
+                )
+            ),
         )
 
     def load_weekly(self, years: Sequence[int]) -> LoadResult:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .base import (
     DEFAULT_PROVIDER_NAME,
+    CapabilityRecord,
     FailureMetadata,
     FreshnessMetadata,
     LoadResult,
@@ -17,6 +18,7 @@ from .readpy import NFLReadPyProvider
 
 __all__ = [
     "DEFAULT_PROVIDER_NAME",
+    "CapabilityRecord",
     "FailureMetadata",
     "FreshnessMetadata",
     "LoadResult",
