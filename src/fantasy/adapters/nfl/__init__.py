@@ -1,5 +1,15 @@
 """NFL fantasy provider contracts."""
 
+from src.fantasy.adapters.nfl.contest import (
+    ContestProvenance,
+    FieldConfig,
+    NflContestConfig,
+    Payout,
+    PayoutConfig,
+    ScoringConfig,
+    UnknownScoringError,
+    load_nfl_contest_config,
+)
 from src.fantasy.adapters.nfl.exposure import (
     EXPOSURE_COLUMNS,
     ExposureExport,
@@ -20,6 +30,14 @@ from src.fantasy.adapters.nfl.rankings import (
 )
 
 __all__ = [
+    "ContestProvenance",
+    "FieldConfig",
+    "NflContestConfig",
+    "Payout",
+    "PayoutConfig",
+    "ScoringConfig",
+    "UnknownScoringError",
+    "load_nfl_contest_config",
     "EXPOSURE_COLUMNS",
     "ExposureExport",
     "ExposurePick",

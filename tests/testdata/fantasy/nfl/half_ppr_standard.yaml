@@ -11,8 +11,10 @@ draft:
   entrants: 4
   rounds: 6
 field:
-  size: 500
+  field_size: 500
   entry_fee: 10
+  prize_pool: 5000
+  rake: 0.00
 position_caps:
   qb: 2
   rb: 4

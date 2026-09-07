@@ -1,0 +1,57 @@
+contest_id: ud-week-2-royale-2025-09-14
+provenance:
+  label: UD Week 2 Royale
+  reference_date: 2025-09-14
+  contest_type: NFL Battle Royale, Admin
+  slate: NFL Sun Main Slate
+  source_live_field_size: 486
+  final_field_size: 492
+  source: user-provided Admin Royale reference fixture
+scoring:
+  ruleset: half_ppr
+  reception: 0.5
+  receiving_touchdown: 6.0
+  receiving_yard: 0.1
+  rushing_touchdown: 6.0
+  rushing_yard: 0.1
+  passing_yard: 0.04
+  passing_touchdown: 4.0
+  interception: -1.0
+  two_point_conversion: 2.0
+  fumble_lost: -2.0
+roster:
+  qb: 1
+  rb: 1
+  wr: 2
+  flex: 1
+  te: 1
+draft:
+  entrants: 6
+  rounds: 6
+field:
+  field_size: 492
+  entry_fee: 3.00
+  prize_pool: 1476.00
+  rake: 0.00
+  max_entries: 15
+position_caps:
+  qb: 2
+  rb: 4
+  wr: 6
+  te: 3
+payouts:
+  - {rank: 1, amount: 100.00}
+  - {rank: 2, amount: 75.00}
+  - {rank: 3, amount: 61.00}
+  - {rank: 4, amount: 45.00}
+  - {rank: 5, amount: 40.00}
+  - {rank: 6, amount: 35.00}
+  - {rank_start: 7, rank_end: 10, amount: 30.00}
+  - {rank_start: 11, rank_end: 15, amount: 25.00}
+  - {rank_start: 16, rank_end: 20, amount: 20.00}
+  - {rank_start: 21, rank_end: 25, amount: 18.00}
+  - {rank_start: 26, rank_end: 30, amount: 15.00}
+  - {rank_start: 31, rank_end: 35, amount: 10.00}
+  - {rank_start: 36, rank_end: 45, amount: 8.00}
+  - {rank_start: 46, rank_end: 125, amount: 6.00}
+objective: expected_net_payout
