@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 import numpy as np
 import pandas as pd
+from pandas import Series
 
 
 class CountSampler(Protocol):
@@ -105,9 +106,10 @@ def apply_simulations(
         if std_dev not in lines.columns:
             raise KeyError(f"Missing std-dev column '{std_dev}' in simulation frame.")
         std_values = pd.to_numeric(lines[std_dev], errors="coerce").to_numpy()
-    elif isinstance(std_dev, pd.Series):
+    elif isinstance(std_dev, Series):
+        series_value = cast(pd.Series, std_dev)
         std_values = pd.to_numeric(
-            std_dev.reindex(lines.index), errors="coerce"
+            series_value.reindex(lines.index), errors="coerce"
         ).to_numpy()
     else:
         std_values = np.full(len(lines), float(std_dev), dtype=float)

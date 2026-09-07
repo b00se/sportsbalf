@@ -30,18 +30,23 @@ class NFLDataProvider(Protocol):
     @property
     def name(self) -> str:
         """Return the provider identifier."""
+        ...
 
     def load_weekly(self, years: Sequence[int]) -> LoadResult:
         """Return weekly player statistics for the requested seasons."""
+        ...
 
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
         """Return season schedules for the requested seasons."""
+        ...
 
     def load_pbp(self, years: Sequence[int]) -> LoadResult:
         """Return play-by-play data for the requested seasons."""
+        ...
 
     def load_ngs_passing(self, years: Sequence[int]) -> LoadResult:
         """Return Next Gen Stats passing data for the requested seasons."""
+        ...
 
 
 def get_provider(name: str | ProviderName | None = None) -> NFLDataProvider:

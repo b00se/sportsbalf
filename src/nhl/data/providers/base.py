@@ -26,9 +26,11 @@ class NhlDataProvider(Protocol):
     @property
     def name(self) -> str:
         """Return provider identifier."""
+        ...
 
     def load_skater_games(self, seasons: Sequence[int]) -> LoadResult:
         """Return curated skater game rows for requested seasons."""
+        ...
 
 
 def get_provider(

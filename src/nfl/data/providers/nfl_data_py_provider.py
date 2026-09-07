@@ -37,7 +37,10 @@ def _to_frame(value: Any) -> pd.DataFrame:
 class NflDataPyProvider(NFLDataProvider):
     """Implementation that delegates to nfl_data_py."""
 
-    name = "nfl_data_py"
+    @property
+    def name(self) -> str:
+        """Return the provider identifier."""
+        return "nfl_data_py"
 
     def load_weekly(self, years: Sequence[int]) -> LoadResult:
         module = _require_module()

@@ -59,7 +59,7 @@ class QBResidualBootstrapper:
 
     def can_bootstrap(
         self,
-        entity_id: Optional[str] = None,
+        entity_id: float | str | None = None,
     ) -> bool:
         if entity_id is None:
             return False
@@ -76,29 +76,28 @@ class QBResidualBootstrapper:
     def sample_counts(
         self,
         mean: float,
-        entity_id: Optional[str] = None,
+        entity_id: float | str | None = None,
         simulations: int = 0,
         rng: np.random.Generator | None = None,
     ) -> np.ndarray:
-        residual_pool = self._pool(entity_id)
+        residual_pool = self._pool(None if entity_id is None else str(entity_id))
         if residual_pool.size == 0 and self.global_residuals.size:
             residual_pool = self.global_residuals
 
-        if rng is None:
-            rng = np.random.default_rng()
+        generator = rng if rng is not None else np.random.default_rng()
         draws = np.empty(simulations, dtype=float)
         if self.global_residuals.size and self.mix_global_prob > 0:
-            mix_mask = rng.random(simulations) < self.mix_global_prob
+            mix_mask = generator.random(simulations) < self.mix_global_prob
         else:
             mix_mask = np.zeros(simulations, dtype=bool)
 
         if mix_mask.any():
-            draws[mix_mask] = rng.choice(self.global_residuals, size=mix_mask.sum(), replace=True)
+            draws[mix_mask] = generator.choice(self.global_residuals, size=mix_mask.sum(), replace=True)
         if (~mix_mask).any():
-            draws[~mix_mask] = rng.choice(residual_pool, size=(~mix_mask).sum(), replace=True)
+            draws[~mix_mask] = generator.choice(residual_pool, size=(~mix_mask).sum(), replace=True)
 
         if self.min_sigma and self.min_sigma > 0:
-            draws += rng.normal(0.0, self.min_sigma, size=simulations)
+            draws += generator.normal(0.0, self.min_sigma, size=simulations)
 
         samples = mean + draws
         samples = np.clip(np.rint(samples), 0.0, None)

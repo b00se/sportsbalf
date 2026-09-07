@@ -564,7 +564,7 @@ def build_qb_attempts_dataset(
     schedule = load_schedule(years_list, provider=resolved_provider)
 
     loader = ud_loader or import_ud_pass_attempt_lines
-    ud_lines = loader(years=years_list)
+    ud_lines = loader(years_list)
 
     if pbp_loader is None:
         pbp = load_pbp_data(years_list, provider=resolved_provider)

@@ -30,9 +30,11 @@ class BucketStrategy(Protocol):
 
     def assign(self, frame: pd.DataFrame) -> pd.Series:
         """Return bucket labels for each row in ``frame``."""
+        ...
 
     def metadata(self) -> dict[str, Any]:
         """Return serializable strategy metadata."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)

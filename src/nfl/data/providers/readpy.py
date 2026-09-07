@@ -239,7 +239,10 @@ def _normalize_ngs(frame: pd.DataFrame) -> pd.DataFrame:
 class NFLReadPyProvider(NFLDataProvider):
     """Implementation that delegates to nflreadpy."""
 
-    name = "nflreadpy"
+    @property
+    def name(self) -> str:
+        """Return the provider identifier."""
+        return "nflreadpy"
 
     def load_weekly(self, years: Sequence[int]) -> LoadResult:
         module = _require_nflreadpy()

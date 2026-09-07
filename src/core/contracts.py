@@ -47,6 +47,7 @@ class SportStatPipeline(Protocol):
 
     def load_inputs(self, config: PipelineConfig) -> PipelineInputs:
         """Load raw inputs from disk/providers for the requested sport/stat."""
+        ...
 
     def build_training_frame(
         self,
@@ -54,6 +55,7 @@ class SportStatPipeline(Protocol):
         config: PipelineConfig,
     ) -> pd.DataFrame:
         """Assemble model-ready training data from inputs."""
+        ...
 
     def train_or_load_model(
         self,
@@ -62,6 +64,7 @@ class SportStatPipeline(Protocol):
         retrain: bool,
     ) -> ModelBundle:
         """Train or load model artifacts needed for inference."""
+        ...
 
     def predict_lines(
         self,
@@ -70,6 +73,7 @@ class SportStatPipeline(Protocol):
         config: PipelineConfig,
     ) -> pd.DataFrame:
         """Produce stat-line predictions before Monte Carlo simulation."""
+        ...
 
     def simulate(
         self,
@@ -78,3 +82,4 @@ class SportStatPipeline(Protocol):
         config: PipelineConfig,
     ) -> pd.DataFrame:
         """Apply sport-specific simulation and return final outputs."""
+        ...
