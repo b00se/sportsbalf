@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 
@@ -29,7 +30,8 @@ def test_unattended_export_blocks_availability_before_writing(tmp_path: Path) ->
     destination = tmp_path / "rankings.csv"
     destination.write_bytes(b"sentinel")
     decisions = {"p1": AvailabilityDecision(
-        "p1", AvailabilityStatus.UNKNOWN, 0.2, ("ud",), ("missing",), False
+        "p1", AvailabilityStatus.UNKNOWN, 0.2, ("ud",), ("missing",), False,
+        2026, datetime(2026, 9, 7, tzinfo=UTC),
     )}
     with pytest.raises(RankingsSchemaError, match="availability"):
         export_unattended_rankings_csv(

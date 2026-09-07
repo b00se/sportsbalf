@@ -73,6 +73,8 @@ class AvailabilityDecision:
     sources: tuple[str, ...]
     warnings: tuple[str, ...]
     conflict: bool
+    season: int | None = None
+    as_of_utc: datetime | None = None
 
 
 SOURCE_WEIGHTS: Mapping[str, float] = {
@@ -202,6 +204,8 @@ def reconcile_availability(
             tuple(sorted({o.source for o in observations})),
             warnings,
             conflict,
+            season,
+            as_of_utc,
         )
     return decisions
 

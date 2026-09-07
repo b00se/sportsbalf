@@ -6,12 +6,14 @@ import csv
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from typing import IO
 
 from src.nfl.data.availability import (
     AvailabilityDecision,
+    AvailabilityStatus,
     check_unattended_availability,
 )
 from src.nfl.data.identity import IdentityGraph
@@ -198,23 +200,56 @@ def export_unattended_rankings_csv(
     identity_graph: IdentityGraph,
     season: int,
     availability_decisions: dict[str, AvailabilityDecision] | None = None,
-    availability_player_ids: Sequence[str] = (),
-    high_impact_players: Sequence[str] = (),
+    availability_player_ids: Sequence[str] | None = None,
+    high_impact_players: Sequence[str] | None = None,
+    availability_as_of_utc: datetime | None = None,
 ) -> str:
     """Export only after the mandatory material-player identity gate.
 
     This is the single entry point for unattended output; validation happens
     before opening the destination, so a blocked export cannot create a file.
     """
-    if availability_decisions is not None:
-        try:
-            check_unattended_availability(
-                availability_player_ids,
-                availability_decisions,
-                high_impact=high_impact_players,
-            )
-        except ValueError as exc:
-            raise RankingsSchemaError(f"availability gate: {exc}") from exc
+    if (
+        availability_decisions is None
+        or availability_player_ids is None
+        or high_impact_players is None
+    ):
+        raise RankingsSchemaError(
+            "unattended export blocked: availability gate requires decisions "
+            "and high-impact players"
+        )
+    if set(availability_player_ids) != set(availability_decisions):
+        raise RankingsSchemaError(
+            "availability gate: player IDs do not match decisions"
+        )
+    if not set(high_impact_players).issubset(set(availability_player_ids)):
+        raise RankingsSchemaError(
+            "availability gate: incomplete high-impact player set"
+        )
+    for key, decision in availability_decisions.items():
+        if not isinstance(decision, AvailabilityDecision):
+            raise RankingsSchemaError("availability gate: invalid decision type")
+        if not isinstance(decision.status, AvailabilityStatus):
+            raise RankingsSchemaError("availability gate: invalid decision status")
+        if key != decision.nflverse_id:
+            raise RankingsSchemaError("availability gate: decision key mismatch")
+        if decision.season != season:
+            raise RankingsSchemaError("availability gate: season mismatch")
+        if decision.as_of_utc is None:
+            raise RankingsSchemaError("availability gate: as_of is required")
+        if (
+            availability_as_of_utc is not None
+            and decision.as_of_utc != availability_as_of_utc
+        ):
+            raise RankingsSchemaError("availability gate: as_of mismatch")
+    try:
+        check_unattended_availability(
+            availability_player_ids,
+            availability_decisions,
+            high_impact=high_impact_players,
+        )
+    except ValueError as exc:
+        raise RankingsSchemaError(f"availability gate: {exc}") from exc
     return export_rankings_csv(
         table,
         destination,
