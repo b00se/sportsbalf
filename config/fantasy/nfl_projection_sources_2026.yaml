@@ -1,0 +1,17 @@
+# R2.4 source declarations are metadata only; ingestion remains offline and
+# requires an archived snapshot plus its SHA-256 digest.
+projection_sources:
+  - source_id: fixture-consensus
+    publisher: Example Research
+    access_url: https://example.test/consensus.csv
+    license_name: CC BY 4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    cost_usd: 0
+    commercial_use: true
+    redistribution_allowed: true
+    snapshot_format: csv
+    version: 2026.09.01
+    retrieval_method: manual_download
+    max_age_hours: 168
+    required_metadata: [source_timestamp_utc, content_sha256]
+    tournament_metric: coverage_score

@@ -25,6 +25,14 @@ from src.fantasy.adapters.nfl.provenance import (
     build_snapshot_manifest,
     write_snapshot_manifest,
 )
+from src.fantasy.adapters.nfl.projection_sources import (
+    ProjectionSource,
+    SourceAuditError,
+    SourceAuditResult,
+    TournamentEntry,
+    audit_projection_source,
+    run_projection_source_tournament,
+)
 from src.fantasy.adapters.nfl.rankings import (
     RANKINGS_COLUMNS,
     RankingsSchemaError,
@@ -62,4 +70,10 @@ __all__ = [
     "SnapshotManifest",
     "build_snapshot_manifest",
     "write_snapshot_manifest",
+    "ProjectionSource",
+    "SourceAuditError",
+    "SourceAuditResult",
+    "TournamentEntry",
+    "audit_projection_source",
+    "run_projection_source_tournament",
 ]
