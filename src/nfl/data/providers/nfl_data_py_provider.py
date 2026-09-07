@@ -10,6 +10,7 @@ import pandas as pd
 
 from .base import (
     CapabilityRecord,
+    FailureMetadata,
     FreshnessMetadata,
     LoadResult,
     NFLDataProvider,
@@ -59,6 +60,34 @@ def _result(frame: pd.DataFrame, years: Sequence[int]) -> LoadResult:
     return LoadResult(frame, [], freshness)
 
 
+def _safe_load(loader: Any, years: Sequence[int]) -> LoadResult:
+    """Run a legacy loader and convert failures to the shared result contract."""
+    requested = [int(year) for year in years]
+    try:
+        return _result(_to_frame(loader(requested)), requested)
+    except Exception as exc:
+        freshness = FreshnessMetadata(tuple(requested), (), datetime.now(UTC), "empty")
+        failures = tuple(
+            FailureMetadata("error", str(exc), type(exc).__name__, year)
+            for year in requested
+        )
+        return LoadResult(pd.DataFrame(), requested, freshness, failures)
+
+
+def _error_result(exc: Exception, years: Sequence[int]) -> LoadResult:
+    """Return a typed result when the legacy module itself is unavailable."""
+    requested = [int(year) for year in years]
+    return LoadResult(
+        pd.DataFrame(),
+        requested,
+        FreshnessMetadata(tuple(requested), (), datetime.now(UTC), "empty"),
+        tuple(
+            FailureMetadata("error", str(exc), type(exc).__name__, year)
+            for year in requested
+        ),
+    )
+
+
 class NflDataPyProvider(NFLDataProvider):
     """Implementation that delegates to nfl_data_py."""
 
@@ -97,29 +126,53 @@ class NflDataPyProvider(NFLDataProvider):
         )
 
     def load_weekly(self, years: Sequence[int]) -> LoadResult:
-        module = _require_module()
-        frame = _to_frame(module.import_weekly_data(list(years)))
-        return _result(frame, years)
+        try:
+            module = _require_module()
+        except Exception as exc:
+            return _error_result(exc, years)
+        return _safe_load(module.import_weekly_data, years)
 
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
-        module = _require_module()
-        frame = _to_frame(module.import_schedules(list(years)))
-        return _result(frame, years)
+        try:
+            module = _require_module()
+        except Exception as exc:
+            return _error_result(exc, years)
+        return _safe_load(module.import_schedules, years)
 
     def load_pbp(self, years: Sequence[int]) -> LoadResult:
-        module = _require_module()
-        frame = _to_frame(module.import_pbp_data(list(years), downcast=True))
-        return _result(frame, years)
+        try:
+            module = _require_module()
+        except Exception as exc:
+            return _error_result(exc, years)
+        return _safe_load(
+            lambda values: module.import_pbp_data(values, downcast=True), years
+        )
 
     def load_ngs_passing(self, years: Sequence[int]) -> LoadResult:
-        module = _require_module()
+        try:
+            module = _require_module()
+        except Exception as exc:
+            return _error_result(exc, years)
 
         # nfl_data_py naming has changed across versions.
         if hasattr(module, "import_ngs_data"):
-            frame = _to_frame(module.import_ngs_data("passing", years=list(years)))
-            return _result(frame, years)
+            return _safe_load(
+                lambda values: module.import_ngs_data("passing", years=values), years
+            )
         if hasattr(module, "import_ngs_passing"):
-            frame = _to_frame(module.import_ngs_passing(years=list(years)))
-            return _result(frame, years)
+            return _safe_load(
+                lambda values: module.import_ngs_passing(years=values), years
+            )
 
-        return LoadResult.empty()
+        requested = [int(year) for year in years]
+        return LoadResult(
+            pd.DataFrame(),
+            requested,
+            FreshnessMetadata(tuple(requested), (), datetime.now(UTC), "empty"),
+            tuple(
+                FailureMetadata(
+                    "error", "unsupported NGS capability", "UnsupportedCapability", year
+                )
+                for year in requested
+            ),
+        )

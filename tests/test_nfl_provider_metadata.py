@@ -26,7 +26,7 @@ def test_nflreadpy_declares_capabilities_and_typed_freshness(monkeypatch):
     result = NFLReadPyProvider().load_weekly([2024])
 
     assert isinstance(NFLReadPyProvider().capabilities, ProviderCapabilities)
-    assert "weekly" in NFLReadPyProvider().capabilities.datasets
+    assert "player_stats" in NFLReadPyProvider().capabilities.datasets
     assert isinstance(result.freshness, FreshnessMetadata)
     assert result.freshness.requested_years == (2024,)
     assert result.freshness.available_years == (2024,)
@@ -100,3 +100,47 @@ def test_all_unavailable_returns_typed_failure_result(monkeypatch):
     assert result.skipped_years == [2025]
     assert result.freshness.status == "empty"
     assert result.failures[0].year == 2025
+
+
+def test_all_unavailable_attributes_each_requested_season(monkeypatch):
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            raise RuntimeError("404 Not Found")
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_weekly([2024, 2025])
+    assert [failure.year for failure in result.failures] == [2024, 2025]
+
+
+def test_non404_is_typed_and_legacy_missing_module_is_typed(monkeypatch):
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            raise RuntimeError("500 Service Unavailable")
+
+    import src.nfl.data.providers.readpy as readpy
+
+    monkeypatch.setattr(readpy, "nfl", Stub())
+    result = NFLReadPyProvider().load_weekly([2025])
+    assert result.failures[0].kind == "error"
+    assert result.failures[0].year == 2025
+
+    import src.nfl.data.providers.nfl_data_py_provider as datapy
+
+    monkeypatch.setattr(datapy, "nfl", None)
+    result = NflDataPyProvider().load_weekly([2025])
+    assert result.failures[0].kind == "error"
+    assert result.failures[0].year == 2025
+
+
+def test_unsupported_legacy_ngs_is_typed(monkeypatch):
+    class Stub:
+        pass
+
+    import src.nfl.data.providers.nfl_data_py_provider as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NflDataPyProvider().load_ngs_passing([2025])
+    assert result.failures[0].kind == "error"
+    assert result.failures[0].exception_type == "UnsupportedCapability"

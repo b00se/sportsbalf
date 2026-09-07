@@ -171,13 +171,12 @@ def _fetch_with_fallback(
         frame = _to_pandas(fetch_fn(list(years_list)))
     except HTTPError as exc:  # pragma: no cover - network exception path
         if exc.code != 404:
-            raise
+            pass
         failures.append(FailureMetadata("unavailable", str(exc), type(exc).__name__))
     except Exception as exc:  # pragma: no cover - unexpected network error
         message = str(exc)
         if "404" not in message and "Not Found" not in message:
-            raise
-        failures.append(FailureMetadata("unavailable", message, type(exc).__name__))
+            pass
     else:
         if not frame.empty:
             available = (
@@ -218,7 +217,11 @@ def _fetch_with_fallback(
                     FailureMetadata("unavailable", str(exc), type(exc).__name__, year)
                 )
                 continue
-            raise
+            skipped.append(year)
+            failures.append(
+                FailureMetadata("error", str(exc), type(exc).__name__, year)
+            )
+            continue
         except Exception as exc:  # pragma: no cover - unexpected network error
             message = str(exc)
             if "404" in message or "Not Found" in message:
@@ -227,7 +230,9 @@ def _fetch_with_fallback(
                     FailureMetadata("unavailable", message, type(exc).__name__, year)
                 )
                 continue
-            raise
+            skipped.append(year)
+            failures.append(FailureMetadata("error", message, type(exc).__name__, year))
+            continue
         if frame.empty:
             skipped.append(year)
             failures.append(
@@ -237,10 +242,6 @@ def _fetch_with_fallback(
         frames.append(frame)
 
     if not frames:
-        failures = [
-            FailureMetadata(f.kind, f.message, f.exception_type, f.year or year)
-            for f, year in zip(failures, years_list)
-        ]
         freshness = FreshnessMetadata(tuple(years_list), (), datetime.now(UTC), "empty")
         return LoadResult(
             pd.DataFrame(),
@@ -316,7 +317,16 @@ class NFLReadPyProvider(NFLDataProvider):
         """Return the audited nflreadpy dataset capabilities."""
         return ProviderCapabilities(
             provider=self.name,
-            datasets=("weekly", "schedule", "pbp", "ngs_passing"),
+            datasets=(
+                "schedules",
+                "player_stats",
+                "pbp",
+                "rosters",
+                "depth_charts",
+                "ngs",
+                "participation",
+                "betting_lines",
+            ),
             supports_current_season=True,
             source_license="nflverse data license",
             audit=tuple(
