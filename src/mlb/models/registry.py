@@ -75,7 +75,7 @@ _MODEL_REGISTRY: dict[str, ModelSpec] = {
             "max_depth": 10,
             "min_samples_leaf": 2,
             "random_state": DEFAULT_RANDOM_SEED,
-            "n_jobs": 1,
+            "n_jobs": -1,
         },
         trial_params=(
             {"max_depth": 10, "min_samples_leaf": 2, "n_estimators": 400},

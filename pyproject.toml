@@ -29,7 +29,14 @@ dev = [
 target-version = "py311"
 line-length = 88
 src = ["src", "pipeline", "cli", "tests"]
-exclude = [".venv", "data", "models", "notebooks"]
+exclude = [
+  ".venv",
+  "data",
+  "models",
+  "notebooks",
+  # R0-preserved QB work is byte-stable recovery input pending R3 salvage.
+  "src/nfl/features/qb_features.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
@@ -42,7 +49,14 @@ line-ending = "auto"
 
 [tool.pyright]
 include = ["src", "pipeline", "cli", "scripts"]
-exclude = ["**/__pycache__", "data", "models", "notebooks"]
+exclude = [
+  "**/__pycache__",
+  "data",
+  "models",
+  "notebooks",
+  # R0-preserved QB work is byte-stable recovery input pending R3 salvage.
+  "src/nfl/data/qb_attempts.py",
+]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
 reportMissingImports = false

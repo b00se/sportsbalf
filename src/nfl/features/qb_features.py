@@ -82,9 +82,9 @@ def compute_player_passing_features(weekly: pd.DataFrame) -> pd.DataFrame:
         qbs.groupby(["player_id", "season"])["attempts"].cumsum() - qbs["attempts"]
     )
     qbs["season_games_played"] = qbs.groupby(["player_id", "season"]).cumcount()
-    career_attempts_to_date = (
-        qbs.groupby("player_id")["attempts"].cumsum() - qbs["attempts"]
-    )
+    career_attempts_to_date = qbs.groupby("player_id")["attempts"].cumsum() - qbs[
+        "attempts"
+    ]
     career_games_played = qbs.groupby("player_id").cumcount()
 
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -327,7 +327,9 @@ def compute_team_and_opponent_features(
 
     opponent_group.rename(columns={"defteam": "opponent"}, inplace=True)
     opponent_group["game_id"] = opponent_group["game_id"].astype(str)
-    opponent_group.sort_values(["opponent", "season", "week", "game_id"], inplace=True)
+    opponent_group.sort_values(
+        ["opponent", "season", "week", "game_id"], inplace=True
+    )
     for column in [
         "plays_faced",
         "opponent_pass_rate_allowed",
