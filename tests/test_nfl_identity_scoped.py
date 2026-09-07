@@ -8,7 +8,11 @@ from src.fantasy.adapters.nfl.rankings import (
     export_unattended_rankings_csv,
     parse_rankings_csv,
 )
-from src.nfl.data.identity import IdentityStatus, build_identity_graph
+from src.nfl.data.identity import (
+    IdentityIngestionError,
+    IdentityStatus,
+    build_identity_graph,
+)
 
 
 @pytest.fixture
@@ -63,6 +67,54 @@ def test_appearance_requires_matching_scope(scoped_graph):
     result = scoped_graph.resolve_appearance("app-week-1", 2026)
     assert result.status is IdentityStatus.UNRESOLVED
     assert "scope" in result.reason
+
+
+def test_explicit_team_and_game_entities_resolve(scoped_graph):
+    assert scoped_graph.resolve_team("ud-team-kc", 2026).gsis_id == "KC"
+    assert scoped_graph.resolve_game("ud-game-1", 2026).gsis_id == "2026_01_KC_BUF"
+
+
+@pytest.mark.parametrize("bad_week", [True, False, 1.5, 1.1, "1.5", "two"])
+def test_malformed_week_is_rejected(bad_week):
+    with pytest.raises(IdentityIngestionError, match="invalid week"):
+        build_identity_graph(
+            players=[
+                {
+                    "nflverse_id": "nfl-player",
+                    "ud_player_id": "ud-player",
+                    "season": 2026,
+                    "week": bad_week,
+                }
+            ],
+            teams=[],
+            games=[],
+        )
+
+
+def test_overlapping_scoped_reference_is_rejected():
+    with pytest.raises(IdentityIngestionError, match="overlapping"):
+        build_identity_graph(
+            players=[
+                {
+                    "nflverse_id": "nfl-player",
+                    "ud_player_id": "ud-player",
+                    "slate_id": "slate-1",
+                    "season": 2026,
+                    "effective_from": "2026-09-01",
+                    "effective_to": "2026-09-10",
+                },
+                {
+                    "nflverse_id": "nfl-player",
+                    "ud_player_id": "ud-player",
+                    "slate_id": "slate-1",
+                    "season": 2026,
+                    "effective_from": "2026-09-10",
+                    "effective_to": "2026-09-20",
+                },
+            ],
+            teams=[],
+            games=[],
+        )
 
 
 def test_conflicting_aliases_are_ambiguous(scoped_graph):

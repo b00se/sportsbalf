@@ -8,6 +8,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
+from numbers import Integral
 from typing import Any
 
 
@@ -76,13 +77,27 @@ def _valid_date(value: Any) -> date | None:
         raise IdentityIngestionError(f"invalid effective date: {value!r}") from exc
 
 
+def _intervals_overlap(
+    start_a: date | None, end_a: date | None,
+    start_b: date | None, end_b: date | None,
+) -> bool:
+    """Return whether two inclusive validity intervals overlap."""
+    return (end_a is None or start_b is None or end_a >= start_b) and (
+        end_b is None or start_a is None or end_b >= start_a
+    )
+
+
 def _week(value: Any) -> int | None:
     if value in (None, ""):
         return None
-    try:
+    if isinstance(value, bool) or isinstance(value, float):
+        raise IdentityIngestionError(f"invalid week: {value!r}")
+    if isinstance(value, Integral):
         parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise IdentityIngestionError(f"invalid week: {value!r}") from exc
+    elif isinstance(value, str) and re.fullmatch(r"[+-]?\d+(?:\.0+)?", value.strip()):
+        parsed = int(float(value.strip()))
+    else:
+        raise IdentityIngestionError(f"invalid week: {value!r}")
     if not 1 <= parsed <= 18:
         raise IdentityIngestionError(f"invalid week: {value!r}")
     return parsed
@@ -112,9 +127,15 @@ class IdentityGraph:
         season = _season(raw.get("season"))
         if season is None:
             raise IdentityIngestionError("each identity row requires a positive season")
-        canonical = _clean(raw.get("nflverse_id") or raw.get("gsis_id"))
+        canonical = _clean(raw.get("nflverse_id"))
+        if entity != "player":
+            canonical = canonical or _clean(raw.get("gsis_id"))
         if not canonical:
-            raise IdentityIngestionError("each identity row requires nflverse_id")
+            raise IdentityIngestionError(
+                "player identity rows require nflverse_id"
+                if entity == "player"
+                else "identity rows require a canonical identifier"
+            )
         source_ids = {
             str(k): str(v).strip()
             for k, v in dict(raw.get("source_ids") or {}).items()
@@ -133,11 +154,10 @@ class IdentityGraph:
             value = _clean(raw.get(key))
             if value:
                 source_ids[key] = value
-        self._rows[entity].append(
-            {
+        record = {
                 "season": season,
                 "canonical": canonical,
-                "gsis_id": _clean(raw.get("gsis_id")) or canonical,
+                "gsis_id": _clean(raw.get("gsis_id")),
                 "source_ids": source_ids,
                 "name": _clean(raw.get("name")),
                 "game_id": _clean(raw.get("game_id")),
@@ -147,7 +167,21 @@ class IdentityGraph:
                 "to": _valid_date(raw.get("effective_to")),
                 "team_gsis_id": _clean(raw.get("team_gsis_id")),
             }
-        )
+        for prior in self._rows[entity]:
+            if prior["season"] != record["season"]:
+                continue
+            if not set(source_ids.items()).intersection(prior["source_ids"].items()):
+                continue
+            if any(
+                record.get(key) != prior.get(key)
+                for key in ("game_id", "slate_id", "week")
+            ):
+                continue
+            if _intervals_overlap(
+                prior["from"], prior["to"], record["from"], record["to"]
+            ):
+                raise IdentityIngestionError("overlapping identity validity intervals")
+        self._rows[entity].append(record)
 
     @staticmethod
     def _in_scope(

@@ -76,7 +76,14 @@ def test_rankings_export_rejects_overwriting_input_source(tmp_path: Path) -> Non
 def test_unattended_rankings_export_blocks_unresolved_identity() -> None:
     table = normalize_rankings(parse_rankings_csv(FIXTURE))
     graph = build_identity_graph(
-        players=[{"ud_id": "a", "gsis_id": "00-1", "season": 2026}],
+        players=[
+            {
+                "ud_id": "a",
+                "gsis_id": "00-1",
+                "nflverse_id": "nfl-a",
+                "season": 2026,
+            }
+        ],
         teams=[], games=[]
     )
     with pytest.raises(RankingsSchemaError, match="unattended"):
@@ -87,8 +94,14 @@ def test_unattended_rankings_export_accepts_material_identity() -> None:
     table = normalize_rankings(parse_rankings_csv(FIXTURE))
     graph = build_identity_graph(
         players=[
-            {"ud_id": "a", "gsis_id": "00-1", "season": 2026},
-            {"ud_id": "b", "gsis_id": "00-2", "season": 2026},
+                {
+                    "ud_id": "a", "gsis_id": "00-1",
+                    "nflverse_id": "nfl-a", "season": 2026,
+                },
+                {
+                    "ud_id": "b", "gsis_id": "00-2",
+                    "nflverse_id": "nfl-b", "season": 2026,
+                },
         ],
         teams=[], games=[]
     )

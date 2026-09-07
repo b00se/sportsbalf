@@ -22,18 +22,21 @@ def graph() -> IdentityGraph:
             {
                 "ud_id": "ud-p1",
                 "gsis_id": "00-001",
+                "nflverse_id": "nfl-p1",
                 "name": "A. Runner",
                 "season": 2026,
             },
             {
                 "ud_id": "ud-p2",
                 "gsis_id": "00-002",
+                "nflverse_id": "nfl-p2",
                 "name": "B. Catcher",
                 "season": 2026,
             },
             {
                 "ud_id": "ud-old",
                 "gsis_id": "00-001",
+                "nflverse_id": "nfl-p1",
                 "name": "A. Runner",
                 "season": 2025,
             },
@@ -46,7 +49,7 @@ def graph() -> IdentityGraph:
 def test_frozen_fixture_hash_and_shape() -> None:
     path = Path("tests/testdata/nfl_identity_graph_fixture.json")
     assert hashlib.sha256(path.read_bytes()).hexdigest() == (
-        "db699cc9f5811e6dbd79c40e67abbb521ccbfa4cfe90afa07e21650596cdc3ed"
+        "c262a4a5de6c389091cdae23902aa196f74dc0a6bdfd15ce8c4ee363240ff153"
     )
     payload = json.loads(path.read_text(encoding="utf-8"))
     fixture_graph = build_identity_graph(**payload)
@@ -76,17 +79,15 @@ def test_missing_or_name_only_inputs_fail_closed(graph: IdentityGraph) -> None:
 
 
 def test_duplicate_ids_are_ambiguous(graph: IdentityGraph) -> None:
-    graph = build_identity_graph(
-        players=[
-            {"ud_id": "ud-x", "gsis_id": "00-010", "season": 2026},
-            {"ud_id": "ud-x", "gsis_id": "00-011", "season": 2026},
-        ],
-        teams=[],
-        games=[],
-    )
-    result = graph.resolve_player(ud_id="ud-x", season=2026)
-    assert result.status is IdentityStatus.AMBIGUOUS
-    assert result.gsis_id is None
+    with pytest.raises(IdentityIngestionError, match="overlapping"):
+        build_identity_graph(
+            players=[
+                {"ud_id": "ud-x", "gsis_id": "00-010", "nflverse_id": "nfl-x", "season": 2026},
+                {"ud_id": "ud-x", "gsis_id": "00-011", "nflverse_id": "nfl-y", "season": 2026},
+            ],
+            teams=[],
+            games=[],
+        )
 
 
 def test_material_resolution_report_counts_unresolved_and_ambiguous(
@@ -129,7 +130,7 @@ def test_invalid_rows_and_unattended_gate_fail_closed() -> None:
                       "effective_from": "not-a-date"}], teams=[], games=[]
         )
     graph = build_identity_graph(
-        players=[{"ud_id": "ud-a", "gsis_id": "00-1", "season": 2026}],
+        players=[{"ud_id": "ud-a", "gsis_id": "00-1", "nflverse_id": "nfl-a", "season": 2026}],
         teams=[], games=[]
     )
     with pytest.raises(IdentityIngestionError, match="unattended export blocked"):
@@ -139,9 +140,9 @@ def test_invalid_rows_and_unattended_gate_fail_closed() -> None:
 def test_effective_date_filters_traded_player_records() -> None:
     graph = build_identity_graph(
         players=[
-            {"ud_id": "ud-trade", "gsis_id": "00-2", "season": 2026,
+            {"ud_id": "ud-trade", "gsis_id": "00-2", "nflverse_id": "nfl-trade", "season": 2026,
              "team_gsis_id": "AAA", "effective_to": "2026-09-10"},
-            {"ud_id": "ud-trade", "gsis_id": "00-2", "season": 2026,
+            {"ud_id": "ud-trade", "gsis_id": "00-2", "nflverse_id": "nfl-trade", "season": 2026,
              "team_gsis_id": "BBB", "effective_from": "2026-09-11"},
         ], teams=[], games=[]
     )
