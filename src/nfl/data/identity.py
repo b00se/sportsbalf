@@ -1,15 +1,16 @@
-"""Deterministic Underdog-to-GSIS identity mappings.
+"""Offline, season-scoped identity graph for Underdog and football sources."""
 
-The graph deliberately resolves by provider identifiers only.  A display name
-is useful for diagnostics, but is never sufficient evidence for an automatic
-identity match because names can be shared, changed, or misspelled.
-"""
+# Public signatures intentionally keep their descriptive keyword arguments.
+# ruff: noqa: E501
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import date
+from difflib import SequenceMatcher
 from enum import StrEnum
 from typing import Any
 
@@ -22,9 +23,13 @@ class IdentityStatus(StrEnum):
     AMBIGUOUS = "ambiguous"
 
 
+class IdentityIngestionError(ValueError):
+    """Raised when a mapping row cannot be safely ingested."""
+
+
 @dataclass(frozen=True, slots=True)
 class IdentityResolution:
-    """Typed result of a player, team, or game lookup."""
+    """Auditable result of an identity lookup."""
 
     entity_type: str
     status: IdentityStatus
@@ -32,6 +37,9 @@ class IdentityResolution:
     gsis_id: str | None = None
     season: int | None = None
     reason: str = ""
+    method: str = "identifier"
+    confidence: float = 1.0
+    source_ids: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,14 +53,11 @@ class MaterialPlayerReport:
 
     @property
     def ready(self) -> bool:
-        """Whether every material player has one unambiguous identity."""
         return not self.unresolved and not self.ambiguous
 
 
 def _clean(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
+    text = str(value).strip() if value is not None else ""
     return text or None
 
 
@@ -64,113 +69,165 @@ def _season(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
-class IdentityGraph:
-    """Season-scoped, fail-closed mappings between UD and GSIS identifiers."""
+def normalize_name(value: Any) -> str:
+    """Normalize punctuation and case for auditable name review."""
+    return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
 
-    def __init__(self, records: Mapping[str, Iterable[Mapping[str, Any]]]) -> None:
-        self._ids: dict[str, dict[tuple[str, int], frozenset[str]]] = {}
+
+def _valid_date(value: Any) -> date | None:
+    if value in (None, ""):
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError as exc:
+        raise IdentityIngestionError(f"invalid effective date: {value!r}") from exc
+
+
+class IdentityGraph:
+    """Mappings with explicit IDs, aliases, validity windows, and scopes."""
+
+    def __init__(
+        self,
+        records: Mapping[str, Iterable[Mapping[str, Any]]],
+        *,
+        name_threshold: float = 0.95,
+    ) -> None:
+        if not 0.0 < name_threshold <= 1.0:
+            raise IdentityIngestionError("name_threshold must be in (0, 1]")
+        self.name_threshold = name_threshold
+        self._rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for entity_type, rows in records.items():
-            candidates: defaultdict[tuple[str, int], set[str]] = defaultdict(set)
             for row in rows:
-                ud_id = _clean(row.get("ud_id"))
-                gsis_id = _clean(row.get("gsis_id"))
-                season = _season(row.get("season"))
-                if ud_id and gsis_id and season is not None:
-                    candidates[(ud_id, season)].add(gsis_id)
-            self._ids[entity_type] = {
-                key: frozenset(values) for key, values in candidates.items()
+                self._ingest(entity_type, row)
+
+    def _ingest(self, entity_type: str, raw: Mapping[str, Any]) -> None:
+        season = _season(raw.get("season"))
+        if season is None:
+            raise IdentityIngestionError("each identity row requires a positive season")
+        gsis = _clean(raw.get("gsis_id"))
+        source_ids = dict(raw.get("source_ids") or {})
+        for key in ("nflverse_id", "consensus_id", "appearance_id"):
+            value = _clean(raw.get(key))
+            if value:
+                source_ids[key] = value
+        ud_id = _clean(raw.get("ud_id") or raw.get("ud_player_id"))
+        if ud_id:
+            source_ids["ud_id"] = ud_id
+        if not gsis or not source_ids:
+            raise IdentityIngestionError("each identity row requires GSIS and source IDs")
+        self._rows[entity_type].append(
+            {
+                "season": season,
+                "gsis_id": gsis,
+                "source_ids": {k: str(v).strip() for k, v in source_ids.items() if _clean(v)},
+                "name": _clean(raw.get("name")),
+                "team_gsis_id": _clean(raw.get("team_gsis_id")),
+                "game_id": _clean(raw.get("game_id")),
+                "week": raw.get("week"),
+                "from": _valid_date(raw.get("effective_from")),
+                "to": _valid_date(raw.get("effective_to")),
             }
+        )
+
+    @staticmethod
+    def _in_scope(row: Mapping[str, Any], season: int, as_of: Any = None, week: Any = None) -> bool:
+        if row["season"] != season:
+            return False
+        if week is not None and row.get("week") not in (None, week, str(week)):
+            return False
+        moment = _valid_date(as_of)
+        return (not moment or not row["from"] or row["from"] <= moment) and (
+            not moment or not row["to"] or moment <= row["to"]
+        )
 
     def _resolve(
-        self, entity_type: str, ud_id: Any, season: Any, *, name: Any = None
+        self, entity_type: str, ud_id: Any, season: Any, *, name: Any = None,
+        as_of: Any = None, week: Any = None, game_id: Any = None,
+        allow_name_review: bool = False,
     ) -> IdentityResolution:
-        clean_ud = _clean(ud_id)
-        clean_season = _season(season)
-        if clean_ud is None:
-            reason = "name-only lookup is not safe" if _clean(name) else (
-                "missing UD identifier"
-            )
-            return IdentityResolution(
-                entity_type,
-                IdentityStatus.UNRESOLVED,
-                season=clean_season,
-                reason=reason,
-            )
+        clean_ud, clean_season = _clean(ud_id), _season(season)
         if clean_season is None:
-            return IdentityResolution(
-                entity_type,
-                IdentityStatus.UNRESOLVED,
-                ud_id=clean_ud,
-                reason="valid season is required",
+            return IdentityResolution(entity_type, IdentityStatus.UNRESOLVED, clean_ud, season=clean_season, reason="valid season is required")
+        rows = [r for r in self._rows.get(entity_type, []) if self._in_scope(r, clean_season, as_of, week)]
+        if game_id is not None:
+            rows = [r for r in rows if r.get("game_id") == _clean(game_id)]
+        matches = [r for r in rows if clean_ud and clean_ud in r["source_ids"].values()]
+        method, confidence = "identifier", 1.0
+        if not clean_ud:
+            if not _clean(name):
+                return IdentityResolution(entity_type, IdentityStatus.UNRESOLVED, season=clean_season, reason="missing identifier")
+            if not allow_name_review:
+                return IdentityResolution(entity_type, IdentityStatus.UNRESOLVED, season=clean_season, reason="name-only lookup requires explicit review", method="name", confidence=0.0)
+            target = normalize_name(name)
+            scored = sorted(
+                ((SequenceMatcher(None, target, normalize_name(r["name"])).ratio(), r) for r in rows if r["name"]),
+                key=lambda x: x[0], reverse=True,
             )
-        matches = self._ids.get(entity_type, {}).get(
-            (clean_ud, clean_season), frozenset()
-        )
-        if len(matches) == 1:
-            return IdentityResolution(
-                entity_type,
-                IdentityStatus.RESOLVED,
-                clean_ud,
-                next(iter(matches)),
-                clean_season,
-            )
-        if len(matches) > 1:
+            if not scored or scored[0][0] < self.name_threshold:
+                confidence = scored[0][0] if scored else 0.0
+                return IdentityResolution(entity_type, IdentityStatus.UNRESOLVED, season=clean_season, reason="name match below threshold", method="name", confidence=confidence)
+            matches = [r for score, r in scored if score == scored[0][0]]
+            method, confidence = "name-reviewed", scored[0][0]
+        if method == "name-reviewed":
             return IdentityResolution(
                 entity_type,
                 IdentityStatus.AMBIGUOUS,
-                clean_ud,
                 season=clean_season,
-                reason="UD identifier maps to multiple GSIS identifiers",
+                reason="name match requires human review",
+                method=method,
+                confidence=confidence,
             )
-        return IdentityResolution(
-            entity_type,
-            IdentityStatus.UNRESOLVED,
-            clean_ud,
-            season=clean_season,
-            reason="no season-scoped mapping",
-        )
+        if len({r["gsis_id"] for r in matches}) != 1:
+            status = IdentityStatus.AMBIGUOUS if matches else IdentityStatus.UNRESOLVED
+            reason = "multiple valid mappings" if matches else "no season-scoped mapping"
+            return IdentityResolution(entity_type, status, clean_ud, season=clean_season, reason=reason, method=method, confidence=confidence)
+        row = matches[0]
+        return IdentityResolution(entity_type, IdentityStatus.RESOLVED, clean_ud, row["gsis_id"], clean_season, method=method, confidence=confidence, source_ids=row["source_ids"])
 
-    def resolve_player(
-        self, ud_id: Any = None, season: Any = None, *, name: Any = None
-    ) -> IdentityResolution:
-        """Resolve a player by UD identifier and season; never by name alone."""
-        return self._resolve("player", ud_id, season, name=name)
+    def resolve_player(self, ud_id: Any = None, season: Any = None, *, name: Any = None, as_of: Any = None, week: Any = None, game_id: Any = None, allow_name_review: bool = False) -> IdentityResolution:
+        """Resolve a player by explicit source ID or auditable name review."""
+        return self._resolve("player", ud_id, season, name=name, as_of=as_of, week=week, game_id=game_id, allow_name_review=allow_name_review)
 
-    def resolve_team(self, ud_id: Any = None, season: Any = None) -> IdentityResolution:
-        """Resolve a team by UD identifier and season."""
-        return self._resolve("team", ud_id, season)
+    def resolve_appearance(self, appearance_id: Any, season: Any) -> IdentityResolution:
+        """Resolve an Underdog appearance ID to its player GSIS identity."""
+        return self._resolve("player", appearance_id, season)
+
+    def resolve_team(self, ud_id: Any = None, season: Any = None, *, as_of: Any = None) -> IdentityResolution:
+        """Resolve a team by identifier and optional date."""
+        return self._resolve("team", ud_id, season, as_of=as_of)
 
     def resolve_game(self, ud_id: Any = None, season: Any = None) -> IdentityResolution:
-        """Resolve a game by UD match identifier and season."""
+        """Resolve a game by identifier and season."""
         return self._resolve("game", ud_id, season)
 
-    def check_material_players(
-        self, players: Iterable[Any], season: Any
-    ) -> MaterialPlayerReport:
-        """Summarize whether a material-player set passes the identity gate."""
-        unresolved: list[str] = []
-        ambiguous: list[str] = []
+    def check_material_players(self, players: Iterable[Any], season: Any, *, unattended: bool = False) -> MaterialPlayerReport:
+        """Check material players and optionally block unattended export."""
+        unresolved, ambiguous = [], []
         total = resolved = 0
         for item in players:
             ud_id = item.get("ud_id") if isinstance(item, Mapping) else item
             key = _clean(ud_id) or "<missing>"
             total += 1
-            outcome = self.resolve_player(ud_id=ud_id, season=season)
+            outcome = self.resolve_player(ud_id, season)
             if outcome.status is IdentityStatus.RESOLVED:
                 resolved += 1
             elif outcome.status is IdentityStatus.AMBIGUOUS:
                 ambiguous.append(key)
             else:
                 unresolved.append(key)
-        return MaterialPlayerReport(
-            total, resolved, tuple(unresolved), tuple(ambiguous)
-        )
+        report = MaterialPlayerReport(total, resolved, tuple(unresolved), tuple(ambiguous))
+        if unattended and not report.ready:
+            raise IdentityIngestionError(f"unattended export blocked: {report}")
+        return report
 
 
 def build_identity_graph(
-    players: Iterable[Mapping[str, Any]],
-    teams: Iterable[Mapping[str, Any]],
-    games: Iterable[Mapping[str, Any]],
+    players: Iterable[Mapping[str, Any]], teams: Iterable[Mapping[str, Any]],
+    games: Iterable[Mapping[str, Any]], *, appearances: Iterable[Mapping[str, Any]] = (),
+    name_threshold: float = 0.95,
 ) -> IdentityGraph:
-    """Build an offline graph from explicit, season-scoped mapping rows."""
-    return IdentityGraph({"player": players, "team": teams, "game": games})
+    """Build a graph from explicit player, team, game, and appearance rows."""
+    return IdentityGraph(
+        {"player": list(players) + list(appearances), "team": teams, "game": games},
+        name_threshold=name_threshold,
+    )
