@@ -1,5 +1,28 @@
 {
   "fixture": "nflreadpy_weekly.csv",
   "sha256": "fa2a451cbd17e58d8f6b467b67bb15be66fab5ba5c41fc0f8546590f11694afc",
-  "columns": ["season", "week", "player_id", "pass_attempts"]
+  "columns": ["season", "week", "player_id", "pass_attempts"],
+  "datasets": ["schedules", "player_stats", "pbp", "ngs"],
+  "fixtures": {
+    "player_stats": {
+      "fixture": "nflreadpy_weekly.csv",
+      "sha256": "fa2a451cbd17e58d8f6b467b67bb15be66fab5ba5c41fc0f8546590f11694afc",
+      "columns": ["season", "week", "player_id", "pass_attempts"]
+    },
+    "schedules": {
+      "fixture": "nflreadpy_schedules.csv",
+      "sha256": "b9a624d30232ef6361ef89265342d4efb0c18ce1aa2914ddf43777deafc50256",
+      "columns": ["season", "week", "game_id", "home_team", "away_team"]
+    },
+    "pbp": {
+      "fixture": "nflreadpy_pbp.csv",
+      "sha256": "e2a4a26df08b3c54cfe6437206a19cd3573328cb39af4419c27a0e575e7701f3",
+      "columns": ["season", "week", "game_id", "pass_attempt", "posteam", "defteam"]
+    },
+    "ngs": {
+      "fixture": "nflreadpy_ngs.csv",
+      "sha256": "03e16ac6513d46a6f673751ab5deba4daed5452c264443b637bfbad8e63bd061",
+      "columns": ["season", "week", "player_gsis_id", "avg_time_to_throw"]
+    }
+  }
 }

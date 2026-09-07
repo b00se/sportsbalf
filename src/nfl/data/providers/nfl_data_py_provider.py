@@ -8,7 +8,6 @@ from typing import Any
 import pandas as pd
 
 from .base import (
-    CANONICAL_DATASETS,
     CapabilityRecord,
     FailureMetadata,
     LoadResult,
@@ -16,6 +15,8 @@ from .base import (
     ProviderCapabilities,
     reconcile_seasons,
 )
+
+SUPPORTED_DATASETS = ("schedules", "player_stats", "pbp")
 
 try:  # pragma: no cover - optional dependency
     import nfl_data_py as nfl
@@ -87,7 +88,7 @@ class NflDataPyProvider(NFLDataProvider):
         """Return the audited legacy provider capabilities."""
         return ProviderCapabilities(
             self.name,
-            CANONICAL_DATASETS,
+            SUPPORTED_DATASETS,
             False,
             "nflverse data license",
             tuple(
@@ -98,7 +99,7 @@ class NflDataPyProvider(NFLDataProvider):
                     "nflverse data license",
                     "nflreadpy",
                 )
-                for dataset in CANONICAL_DATASETS
+                for dataset in SUPPORTED_DATASETS
             ),
         )
 

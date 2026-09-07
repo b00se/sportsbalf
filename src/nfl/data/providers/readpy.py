@@ -10,7 +10,6 @@ from urllib.error import HTTPError
 import pandas as pd
 
 from .base import (
-    CANONICAL_DATASETS,
     CapabilityRecord,
     FailureMetadata,
     LoadResult,
@@ -18,6 +17,10 @@ from .base import (
     ProviderCapabilities,
     reconcile_seasons,
 )
+
+# These are the datasets for which this adapter has a concrete loader and
+# normalization contract.  Do not advertise provider surfaces we cannot load.
+SUPPORTED_DATASETS = ("schedules", "player_stats", "pbp", "ngs")
 
 try:  # pragma: no cover - optional dependency
     import nflreadpy as nfl  # type: ignore
@@ -173,7 +176,10 @@ def _retain_requested_seasons(
 ) -> pd.DataFrame:
     """Drop provider rows whose season is outside the requested set."""
     if "season" not in frame.columns:
-        return frame.copy()
+        # A response without season provenance cannot safely be attributed to
+        # any requested year.  Fail closed; reconciliation will emit one typed
+        # MissingSeason record per requested year.
+        return pd.DataFrame(columns=frame.columns)
     seasons = pd.to_numeric(frame["season"], errors="coerce")
     return frame.loc[seasons.isin({int(year) for year in years})].copy().reset_index(
         drop=True
@@ -217,14 +223,24 @@ def _fetch_with_fallback(
     retry_years = [year for year in years_list if year not in bulk_available]
     for year in retry_years:
         try:
-            frame = _to_pandas(fetch_fn([int(year)]))
+            raw_frame = _to_pandas(fetch_fn([int(year)]))
         except HTTPError as exc:  # pragma: no cover - network exception path
             failures.append(_failure_for_exception(exc, year))
             continue
         except Exception as exc:  # pragma: no cover - unexpected network error
             failures.append(_failure_for_exception(exc, year))
             continue
-        frame = _retain_requested_seasons(frame, [year])
+        if "season" not in raw_frame.columns:
+            failures.append(
+                FailureMetadata(
+                    "unavailable",
+                    "season absent from response",
+                    "MissingSeason",
+                    year,
+                )
+            )
+            continue
+        frame = _retain_requested_seasons(raw_frame, [year])
         if frame.empty:
             failures.append(
                 FailureMetadata("unavailable", "empty response", "EmptyResponse", year)
@@ -293,7 +309,7 @@ class NFLReadPyProvider(NFLDataProvider):
         """Return the audited nflreadpy dataset capabilities."""
         return ProviderCapabilities(
             provider=self.name,
-            datasets=CANONICAL_DATASETS,
+            datasets=SUPPORTED_DATASETS,
             supports_current_season=True,
             source_license="nflverse data license",
             audit=tuple(
@@ -304,7 +320,7 @@ class NFLReadPyProvider(NFLDataProvider):
                     "nflverse data license",
                     "skip unavailable season",
                 )
-                for dataset in CANONICAL_DATASETS
+                for dataset in SUPPORTED_DATASETS
             ),
         )
 

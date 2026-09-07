@@ -98,6 +98,10 @@ def reconcile_seasons(
         normalized = normalized.loc[
             season_values.isin(requested)
         ].reset_index(drop=True)
+    else:
+        # Rows without season provenance cannot be attributed to a requested
+        # year and must never reach downstream model consumers.
+        normalized = normalized.iloc[0:0].copy()
     available_values: set[int] = set()
     if "season" in normalized:
         values = pd.to_numeric(normalized["season"], errors="coerce").dropna()

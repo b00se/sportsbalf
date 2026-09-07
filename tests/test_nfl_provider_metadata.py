@@ -64,11 +64,7 @@ def test_capability_audit_covers_all_required_sources():
         "schedules",
         "player_stats",
         "pbp",
-        "rosters",
-        "depth_charts",
         "ngs",
-        "participation",
-        "betting_lines",
     }
     assert all(
         record.seasons and record.cadence and record.license
@@ -207,9 +203,42 @@ def test_missing_season_column_uses_shared_reconciliation(monkeypatch):
 
     monkeypatch.setattr(module, "nfl", Stub())
     result = NFLReadPyProvider().load_weekly([2024, 2025])
-    assert result.data.drop_duplicates().shape[0] == 1
+    assert result.data.empty
     assert result.skipped_years == [2024, 2025]
     assert [failure.year for failure in result.failures] == [2024, 2025]
+
+
+def test_no_season_response_is_discarded_and_reports_unique_requested_years(
+    monkeypatch,
+):
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            return pd.DataFrame({"week": [1], "pass_attempts": [20]})
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_weekly([2024, 2024, 2025])
+
+    assert result.data.empty
+    assert result.skipped_years == [2024, 2025]
+    assert [failure.year for failure in result.failures] == [2024, 2025]
+
+
+def test_advertised_nflreadpy_datasets_have_fixture_contracts():
+    fixture_dir = Path(__file__).parent / "testdata"
+    manifest = json.loads(
+        (fixture_dir / "nflreadpy_provider_manifest.json").read_text()
+    )
+    capability = NFLReadPyProvider().capabilities
+    assert set(manifest["datasets"]) == set(capability.datasets)
+    for dataset in capability.datasets:
+        entry = manifest["fixtures"][dataset]
+        payload = (fixture_dir / entry["fixture"]).read_bytes()
+        assert hashlib.sha256(payload).hexdigest() == entry["sha256"]
+        assert list(pd.read_csv(fixture_dir / entry["fixture"]).columns) == entry[
+            "columns"
+        ]
 
 
 def test_legacy_empty_and_partial_responses_reconcile_seasons(monkeypatch):
@@ -223,6 +252,19 @@ def test_legacy_empty_and_partial_responses_reconcile_seasons(monkeypatch):
     result = NflDataPyProvider().load_weekly([2024, 2025])
     assert result.skipped_years == [2025]
     assert [failure.year for failure in result.failures] == [2025]
+
+
+def test_legacy_no_season_response_is_discarded(monkeypatch):
+    class Stub:
+        def import_weekly_data(self, years):
+            return pd.DataFrame({"week": [1], "pass_attempts": [20]})
+
+    import src.nfl.data.providers.nfl_data_py_provider as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NflDataPyProvider().load_weekly([2024])
+    assert result.data.empty
+    assert result.failures[0].exception_type == "MissingSeason"
 
 
 def test_legacy_foreign_only_response_is_unavailable(monkeypatch):
