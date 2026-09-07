@@ -1,6 +1,7 @@
 """Offline tests for the NFL projection-source audit contract."""
 
 import csv
+import shutil
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -18,6 +19,7 @@ def _source(**overrides: object) -> ProjectionSource:
     values: dict[str, object] = {
         "source_id": "fixture-consensus",
         "publisher": "Example Research",
+        "source_family": "example-research",
         "access_url": "https://example.test/consensus.csv",
         "license_name": "CC BY 4.0",
         "license_url": "https://creativecommons.org/licenses/by/4.0/",
@@ -49,7 +51,17 @@ def _source(**overrides: object) -> ProjectionSource:
         ),
     }
     values.update(overrides)
+    if "source_family" not in overrides:
+        values["source_family"] = str(values["publisher"]).casefold().replace(" ", "-")
     return ProjectionSource(**values)
+
+
+def _baseline_kwargs(target):
+    public = target.with_name("public.csv")
+    consensus = target.with_name("consensus.csv")
+    shutil.copyfile(target, public)
+    shutil.copyfile(target, consensus)
+    return {"public_path": public, "consensus_path": consensus}
 
 
 def test_audit_accepts_licensed_reproducible_free_source() -> None:
@@ -96,6 +108,7 @@ def test_tournament_is_deterministic_and_excludes_stale_or_paid_sources() -> Non
         publisher="Other Publisher",
         access_url="https://other.test/consensus.csv",
         baseline_role="consensus_reference",
+        source_family="other-publisher",
     )
     tournament = run_projection_source_tournament(
         (paid, stale, winner, consensus), as_of_utc=as_of, max_age_hours=72
@@ -112,9 +125,15 @@ def test_tournament_requires_two_baseline_roles() -> None:
         )
 
 
-def test_rolling_origin_fixture_scores_required_schema() -> None:
+def test_rolling_origin_fixture_scores_required_schema(tmp_path) -> None:
+    public = tmp_path / "public.csv"
+    shutil.copyfile(
+        "tests/testdata/fantasy/nfl/projections/nflverse_week01.csv", public
+    )
     result = score_rolling_origin_snapshot(
-        "tests/testdata/fantasy/nfl/projections/nflverse_week01.csv"
+        "tests/testdata/fantasy/nfl/projections/nflverse_week01.csv",
+        public_path=public,
+        consensus_path="tests/testdata/fantasy/nfl/projections/consensus_week01.csv",
     )
     assert result.rows == 2
     assert result.mean_absolute_error == 0.75
@@ -172,6 +191,7 @@ def test_config_loader_rejects_string_booleans(tmp_path) -> None:
         "projection_sources:\n"
         "  - source_id: x\n"
         "    publisher: p\n"
+        "    source_family: p\n"
         "    access_url: https://example.test\n"
         "    license_name: CC0\n"
         "    license_url: https://creativecommons.org/publicdomain/zero/1.0/\n"
@@ -293,7 +313,9 @@ def test_scoring_normalizes_ids_and_clamps_unique_coverage(tmp_path) -> None:
     ]
     _write_eval(target, rows)
     with pytest.raises(SourceAuditError, match="finite"):
-        score_rolling_origin_snapshot(target, material_player_ids=["p1", "P2"])
+        score_rolling_origin_snapshot(
+            target, material_player_ids=["p1", "P2"], **_baseline_kwargs(target)
+        )
 
 
 def test_scoring_rejects_future_baseline_and_malformed_fields(tmp_path) -> None:
@@ -312,7 +334,7 @@ def test_scoring_rejects_future_baseline_and_malformed_fields(tmp_path) -> None:
     ]
     _write_eval(target, rows)
     with pytest.raises(SourceAuditError, match="season"):
-        score_rolling_origin_snapshot(target)
+        score_rolling_origin_snapshot(target, **_baseline_kwargs(target))
 
 
 def test_tournament_checks_publisher_and_domain_independently() -> None:
@@ -366,7 +388,12 @@ def test_empty_material_ids_have_stable_zero_coverage(tmp_path) -> None:
         for week in (1, 2)
     ]
     _write_eval(target, rows)
-    assert score_rolling_origin_snapshot(target, material_player_ids=[]).coverage == 0.0
+    assert (
+        score_rolling_origin_snapshot(
+            target, material_player_ids=[], **_baseline_kwargs(target)
+        ).coverage
+        == 0.0
+    )
 
 
 def test_historical_mean_excludes_prior_as_of_after_target_cutoff(tmp_path) -> None:
@@ -404,7 +431,7 @@ def test_historical_mean_excludes_prior_as_of_after_target_cutoff(tmp_path) -> N
         },
     ]
     _write_eval(target, rows)
-    result = score_rolling_origin_snapshot(target)
+    result = score_rolling_origin_snapshot(target, **_baseline_kwargs(target))
     assert result.historical_mean_mae == 1.0
 
 
@@ -426,7 +453,7 @@ def test_target_as_of_after_its_cutoff_is_rejected(tmp_path) -> None:
         ],
     )
     with pytest.raises(SourceAuditError, match="as_of"):
-        score_rolling_origin_snapshot(target)
+        score_rolling_origin_snapshot(target, **_baseline_kwargs(target))
 
 
 def test_baseline_uses_newest_candidate_before_target_cutoff(tmp_path) -> None:
@@ -470,4 +497,31 @@ def test_fantasypros_family_is_not_independent_from_dynastyprocess() -> None:
     with pytest.raises(SourceAuditError, match="independent"):
         run_projection_source_tournament(
             (public, consensus), as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC)
+        )
+
+
+def test_scoring_requires_explicit_baseline_paths(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    _write_eval(target, [{
+        "player_id": "p", "game_id": "g", "season": "2026", "week": "1",
+        "projection": "1", "actual": "1", "as_of_utc": "2026-08-01T00:00:00Z",
+        "target_cutoff_utc": "2026-08-01T00:00:00Z",
+    }])
+    with pytest.raises(SourceAuditError, match="explicit.*baseline"):
+        score_rolling_origin_snapshot(target)
+
+
+def test_tournament_rejects_missing_source_family() -> None:
+    with pytest.raises(SourceAuditError, match="source_family"):
+        run_projection_source_tournament(
+            (_source(source_family=""),),
+            as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC),
+        )
+
+
+def test_tournament_rejects_malformed_access_domain() -> None:
+    with pytest.raises(SourceAuditError, match="domain"):
+        run_projection_source_tournament(
+            (_source(access_url="https://not-a-domain"),),
+            as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC),
         )

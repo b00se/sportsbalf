@@ -47,6 +47,7 @@ class ProjectionSource:
     source_timestamp_utc: str
     content_sha256: str
     coverage_score: float
+    source_family: str = ""
     max_age_hours: float = 168.0
     baseline_role: str = "candidate"
     snapshot_path: str = ""
@@ -62,7 +63,13 @@ class ProjectionSource:
     def lineage_publisher(self) -> str:
         """Return a normalized publisher lineage token."""
 
-        normalized = re.sub(r"[^a-z0-9]+", "", self.publisher.casefold())
+        return self.normalized_source_family
+
+    @property
+    def normalized_source_family(self) -> str:
+        """Return the declared, canonical source-family token."""
+
+        normalized = re.sub(r"[^a-z0-9]+", "", self.source_family.casefold())
         if normalized in {"fantasypros", "dynastyprocess"}:
             return "fantasypros"
         return normalized
@@ -71,9 +78,10 @@ class ProjectionSource:
     def lineage_domain(self) -> str:
         """Return the normalized registrable domain from the access URL."""
 
-        host = (
-            (urlparse(self.access_url).hostname or "").casefold().removeprefix("www.")
-        )
+        parsed = urlparse(self.access_url)
+        if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password:
+            return ""
+        host = (parsed.hostname or "").casefold().removeprefix("www.")
         parts = [part for part in host.split(".") if part]
         if len(parts) < 2 or any(
             not re.fullmatch(r"[a-z0-9-]+", part) for part in parts
@@ -156,6 +164,10 @@ def audit_projection_source(
     timestamp = _parse_timestamp(source.source_timestamp_utc)
     age_hours = (as_of_utc - timestamp).total_seconds() / 3600
     failures: list[str] = []
+    if not source.normalized_source_family:
+        failures.append("source_family_missing")
+    if not source.lineage_domain:
+        failures.append("registrable_domain_invalid")
     if source.policy != "noncommercial":
         failures.append("policy_not_approved")
     if commercial_mode:
@@ -236,6 +248,16 @@ def run_projection_source_tournament(
         )
         for source in sources
     ]
+    metadata_failures = [
+        audit
+        for audit in audits
+        if "source_family_missing" in audit.failures
+        or "registrable_domain_invalid" in audit.failures
+    ]
+    if metadata_failures:
+        raise SourceAuditError(
+            "source_family and registrable domain must be valid for every candidate"
+        )
     eligible = [
         audit
         for audit in audits
@@ -258,7 +280,7 @@ def run_projection_source_tournament(
     }
     pair = [audit for audit in selected.values() if audit is not None]
     roles = {audit.source.baseline_role for audit in pair}
-    publishers = {audit.source.lineage_publisher for audit in pair}
+    publishers = {audit.source.normalized_source_family for audit in pair}
     domains = {audit.source.lineage_domain for audit in pair}
     if (
         roles != {"public_projection", "consensus_reference"}
@@ -338,6 +360,7 @@ def load_projection_sources(path: str | Path) -> tuple[ProjectionSource, ...]:
             ProjectionSource(
                 source_id=_required_text(raw, "source_id", index),
                 publisher=_required_text(raw, "publisher", index),
+                source_family=_required_text(raw, "source_family", index),
                 access_url=_required_text(raw, "access_url", index),
                 license_name=_required_text(raw, "license_name", index),
                 license_url=_required_text(raw, "license_url", index),
@@ -388,9 +411,20 @@ def score_rolling_origin_snapshot(
                 f"unable to read evaluation snapshot: {exc}"
             ) from exc
 
+    if public_path is None or consensus_path is None:
+        raise SourceAuditError(
+            "explicit public and consensus baseline paths are required"
+        )
+    target_resolved = Path(path).resolve()
+    public_resolved = Path(public_path).resolve()
+    consensus_resolved = Path(consensus_path).resolve()
+    if target_resolved in {public_resolved, consensus_resolved}:
+        raise SourceAuditError("baseline paths must not alias the target snapshot")
+    if public_resolved == consensus_resolved:
+        raise SourceAuditError("public and consensus baseline paths must be distinct")
     rows = read_rows(path)
-    public_rows = read_rows(public_path or path)
-    consensus_rows = read_rows(consensus_path or path)
+    public_rows = read_rows(public_path)
+    consensus_rows = read_rows(consensus_path)
     required = {
         "player_id",
         "game_id",
