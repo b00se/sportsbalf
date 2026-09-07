@@ -10,6 +10,8 @@ from io import StringIO
 from pathlib import Path
 from typing import IO
 
+from src.nfl.data.identity import IdentityGraph
+
 RANKINGS_COLUMNS: tuple[str, ...] = (
     "id", "playerId", "firstName", "lastName", "adp", "projectedPoints",
     "salary", "positionRank", "slotName", "teamName", "lineupStatus", "byeWeek",
@@ -131,11 +133,26 @@ def reorder_rankings(table: RankingsTable, ids: Sequence[str]) -> RankingsTable:
 def export_rankings_csv(
     table: RankingsTable,
     destination: str | Path | IO[str] | None = None,
+    *,
+    identity_graph: IdentityGraph | None = None,
+    season: int | None = None,
+    unattended: bool = False,
 ) -> str:
     """Serialize rankings with stable LF newlines; never overwrites the source."""
 
     if table.columns != RANKINGS_COLUMNS:
         raise RankingsSchemaError("rankings table has unexpected columns")
+    if unattended:
+        if identity_graph is None or season is None:
+            raise RankingsSchemaError(
+                "unattended rankings export requires identity_graph and season"
+            )
+        try:
+            identity_graph.check_material_players(
+                table.rows, season, unattended=True
+            )
+        except ValueError as exc:
+            raise RankingsSchemaError(str(exc)) from exc
     output = StringIO(newline="")
     writer = csv.DictWriter(
         output, fieldnames=list(RANKINGS_COLUMNS), lineterminator="\n"

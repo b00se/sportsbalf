@@ -105,12 +105,15 @@ class IdentityGraph:
         if season is None:
             raise IdentityIngestionError("each identity row requires a positive season")
         gsis = _clean(raw.get("gsis_id"))
-        source_ids = dict(raw.get("source_ids") or {})
+        provided = raw.get("source_ids")
+        if provided is not None and not isinstance(provided, Mapping):
+            raise IdentityIngestionError("source_ids must be a mapping")
+        source_ids = dict(provided or {})
         for key in ("nflverse_id", "consensus_id", "appearance_id"):
             value = _clean(raw.get(key))
             if value:
                 source_ids[key] = value
-        ud_id = _clean(raw.get("ud_id") or raw.get("ud_player_id"))
+        ud_id = _clean(raw.get("ud_id") or raw.get("ud_player_id") or raw.get("ud_team_id") or raw.get("ud_game_id"))
         if ud_id:
             source_ids["ud_id"] = ud_id
         if not gsis or not source_ids:
@@ -205,7 +208,14 @@ class IdentityGraph:
         unresolved, ambiguous = [], []
         total = resolved = 0
         for item in players:
-            ud_id = item.get("ud_id") if isinstance(item, Mapping) else item
+            if isinstance(item, Mapping):
+                ud_id = next(
+                    (item.get(key) for key in (
+                        "ud_id", "ud_player_id", "appearance_id", "nflverse_id", "consensus_id", "id", "playerId"
+                    ) if _clean(item.get(key))), None
+                )
+            else:
+                ud_id = item
             key = _clean(ud_id) or "<missing>"
             total += 1
             outcome = self.resolve_player(ud_id, season)

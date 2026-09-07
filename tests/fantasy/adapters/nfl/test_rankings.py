@@ -10,6 +10,7 @@ from src.fantasy.adapters.nfl.rankings import (
     parse_rankings_csv,
     reorder_rankings,
 )
+from src.nfl.data.identity import build_identity_graph
 
 
 def _csv(rows: list[str]) -> str:
@@ -70,3 +71,28 @@ def test_rankings_export_rejects_overwriting_input_source(tmp_path: Path) -> Non
     table = parse_rankings_csv(source)
     with pytest.raises(RankingsSchemaError, match="overwrite"):
         export_rankings_csv(table, source)
+
+
+def test_unattended_rankings_export_blocks_unresolved_identity() -> None:
+    table = normalize_rankings(parse_rankings_csv(FIXTURE))
+    graph = build_identity_graph(
+        players=[{"ud_id": "a", "gsis_id": "00-1", "season": 2026}],
+        teams=[], games=[]
+    )
+    with pytest.raises(RankingsSchemaError, match="unattended"):
+        export_rankings_csv(table, identity_graph=graph, season=2026, unattended=True)
+
+
+def test_unattended_rankings_export_accepts_material_identity() -> None:
+    table = normalize_rankings(parse_rankings_csv(FIXTURE))
+    graph = build_identity_graph(
+        players=[
+            {"ud_id": "a", "gsis_id": "00-1", "season": 2026},
+            {"ud_id": "b", "gsis_id": "00-2", "season": 2026},
+        ],
+        teams=[], games=[]
+    )
+    # Fixture's first id is a; gate should run and then serialize.
+    assert export_rankings_csv(
+        table, identity_graph=graph, season=2026, unattended=True
+    ).startswith("id,playerId")
