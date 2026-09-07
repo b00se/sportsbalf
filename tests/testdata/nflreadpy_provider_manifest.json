@@ -1,0 +1,5 @@
+{
+  "fixture": "nflreadpy_weekly.csv",
+  "sha256": "fa2a451cbd17e58d8f6b467b67bb15be66fab5ba5c41fc0f8546590f11694afc",
+  "columns": ["season", "week", "player_id", "pass_attempts"]
+}

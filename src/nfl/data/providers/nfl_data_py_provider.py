@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 
 from .base import (
+    CANONICAL_DATASETS,
     CapabilityRecord,
     FailureMetadata,
     FreshnessMetadata,
@@ -88,7 +89,7 @@ class NflDataPyProvider(NFLDataProvider):
         """Return the audited legacy provider capabilities."""
         return ProviderCapabilities(
             self.name,
-            ("weekly", "schedules", "pbp", "ngs_passing"),
+            CANONICAL_DATASETS,
             False,
             "nflverse data license",
             tuple(
@@ -99,16 +100,7 @@ class NflDataPyProvider(NFLDataProvider):
                     "nflverse data license",
                     "nflreadpy",
                 )
-                for dataset in (
-                    "schedules",
-                    "player_stats",
-                    "pbp",
-                    "rosters",
-                    "depth_charts",
-                    "ngs",
-                    "participation",
-                    "betting_lines",
-                )
+                for dataset in CANONICAL_DATASETS
             ),
         )
 
@@ -117,14 +109,14 @@ class NflDataPyProvider(NFLDataProvider):
             module = _require_module()
         except Exception as exc:
             return _error_result(exc, years)
-        return _safe_load(module.import_weekly_data, years)
+        return _safe_load(lambda values: module.import_weekly_data(values), years)
 
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
         try:
             module = _require_module()
         except Exception as exc:
             return _error_result(exc, years)
-        return _safe_load(module.import_schedules, years)
+        return _safe_load(lambda values: module.import_schedules(values), years)
 
     def load_pbp(self, years: Sequence[int]) -> LoadResult:
         try:

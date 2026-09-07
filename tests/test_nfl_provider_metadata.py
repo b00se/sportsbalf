@@ -1,4 +1,5 @@
 import hashlib
+import json
 from datetime import UTC
 from pathlib import Path
 
@@ -150,8 +151,13 @@ def test_unsupported_legacy_ngs_is_typed(monkeypatch):
 
 def test_fixture_bytes_are_loaded_and_hash_verified():
     path = Path(__file__).parent / "testdata" / "nflreadpy_weekly.csv"
-    payload = path.read_bytes()
-    assert hashlib.sha256(payload).hexdigest() == (
-        "fa2a451cbd17e58d8f6b467b67bb15be66fab5ba5c41fc0f8546590f11694afc"
+    manifest = json.loads(
+        (
+            Path(__file__).parent / "testdata" / "nflreadpy_provider_manifest.json"
+        ).read_text()
     )
-    assert b"season,week" in payload
+    payload = path.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == manifest["sha256"]
+    frame = pd.read_csv(path)
+    assert list(frame.columns) == manifest["columns"]
+    assert frame.loc[0, "season"] == 2024

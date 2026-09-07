@@ -1,6 +1,0 @@
-{
-  "weekly": ["player_position", "season", "game_week", "gsis_game_id", "player_id_gsis", "player_name", "team", "opp_team", "pass_attempts"],
-  "schedules": ["gsis_game_id", "season", "game_week", "game_date", "home", "away", "home_spread", "over_under"],
-  "pbp": ["season", "week", "gsis_game_id", "offense_team", "defense_team", "is_pass_attempt", "is_rush_attempt"],
-  "ngs_passing": ["season", "week", "player_id", "average_time_to_throw", "intended_air_yards_avg", "cpoe"]
-}
