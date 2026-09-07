@@ -14,10 +14,13 @@ projection_sources:
     version: 2026-week-01
     retrieval_method: manual_download
     source_timestamp_utc: 2026-09-01T12:00:00Z
-    content_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    content_sha256: 3e197d46eff043dc2c0a5994ba93257c08abd3cc46b900dda4f78da1d677c4a4
     coverage_score: 0.95
     max_age_hours: 168
     baseline_role: public_projection
+    snapshot_path: tests/testdata/fantasy/nfl/projections/nflverse_week01.csv
+    snapshot_schema: player_id,game_id,season,week,projection,actual,as_of_utc
+    policy: noncommercial
   - source_id: fantasypros-consensus
     publisher: FantasyPros
     access_url: https://www.fantasypros.com/nfl/rankings/consensus-cheatsheets.php
@@ -30,7 +33,10 @@ projection_sources:
     version: 2026-week-01
     retrieval_method: manual_download
     source_timestamp_utc: 2026-09-01T12:00:00Z
-    content_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    content_sha256: eabf4570148dbfeb8b4cfd0dd6e030de4ba857bedd8869a19aef5460b10a63b0
     coverage_score: 0.90
     max_age_hours: 168
     baseline_role: consensus_reference
+    snapshot_path: tests/testdata/fantasy/nfl/projections/consensus_week01.csv
+    snapshot_schema: player_id,game_id,season,week,projection,actual,as_of_utc
+    policy: noncommercial

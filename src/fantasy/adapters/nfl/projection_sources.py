@@ -7,6 +7,7 @@ same declaration to reproduce a source tournament from archived inputs.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -46,6 +47,9 @@ class ProjectionSource:
     coverage_score: float
     max_age_hours: float = 168.0
     baseline_role: str = "candidate"
+    snapshot_path: str = ""
+    snapshot_schema: tuple[str, ...] = ()
+    policy: str = "noncommercial"
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +73,15 @@ class TournamentEntry:
     score: float
 
 
+@dataclass(frozen=True, slots=True)
+class EvaluationResult:
+    """Rolling-origin error summary for an archived projection snapshot."""
+
+    rows: int
+    mean_absolute_error: float
+    coverage: float
+
+
 def _parse_timestamp(value: str) -> datetime:
     if not isinstance(value, str) or not value.endswith("Z"):
         raise SourceAuditError(
@@ -90,6 +103,7 @@ def audit_projection_source(
     *,
     as_of_utc: datetime,
     max_age_hours: float = 168.0,
+    commercial_mode: bool = False,
 ) -> SourceAuditResult:
     """Audit licensing, freshness, and reproducibility without fetching data.
 
@@ -106,6 +120,22 @@ def audit_projection_source(
     timestamp = _parse_timestamp(source.source_timestamp_utc)
     age_hours = (as_of_utc - timestamp).total_seconds() / 3600
     failures: list[str] = []
+    if source.policy != "noncommercial":
+        failures.append("policy_not_approved")
+    if commercial_mode:
+        failures.append("commercial_mode_not_approved")
+    if source.snapshot_path:
+        snapshot = Path(source.snapshot_path)
+        if not snapshot.is_file():
+            failures.append("snapshot_missing")
+        else:
+            digest = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+            if digest != source.content_sha256:
+                failures.append("snapshot_hash_mismatch")
+            if source.snapshot_schema:
+                header = snapshot.read_text(encoding="utf-8").splitlines()[0].split(",")
+                if tuple(header) != source.snapshot_schema:
+                    failures.append("snapshot_schema_mismatch")
     if not source.version.strip():
         failures.append("version_missing")
     if not isinstance(source.cost_usd, (int, float)) or isinstance(
@@ -118,11 +148,11 @@ def audit_projection_source(
         failures.append("license_missing")
     if not isinstance(source.commercial_use, bool):
         failures.append("commercial_use_invalid")
-    elif not source.commercial_use:
+    elif commercial_mode and not source.commercial_use:
         failures.append("commercial_use_not_permitted")
     if not isinstance(source.redistribution_allowed, bool):
         failures.append("redistribution_allowed_invalid")
-    elif not source.redistribution_allowed:
+    elif commercial_mode and not source.redistribution_allowed:
         failures.append("redistribution_not_permitted")
     if not source.snapshot_format.strip():
         failures.append("snapshot_format_missing")
@@ -153,18 +183,33 @@ def run_projection_source_tournament(
     *,
     as_of_utc: datetime,
     max_age_hours: float = 168.0,
+    commercial_mode: bool = False,
 ) -> tuple[TournamentEntry, ...]:
     """Return eligible sources in a deterministic coverage/freshness order."""
 
+    if commercial_mode:
+        raise SourceAuditError("commercial mode is not approved for R2.4")
     audits = [
         audit_projection_source(
             source,
             as_of_utc=as_of_utc,
             max_age_hours=min(max_age_hours, source.max_age_hours),
+            commercial_mode=commercial_mode,
         )
         for source in sources
     ]
-    eligible = [audit for audit in audits if audit.eligible]
+    eligible = [
+        audit
+        for audit in audits
+        if audit.eligible
+        and audit.source.baseline_role
+        in {"public_projection", "consensus_reference"}
+    ]
+    roles = {audit.source.baseline_role for audit in eligible}
+    if len(roles) < 2:
+        raise SourceAuditError(
+            "at least two independent eligible baseline roles are required"
+        )
     ranked = sorted(
         eligible,
         key=lambda audit: (
@@ -186,6 +231,8 @@ def run_projection_source_tournament(
 
 def _required_text(raw: dict[str, Any], key: str, index: int) -> str:
     value = raw.get(key)
+    if isinstance(value, datetime):
+        value = value.astimezone(UTC).isoformat().replace("+00:00", "Z")
     if not isinstance(value, str) or not value.strip():
         raise SourceAuditError(
             f"projection_sources[{index}].{key} must be non-empty text"
@@ -256,6 +303,36 @@ def load_projection_sources(path: str | Path) -> tuple[ProjectionSource, ...]:
                 coverage_score=numeric["coverage_score"],
                 max_age_hours=numeric["max_age_hours"],
                 baseline_role=str(raw.get("baseline_role", "candidate")),
+                snapshot_path=_required_text(raw, "snapshot_path", index),
+                snapshot_schema=tuple(
+                    _required_text(raw, "snapshot_schema", index).split(",")
+                ),
+                policy=_required_text(raw, "policy", index),
             )
         )
     return tuple(parsed)
+
+
+def score_rolling_origin_snapshot(path: str | Path) -> EvaluationResult:
+    """Score archived rows with projection, actual, and as-of columns."""
+
+    import csv
+
+    with Path(path).open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    required = {
+        "player_id",
+        "game_id",
+        "season",
+        "week",
+        "projection",
+        "actual",
+        "as_of_utc",
+    }
+    if not rows or not required.issubset(rows[0]):
+        raise SourceAuditError("evaluation snapshot is missing required columns")
+    errors = [abs(float(row["projection"]) - float(row["actual"])) for row in rows]
+    covered = sum(
+        bool(row["player_id"].strip()) and row["projection"] != "" for row in rows
+    )
+    return EvaluationResult(len(rows), sum(errors) / len(errors), covered / len(rows))

@@ -9,6 +9,7 @@ from src.fantasy.adapters.nfl.projection_sources import (
     audit_projection_source,
     load_projection_sources,
     run_projection_source_tournament,
+    score_rolling_origin_snapshot,
 )
 
 
@@ -28,6 +29,7 @@ def _source(**overrides: object) -> ProjectionSource:
         "source_timestamp_utc": "2026-09-01T12:00:00Z",
         "content_sha256": "a" * 64,
         "coverage_score": 0.9,
+        "baseline_role": "public_projection",
     }
     values.update(overrides)
     return ProjectionSource(**values)
@@ -72,12 +74,46 @@ def test_tournament_is_deterministic_and_excludes_stale_or_paid_sources() -> Non
     )
     paid = _source(source_id="paid", cost_usd=1.0)
 
+    consensus = _source(source_id="consensus", baseline_role="consensus_reference")
     tournament = run_projection_source_tournament(
-        (paid, stale, winner), as_of_utc=as_of, max_age_hours=72
+        (paid, stale, winner, consensus), as_of_utc=as_of, max_age_hours=72
     )
 
-    assert [item.source.source_id for item in tournament] == ["winner"]
+    assert [item.source.source_id for item in tournament] == ["consensus", "winner"]
     assert tournament[0].rank == 1
+
+
+def test_tournament_requires_two_baseline_roles() -> None:
+    with pytest.raises(SourceAuditError, match="two independent"):
+        run_projection_source_tournament(
+            (_source(),), as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC)
+        )
+
+
+def test_rolling_origin_fixture_scores_required_schema() -> None:
+    result = score_rolling_origin_snapshot(
+        "tests/testdata/fantasy/nfl/projections/nflverse_week01.csv"
+    )
+    assert result.rows == 1
+    assert result.mean_absolute_error == 1.5
+    assert result.coverage == 1.0
+
+
+def test_checked_in_registry_has_two_real_reproducible_baselines() -> None:
+    sources = load_projection_sources("config/fantasy/nfl_projection_sources_2026.yaml")
+    result = run_projection_source_tournament(
+        sources, as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC)
+    )
+    assert {entry.source.baseline_role for entry in result} == {
+        "public_projection",
+        "consensus_reference",
+    }
+    with pytest.raises(SourceAuditError, match="commercial"):
+        run_projection_source_tournament(
+            sources,
+            as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC),
+            commercial_mode=True,
+        )
 
 
 def test_invalid_timestamp_fails_closed() -> None:
