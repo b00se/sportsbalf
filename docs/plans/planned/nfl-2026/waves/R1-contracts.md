@@ -1,6 +1,6 @@
 # Wave R1 — Contracts
 
-Status: Contract implementation complete; R1.2 human launch gate pending.
+Status: Complete; R1.2 accepted by operator override on 2026-09-06.
 
 ## Packets
 

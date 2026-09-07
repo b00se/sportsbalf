@@ -1,6 +1,6 @@
 # NFL 2026 Execution Index
 
-Status: R0 complete; R1 contracts implemented; R1.2 human gate pending
+Status: R0 complete; R1 accepted by operator override
 
 ## Objective
 
@@ -14,9 +14,9 @@ Ship a verified Underdog NFL Daily rankings workflow, then build a pregame 6box 
   full-PPR requires an explicit override, and unknown scoring is rejected.
 - Snapshot manifests canonically hash source inputs, configuration, outputs,
   source timestamps, and non-sensitive run metadata.
-- The controlled Autopilot proof remains a human gate documented in
-  [R1.2-autopilot-proof.md](evidence/R1.2-autopilot-proof.md); it is not
-  satisfied by implementation tests.
+- The controlled Autopilot proof and the operator's upload/order acceptance
+  record are documented in
+  [R1.2-autopilot-proof.md](evidence/R1.2-autopilot-proof.md).
 
 ## Execution
 

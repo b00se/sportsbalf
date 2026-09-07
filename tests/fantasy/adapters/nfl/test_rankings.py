@@ -29,6 +29,16 @@ def test_rankings_parse_normalize_reorder_export_is_lossless() -> None:
     ])
 
 
+def test_rankings_preserve_alphanumeric_position_rank() -> None:
+    source = _csv([
+        'a,1,John,Smith,1.00,100.00,6000,QB1,QB,KC,,9',
+    ])
+
+    table = normalize_rankings(parse_rankings_csv(StringIO(source)))
+
+    assert table.rows[0]["positionRank"] == "QB1"
+
+
 @pytest.mark.parametrize("bad", [
     "id,playerId",
     ",1,A,B,1,2,3,1,QB,KC,,1",

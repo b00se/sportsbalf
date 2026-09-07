@@ -14,7 +14,7 @@ RANKINGS_COLUMNS: tuple[str, ...] = (
     "id", "playerId", "firstName", "lastName", "adp", "projectedPoints",
     "salary", "positionRank", "slotName", "teamName", "lineupStatus", "byeWeek",
 )
-_NUMERIC_COLUMNS = {"adp", "projectedPoints", "salary", "positionRank", "byeWeek"}
+_NUMERIC_COLUMNS = {"adp", "projectedPoints", "salary", "byeWeek"}
 _POSITIONS = {"QB", "RB", "WR", "TE", "K", "DST", "DEF"}
 
 
