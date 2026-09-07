@@ -11,6 +11,10 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import yaml
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REPRODUCIBLE_METHODS = frozenset(
@@ -40,6 +44,8 @@ class ProjectionSource:
     source_timestamp_utc: str
     content_sha256: str
     coverage_score: float
+    max_age_hours: float = 168.0
+    baseline_role: str = "candidate"
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,19 +106,29 @@ def audit_projection_source(
     timestamp = _parse_timestamp(source.source_timestamp_utc)
     age_hours = (as_of_utc - timestamp).total_seconds() / 3600
     failures: list[str] = []
-    if source.cost_usd != 0:
+    if not source.version.strip():
+        failures.append("version_missing")
+    if not isinstance(source.cost_usd, (int, float)) or isinstance(
+        source.cost_usd, bool
+    ):
+        failures.append("cost_invalid")
+    elif source.cost_usd != 0:
         failures.append("not_free")
     if not source.license_name.strip() or not source.license_url.strip():
         failures.append("license_missing")
-    if not source.commercial_use:
+    if not isinstance(source.commercial_use, bool):
+        failures.append("commercial_use_invalid")
+    elif not source.commercial_use:
         failures.append("commercial_use_not_permitted")
-    if not source.redistribution_allowed:
+    if not isinstance(source.redistribution_allowed, bool):
+        failures.append("redistribution_allowed_invalid")
+    elif not source.redistribution_allowed:
         failures.append("redistribution_not_permitted")
     if not source.snapshot_format.strip():
         failures.append("snapshot_format_missing")
     if source.retrieval_method not in _REPRODUCIBLE_METHODS:
         failures.append("retrieval_method_not_reproducible")
-    if not _SHA256_RE.fullmatch(source.content_sha256.lower()):
+    if not _SHA256_RE.fullmatch(source.content_sha256):
         failures.append("content_hash_missing")
     if age_hours < 0:
         failures.append("timestamp_in_future")
@@ -121,7 +137,7 @@ def audit_projection_source(
     reproducibility_score = float(
         bool(source.snapshot_format.strip())
         and source.retrieval_method in _REPRODUCIBLE_METHODS
-        and bool(_SHA256_RE.fullmatch(source.content_sha256.lower()))
+        and bool(_SHA256_RE.fullmatch(source.content_sha256))
     )
     return SourceAuditResult(
         source=source,
@@ -142,7 +158,9 @@ def run_projection_source_tournament(
 
     audits = [
         audit_projection_source(
-            source, as_of_utc=as_of_utc, max_age_hours=max_age_hours
+            source,
+            as_of_utc=as_of_utc,
+            max_age_hours=min(max_age_hours, source.max_age_hours),
         )
         for source in sources
     ]
@@ -164,3 +182,80 @@ def run_projection_source_tournament(
         )
         for index, audit in enumerate(ranked, start=1)
     )
+
+
+def _required_text(raw: dict[str, Any], key: str, index: int) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise SourceAuditError(
+            f"projection_sources[{index}].{key} must be non-empty text"
+        )
+    return value.strip()
+
+
+def _required_bool(raw: dict[str, Any], key: str, index: int) -> bool:
+    value = raw.get(key)
+    if not isinstance(value, bool):
+        raise SourceAuditError(f"projection_sources[{index}].{key} must be a boolean")
+    return value
+
+
+def load_projection_sources(path: str | Path) -> tuple[ProjectionSource, ...]:
+    """Load and type-check a projection-source registry from YAML."""
+
+    try:
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise SourceAuditError(
+            f"Unable to load projection source config: {exc}"
+        ) from exc
+    rows = payload.get("projection_sources") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise SourceAuditError("projection_sources must be a non-empty list")
+    parsed: list[ProjectionSource] = []
+    for index, raw in enumerate(rows):
+        if not isinstance(raw, dict):
+            raise SourceAuditError(f"projection_sources[{index}] must be a mapping")
+        numeric: dict[str, float] = {}
+        for key in ("cost_usd", "coverage_score", "max_age_hours"):
+            value = raw.get(key)
+            if key == "max_age_hours" and value is None:
+                numeric[key] = 168.0
+                continue
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise SourceAuditError(
+                    f"projection_sources[{index}].{key} must be numeric"
+                )
+            numeric[key] = float(value)
+        if not 0 <= numeric["coverage_score"] <= 1:
+            raise SourceAuditError(
+                f"projection_sources[{index}].coverage_score must be 0..1"
+            )
+        digest = _required_text(raw, "content_sha256", index)
+        if not _SHA256_RE.fullmatch(digest):
+            raise SourceAuditError(
+                f"projection_sources[{index}].content_sha256 must be lowercase SHA-256"
+            )
+        parsed.append(
+            ProjectionSource(
+                source_id=_required_text(raw, "source_id", index),
+                publisher=_required_text(raw, "publisher", index),
+                access_url=_required_text(raw, "access_url", index),
+                license_name=_required_text(raw, "license_name", index),
+                license_url=_required_text(raw, "license_url", index),
+                cost_usd=numeric["cost_usd"],
+                commercial_use=_required_bool(raw, "commercial_use", index),
+                redistribution_allowed=_required_bool(
+                    raw, "redistribution_allowed", index
+                ),
+                snapshot_format=_required_text(raw, "snapshot_format", index),
+                version=_required_text(raw, "version", index),
+                retrieval_method=_required_text(raw, "retrieval_method", index),
+                source_timestamp_utc=_required_text(raw, "source_timestamp_utc", index),
+                content_sha256=digest,
+                coverage_score=numeric["coverage_score"],
+                max_age_hours=numeric["max_age_hours"],
+                baseline_role=str(raw.get("baseline_role", "candidate")),
+            )
+        )
+    return tuple(parsed)

@@ -31,6 +31,7 @@ from src.fantasy.adapters.nfl.projection_sources import (
     SourceAuditResult,
     TournamentEntry,
     audit_projection_source,
+    load_projection_sources,
     run_projection_source_tournament,
 )
 from src.fantasy.adapters.nfl.rankings import (
@@ -75,5 +76,6 @@ __all__ = [
     "SourceAuditResult",
     "TournamentEntry",
     "audit_projection_source",
+    "load_projection_sources",
     "run_projection_source_tournament",
 ]

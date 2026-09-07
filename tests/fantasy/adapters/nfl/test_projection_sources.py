@@ -7,6 +7,7 @@ from src.fantasy.adapters.nfl.projection_sources import (
     ProjectionSource,
     SourceAuditError,
     audit_projection_source,
+    load_projection_sources,
     run_projection_source_tournament,
 )
 
@@ -85,3 +86,40 @@ def test_invalid_timestamp_fails_closed() -> None:
             _source(source_timestamp_utc="2026-09-01"),
             as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC),
         )
+
+
+def test_version_digest_and_boolean_types_fail_closed() -> None:
+    as_of = datetime(2026, 9, 2, 12, tzinfo=UTC)
+    assert "version_missing" in audit_projection_source(
+        _source(version=""), as_of_utc=as_of
+    ).failures
+    assert "content_hash_missing" in audit_projection_source(
+        _source(content_sha256="A" * 64), as_of_utc=as_of
+    ).failures
+    assert "commercial_use_invalid" in audit_projection_source(
+        _source(commercial_use="true"), as_of_utc=as_of
+    ).failures
+
+
+def test_config_loader_rejects_string_booleans(tmp_path) -> None:
+    path = tmp_path / "sources.yaml"
+    path.write_text(
+        "projection_sources:\n"
+        "  - source_id: x\n"
+        "    publisher: p\n"
+        "    access_url: https://example.test\n"
+        "    license_name: CC0\n"
+        "    license_url: https://creativecommons.org/publicdomain/zero/1.0/\n"
+        "    cost_usd: 0\n"
+        "    commercial_use: 'true'\n"
+        "    redistribution_allowed: true\n"
+        "    snapshot_format: csv\n"
+        "    version: v1\n"
+        "    retrieval_method: local_fixture\n"
+        "    source_timestamp_utc: 2026-09-01T00:00:00Z\n"
+        f"    content_sha256: {'a' * 64}\n"
+        "    coverage_score: 0.5\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SourceAuditError, match="boolean"):
+        load_projection_sources(path)
