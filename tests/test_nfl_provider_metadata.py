@@ -296,6 +296,98 @@ def test_advertised_datasets_map_to_callable_loaders():
         assert all(callable(getattr(provider, name)) for name in mapping.values())
 
 
+@pytest.mark.parametrize(
+    ("dataset", "fixture_name", "expected"),
+    [
+        (
+            "schedules",
+            "nflreadpy_schedules_aliases.csv",
+            {"game_id": "g-2", "home_team": "DEN", "away_team": "OAK"},
+        ),
+        (
+            "pbp",
+            "nflreadpy_pbp_aliases.csv",
+            {"game_id": "g-2", "pass_attempt": 1, "posteam": "DEN"},
+        ),
+        (
+            "ngs",
+            "nflreadpy_ngs_aliases.csv",
+            {"player_gsis_id": "QB-2", "avg_time_to_throw": 2.75},
+        ),
+    ],
+)
+def test_alias_fixtures_are_transformed_by_normalization(
+    monkeypatch, dataset, fixture_name, expected
+):
+    import src.nfl.data.providers.readpy as module
+
+    fixture = pd.read_csv(Path(__file__).parent / "testdata" / fixture_name)
+
+    class Stub:
+        def load_schedules(self, years):
+            return fixture
+
+        def load_pbp(self, years):
+            return fixture
+
+        def load_nextgen_stats(self, years, stat_type="passing"):
+            return fixture
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = getattr(NFLReadPyProvider(), module.DATASET_LOADERS[dataset])([2024])
+    row = result.data.iloc[0]
+    for column, value in expected.items():
+        assert row[column] == value
+    assert str(result.data["season"].dtype) == "Int64"
+    assert str(result.data["week"].dtype) == "Int64"
+
+
+@pytest.mark.parametrize("provider_kind", ["nflreadpy", "nfl_data_py"])
+def test_no_season_is_rejected_by_every_advertised_loader(monkeypatch, provider_kind):
+    frame = pd.DataFrame({"week": [1], "player_id": ["QB-1"]})
+    if provider_kind == "nflreadpy":
+        import src.nfl.data.providers.readpy as module
+
+        class Stub:
+            def load_player_stats(self, years, summary_level="week"):
+                return frame
+
+            def load_schedules(self, years):
+                return frame
+
+            def load_pbp(self, years):
+                return frame
+
+            def load_nextgen_stats(self, years, stat_type="passing"):
+                return frame
+
+        monkeypatch.setattr(module, "nfl", Stub())
+        provider = NFLReadPyProvider()
+        mapping = module.DATASET_LOADERS
+    else:
+        import src.nfl.data.providers.nfl_data_py_provider as module
+
+        class Stub:
+            def import_weekly_data(self, years):
+                return frame
+
+            def import_schedules(self, years):
+                return frame
+
+            def import_pbp_data(self, years, downcast=True):
+                return frame
+
+        monkeypatch.setattr(module, "nfl", Stub())
+        provider = NflDataPyProvider()
+        mapping = module.DATASET_LOADERS
+
+    for loader_name in mapping.values():
+        result = getattr(provider, loader_name)([2024, 2024, 2025])
+        assert result.data.empty
+        assert result.skipped_years == [2024, 2025]
+        assert [failure.year for failure in result.failures] == [2024, 2025]
+
+
 def test_legacy_empty_and_partial_responses_reconcile_seasons(monkeypatch):
     class Stub:
         def import_weekly_data(self, years):
