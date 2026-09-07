@@ -1,13 +1,47 @@
 """Provider abstractions for NFL data ingestion."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal, Protocol, Sequence, runtime_checkable
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+from typing import Literal, Protocol, runtime_checkable
 
 import pandas as pd
 
 ProviderName = Literal["nfl_data_py", "nflreadpy"]
 DEFAULT_PROVIDER_NAME: ProviderName = "nfl_data_py"
+FreshnessStatus = Literal["complete", "partial", "empty"]
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCapabilities:
+    """Audited capabilities of an NFL data provider."""
+
+    provider: str
+    datasets: tuple[str, ...]
+    supports_current_season: bool
+    source_license: str
+
+
+@dataclass(frozen=True, slots=True)
+class FreshnessMetadata:
+    """Typed provenance describing the currency of one provider response."""
+
+    requested_years: tuple[int, ...] = ()
+    available_years: tuple[int, ...] = ()
+    retrieved_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    status: FreshnessStatus = "empty"
+
+
+@dataclass(frozen=True, slots=True)
+class FailureMetadata:
+    """Typed, non-sensitive description of a provider load failure."""
+
+    kind: Literal["unavailable", "error"]
+    message: str
+    exception_type: str
+    year: int | None = None
 
 
 @dataclass(slots=True)
@@ -16,9 +50,15 @@ class LoadResult:
 
     data: pd.DataFrame
     skipped_years: list[int] = field(default_factory=list)
+    freshness: FreshnessMetadata = field(default_factory=FreshnessMetadata)
+    failures: tuple[FailureMetadata, ...] = ()
+
+    def with_data(self, data: pd.DataFrame) -> LoadResult:
+        """Return this result with normalized data while preserving metadata."""
+        return replace(self, data=data)
 
     @classmethod
-    def empty(cls) -> "LoadResult":
+    def empty(cls) -> LoadResult:
         """Return an empty provider result."""
         return cls(pd.DataFrame())
 
@@ -30,6 +70,11 @@ class NFLDataProvider(Protocol):
     @property
     def name(self) -> str:
         """Return the provider identifier."""
+        ...
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        """Return the provider's audited dataset capabilities."""
         ...
 
     def load_weekly(self, years: Sequence[int]) -> LoadResult:
