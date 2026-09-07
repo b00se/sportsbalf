@@ -148,7 +148,12 @@ def export_rankings_csv(
     season: int | None = None,
     unattended: bool = False,
 ) -> str:
-    """Serialize rankings with stable LF newlines; never overwrites the source."""
+    """Serialize rankings for manual/low-level use.
+
+    Call :func:`export_unattended_rankings_csv` for any automated output.  The
+    optional gate arguments remain here only for backwards compatibility with
+    existing callers; new unattended code must use the dedicated wrapper.
+    """
 
     if table.columns != RANKINGS_COLUMNS:
         raise RankingsSchemaError("rankings table has unexpected columns")

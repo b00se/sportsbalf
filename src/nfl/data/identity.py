@@ -55,6 +55,19 @@ class MaterialPlayerReport:
         return not self.unresolved and not self.ambiguous
 
 
+# Ordered from durable identity to increasingly scoped external references.
+# Keep this in one place so the export gate and its documentation cannot drift.
+MATERIAL_PLAYER_ALIASES: tuple[tuple[str, str | None], ...] = (
+    ("nflverse_id", "nflverse_id"),
+    ("ud_player_id", "ud_player_id"),
+    ("appearance_id", "appearance_id"),
+    ("consensus_id", "consensus_id"),
+    ("id", None),
+    ("playerId", None),
+    ("ud_id", "ud_id"),
+)
+
+
 def _clean(value: Any) -> str | None:
     text = str(value).strip() if value is not None else ""
     return text or None
@@ -403,18 +416,9 @@ class IdentityGraph:
         total = resolved = 0
         for item in players:
             context = item if isinstance(item, Mapping) else {}
-            aliases = (
-                ("nflverse_id", "nflverse_id"),
-                ("ud_player_id", "ud_player_id"),
-                ("appearance_id", "appearance_id"),
-                ("consensus_id", "consensus_id"),
-                ("id", None),
-                ("playerId", None),
-                ("ud_id", "ud_id"),
-            )
             supplied = [
                 (key, _clean(context.get(key)), source)
-                for key, source in aliases
+                for key, source in MATERIAL_PLAYER_ALIASES
                 if _clean(context.get(key))
             ]
             reference = supplied[0][1] if supplied else (item if not context else None)
