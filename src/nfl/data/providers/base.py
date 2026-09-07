@@ -12,6 +12,16 @@ import pandas as pd
 ProviderName = Literal["nfl_data_py", "nflreadpy"]
 DEFAULT_PROVIDER_NAME: ProviderName = "nfl_data_py"
 FreshnessStatus = Literal["complete", "partial", "empty"]
+CANONICAL_DATASETS = (
+    "schedules",
+    "player_stats",
+    "pbp",
+    "rosters",
+    "depth_charts",
+    "ngs",
+    "participation",
+    "betting_lines",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +83,40 @@ class LoadResult:
     def empty(cls) -> LoadResult:
         """Return an empty provider result."""
         return cls(pd.DataFrame())
+
+
+def reconcile_seasons(
+    data: pd.DataFrame,
+    years: Sequence[int],
+    failures: Sequence[FailureMetadata] = (),
+) -> LoadResult:
+    """Reconcile requested seasons and emit one typed failure per missing year."""
+    requested = tuple(dict.fromkeys(int(year) for year in years))
+    available = (
+        tuple(sorted({int(value) for value in data["season"].dropna()}))
+        if "season" in data
+        else ()
+    )
+    existing = {failure.year for failure in failures}
+    missing = [
+        year for year in requested if year not in available and year not in existing
+    ]
+    all_failures = tuple(failures) + tuple(
+        FailureMetadata(
+            "unavailable", "season absent from response", "MissingSeason", year
+        )
+        for year in missing
+    )
+    skipped = [year for year in requested if year not in available]
+    status: FreshnessStatus = (
+        "empty" if not available else ("partial" if skipped else "complete")
+    )
+    return LoadResult(
+        data,
+        skipped,
+        FreshnessMetadata(requested, available, datetime.now(UTC), status),
+        all_failures,
+    )
 
 
 @runtime_checkable

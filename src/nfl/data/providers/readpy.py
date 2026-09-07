@@ -11,12 +11,14 @@ from urllib.error import HTTPError
 import pandas as pd
 
 from .base import (
+    CANONICAL_DATASETS,
     CapabilityRecord,
     FailureMetadata,
     FreshnessMetadata,
     LoadResult,
     NFLDataProvider,
     ProviderCapabilities,
+    reconcile_seasons,
 )
 
 try:  # pragma: no cover - optional dependency
@@ -203,7 +205,7 @@ def _fetch_with_fallback(
                     RuntimeWarning,
                     stacklevel=3,
                 )
-            return LoadResult(frame, skipped, freshness, missing_failures)
+            return reconcile_seasons(frame, years_list, missing_failures)
 
     frames: list[pd.DataFrame] = []
     skipped: list[int] = []
@@ -243,12 +245,7 @@ def _fetch_with_fallback(
 
     if not frames:
         freshness = FreshnessMetadata(tuple(years_list), (), datetime.now(UTC), "empty")
-        return LoadResult(
-            pd.DataFrame(),
-            sorted(set(years_list)),
-            freshness,
-            tuple(failures),
-        )
+        return reconcile_seasons(pd.DataFrame(), years_list, failures)
 
     if skipped:
         warnings.warn(
@@ -317,16 +314,7 @@ class NFLReadPyProvider(NFLDataProvider):
         """Return the audited nflreadpy dataset capabilities."""
         return ProviderCapabilities(
             provider=self.name,
-            datasets=(
-                "schedules",
-                "player_stats",
-                "pbp",
-                "rosters",
-                "depth_charts",
-                "ngs",
-                "participation",
-                "betting_lines",
-            ),
+            datasets=CANONICAL_DATASETS,
             supports_current_season=True,
             source_license="nflverse data license",
             audit=tuple(
@@ -337,21 +325,24 @@ class NFLReadPyProvider(NFLDataProvider):
                     "nflverse data license",
                     "skip unavailable season",
                 )
-                for dataset in (
-                    "schedules",
-                    "player_stats",
-                    "pbp",
-                    "rosters",
-                    "depth_charts",
-                    "ngs",
-                    "participation",
-                    "betting_lines",
-                )
+                for dataset in CANONICAL_DATASETS
             ),
         )
 
+    @staticmethod
+    def _failure(exc: Exception, years: Sequence[int]) -> LoadResult:
+        """Return typed metadata when nflreadpy cannot be imported."""
+        failures = tuple(
+            FailureMetadata("error", str(exc), type(exc).__name__, int(year))
+            for year in years
+        )
+        return reconcile_seasons(pd.DataFrame(), years, failures)
+
     def load_weekly(self, years: Sequence[int]) -> LoadResult:
-        module = _require_nflreadpy()
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
         result = _fetch_with_fallback(
             "weekly",
             lambda season_list: module.load_player_stats(
@@ -364,7 +355,10 @@ class NFLReadPyProvider(NFLDataProvider):
         return result.with_data(_normalize_weekly(result.data))
 
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
-        module = _require_nflreadpy()
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
         result = _fetch_with_fallback(
             "schedule",
             lambda season_list: module.load_schedules(list(season_list)),
@@ -375,7 +369,10 @@ class NFLReadPyProvider(NFLDataProvider):
         return result.with_data(_normalize_schedule(result.data))
 
     def load_pbp(self, years: Sequence[int]) -> LoadResult:
-        module = _require_nflreadpy()
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
         result = _fetch_with_fallback(
             "pbp",
             lambda season_list: module.load_pbp(list(season_list)),
@@ -386,7 +383,10 @@ class NFLReadPyProvider(NFLDataProvider):
         return result.with_data(_normalize_pbp(result.data))
 
     def load_ngs_passing(self, years: Sequence[int]) -> LoadResult:
-        module = _require_nflreadpy()
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
         result = _fetch_with_fallback(
             "ngs passing",
             lambda season_list: module.load_nextgen_stats(

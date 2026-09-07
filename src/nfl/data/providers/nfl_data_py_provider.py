@@ -15,6 +15,7 @@ from .base import (
     LoadResult,
     NFLDataProvider,
     ProviderCapabilities,
+    reconcile_seasons,
 )
 
 try:  # pragma: no cover - optional dependency
@@ -45,19 +46,7 @@ def _to_frame(value: Any) -> pd.DataFrame:
 
 def _result(frame: pd.DataFrame, years: Sequence[int]) -> LoadResult:
     """Wrap a legacy response in the shared freshness contract."""
-    requested = tuple(int(year) for year in years)
-    available = (
-        tuple(sorted({int(value) for value in frame["season"].dropna()}))
-        if "season" in frame
-        else requested
-    )
-    freshness = FreshnessMetadata(
-        requested,
-        available,
-        datetime.now(UTC),
-        "complete" if set(requested) <= set(available) else "partial",
-    )
-    return LoadResult(frame, [], freshness)
+    return reconcile_seasons(frame, years)
 
 
 def _safe_load(loader: Any, years: Sequence[int]) -> LoadResult:
@@ -66,21 +55,19 @@ def _safe_load(loader: Any, years: Sequence[int]) -> LoadResult:
     try:
         return _result(_to_frame(loader(requested)), requested)
     except Exception as exc:
-        freshness = FreshnessMetadata(tuple(requested), (), datetime.now(UTC), "empty")
         failures = tuple(
             FailureMetadata("error", str(exc), type(exc).__name__, year)
             for year in requested
         )
-        return LoadResult(pd.DataFrame(), requested, freshness, failures)
+        return reconcile_seasons(pd.DataFrame(), requested, failures)
 
 
 def _error_result(exc: Exception, years: Sequence[int]) -> LoadResult:
     """Return a typed result when the legacy module itself is unavailable."""
     requested = [int(year) for year in years]
-    return LoadResult(
+    return reconcile_seasons(
         pd.DataFrame(),
         requested,
-        FreshnessMetadata(tuple(requested), (), datetime.now(UTC), "empty"),
         tuple(
             FailureMetadata("error", str(exc), type(exc).__name__, year)
             for year in requested

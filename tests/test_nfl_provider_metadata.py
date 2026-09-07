@@ -1,4 +1,6 @@
+import hashlib
 from datetime import UTC
+from pathlib import Path
 
 import pandas as pd
 from src.nfl.data.providers.base import (
@@ -144,3 +146,12 @@ def test_unsupported_legacy_ngs_is_typed(monkeypatch):
     result = NflDataPyProvider().load_ngs_passing([2025])
     assert result.failures[0].kind == "error"
     assert result.failures[0].exception_type == "UnsupportedCapability"
+
+
+def test_fixture_bytes_are_loaded_and_hash_verified():
+    path = Path(__file__).parent / "testdata" / "nflreadpy_weekly.csv"
+    payload = path.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == (
+        "fa2a451cbd17e58d8f6b467b67bb15be66fab5ba5c41fc0f8546590f11694afc"
+    )
+    assert b"season,week" in payload
