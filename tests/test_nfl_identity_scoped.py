@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from src.fantasy.adapters.nfl.rankings import (
+    RankingsTable,
     export_unattended_rankings_csv,
     parse_rankings_csv,
 )
@@ -61,6 +62,38 @@ def test_ambiguous_material_row_blocks_without_writing(tmp_path, scoped_graph):
             table, destination, identity_graph=scoped_graph, season=2026
         )
     assert not destination.exists()
+
+
+def test_wrong_scope_preserves_existing_destination(tmp_path):
+    """A blocked scoped lookup must not overwrite an existing export."""
+    graph = build_identity_graph(
+        players=[],
+        teams=[],
+        games=[],
+        appearances=[
+            {
+                "nflverse_id": "nfl-scoped",
+                "ud_id": "scoped-row",
+                "appearance_id": "appearance-1",
+                "slate_id": "slate-1",
+                "season": 2026,
+            }
+        ],
+    )
+    table = parse_rankings_csv(Path("tests/testdata/fantasy/nfl/rankings.csv"))
+    # The fixture's first row is deliberately replaced with the scoped ID;
+    # export rows carry no slate, so validation must fail closed.
+    rows = list(table.rows)
+    rows[0] = {**rows[0], "id": "scoped-row"}
+    table = RankingsTable(table.columns, tuple(rows), table.source_path)
+    destination = tmp_path / "existing.csv"
+    sentinel = b"do-not-overwrite\n"
+    destination.write_bytes(sentinel)
+    with pytest.raises(Exception, match="unattended export blocked"):
+        export_unattended_rankings_csv(
+            table, destination, identity_graph=graph, season=2026
+        )
+    assert destination.read_bytes() == sentinel
 
 
 def test_appearance_requires_matching_scope(scoped_graph):
