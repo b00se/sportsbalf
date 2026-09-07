@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from src.fantasy.adapters.nfl.provenance import (
     SnapshotInput,
     build_snapshot_manifest,
+    write_snapshot_manifest,
 )
 
 
@@ -91,6 +94,32 @@ def test_manifest_payload_is_immutable() -> None:
 
     with pytest.raises(TypeError):
         manifest.payload["configuration"] = {}
+
+
+def test_manifest_writer_emits_canonical_bytes_without_overwriting(
+    tmp_path: Path,
+) -> None:
+    manifest = build_snapshot_manifest(
+        inputs=(), configuration={"scoring": "half_ppr"}, outputs={}, run_metadata={}
+    )
+    destination = tmp_path / "artifacts" / "manifest.json"
+    destination.parent.mkdir()
+
+    written_path = write_snapshot_manifest(manifest, destination)
+
+    assert written_path == destination
+    assert destination.read_bytes() == manifest.to_json_bytes()
+    with pytest.raises(FileExistsError):
+        write_snapshot_manifest(manifest, destination)
+
+
+def test_manifest_writer_rejects_directory_destination(tmp_path: Path) -> None:
+    manifest = build_snapshot_manifest(
+        inputs=(), configuration={}, outputs={}, run_metadata={}
+    )
+
+    with pytest.raises(IsADirectoryError):
+        write_snapshot_manifest(manifest, tmp_path)
 
 
 @pytest.mark.parametrize("timestamp", ["UTC", "2026-09-06T12:00:00+01:00"])

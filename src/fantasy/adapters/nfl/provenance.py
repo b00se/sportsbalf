@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -51,6 +53,43 @@ class SnapshotManifest:
         """Serialize the manifest using its canonical byte representation."""
 
         return _canonical_json_bytes(_thaw(self.payload))
+
+
+def write_snapshot_manifest(
+    manifest: SnapshotManifest, destination: str | os.PathLike[str]
+) -> Path:
+    """Write a manifest as an immutable, canonical artifact.
+
+    The destination is created with exclusive-create semantics. This prevents
+    a manifest writer from overwriting a source or previously recorded output,
+    while preserving the exact bytes returned by :meth:`to_json_bytes`.
+
+    Args:
+        manifest: Immutable manifest to serialize.
+        destination: File path for the manifest artifact. Its parent must
+            already exist.
+
+    Returns:
+        The normalized destination path.
+
+    Raises:
+        TypeError: If ``manifest`` is not a :class:`SnapshotManifest`.
+        FileExistsError: If the destination already exists.
+        IsADirectoryError: If the destination is a directory.
+        FileNotFoundError: If the destination parent does not exist.
+    """
+
+    if not isinstance(manifest, SnapshotManifest):
+        raise TypeError("manifest must be a SnapshotManifest.")
+    path = Path(destination)
+    if path.is_dir():
+        raise IsADirectoryError(path)
+    canonical_bytes = manifest.to_json_bytes()
+    # ``xb`` is the important safety property: it never truncates an existing
+    # source/output artifact, including when another process races this write.
+    with path.open("xb") as handle:
+        handle.write(canonical_bytes)
+    return path
 
 
 def _canonical_json_bytes(value: Any) -> bytes:

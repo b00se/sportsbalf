@@ -94,6 +94,11 @@ def reconstruct_user_entries(export: ExposureExport) -> dict[str, UserEntry]:
 
     if export.columns != EXPOSURE_COLUMNS:
         raise ExposureSchemaError("exposure export has unexpected columns")
+    pools = {row["Pool ID"] for row in export.rows}
+    if None in pools or len(pools) != 1:
+        raise ExposureSchemaError(
+            "exposure export must contain one non-empty pool ID across all entries"
+        )
     grouped: dict[str, list[dict[str, str | None]]] = {}
     for row in export.rows:
         entry = row["Draft Entry"]

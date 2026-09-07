@@ -45,3 +45,24 @@ def test_exposure_rejects_duplicate_pick_and_mixed_pool() -> None:
     mixed = ",".join(values)
     with pytest.raises(ExposureSchemaError, match="duplicate|pool"):
         reconstruct_user_entries(parse_exposure_csv(StringIO(_csv([duplicate, mixed]))))
+
+
+def test_exposure_rejects_pool_ids_mixed_across_entries() -> None:
+    def row(entry: str, draft: str, pool: str) -> str:
+        values = [""] * len(EXPOSURE_COLUMNS)
+        fields = {
+            "Draft Entry": entry,
+            "Draft ID": draft,
+            "Pool ID": pool,
+            "Pick Number": "1",
+            "Player Name": f"Player {entry}",
+        }
+        for key, value in fields.items():
+            values[EXPOSURE_COLUMNS.index(key)] = value
+        return ",".join(values)
+
+    export = parse_exposure_csv(
+        StringIO(_csv([row("E1", "D1", "P1"), row("E2", "D2", "P2")]))
+    )
+    with pytest.raises(ExposureSchemaError, match="pool"):
+        reconstruct_user_entries(export)
