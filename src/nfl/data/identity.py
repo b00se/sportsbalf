@@ -76,6 +76,18 @@ def _valid_date(value: Any) -> date | None:
         raise IdentityIngestionError(f"invalid effective date: {value!r}") from exc
 
 
+def _week(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise IdentityIngestionError(f"invalid week: {value!r}") from exc
+    if not 1 <= parsed <= 18:
+        raise IdentityIngestionError(f"invalid week: {value!r}")
+    return parsed
+
+
 def normalize_name(value: Any) -> str:
     """Normalize a name for review candidates, never automatic matching."""
     return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
@@ -111,6 +123,8 @@ class IdentityGraph:
         for key in (
             "ud_id",
             "ud_player_id",
+            "ud_team_id",
+            "ud_game_id",
             "appearance_id",
             "consensus_id",
             "nflverse_id",
@@ -128,11 +142,10 @@ class IdentityGraph:
                 "name": _clean(raw.get("name")),
                 "game_id": _clean(raw.get("game_id")),
                 "slate_id": _clean(raw.get("slate_id")),
-                "week": raw.get("week"),
+                "week": _week(raw.get("week")),
                 "from": _valid_date(raw.get("effective_from")),
                 "to": _valid_date(raw.get("effective_to")),
                 "team_gsis_id": _clean(raw.get("team_gsis_id")),
-                "global_stable": bool(raw.get("global_stable", False)),
             }
         )
 
@@ -182,16 +195,19 @@ class IdentityGraph:
                 season=year,
                 reason="valid season is required",
             )
-        scope_game = None if source == "nflverse_id" else game_id
-        scope_slate = None if source == "nflverse_id" else slate_id
+        canonical_lookup = source == "nflverse_id"
+        scope_game = None if canonical_lookup else game_id
+        scope_slate = None if canonical_lookup else slate_id
+        scope_week = None if canonical_lookup else week
+        scope_as_of = None if canonical_lookup else as_of
         rows = [
             r
             for r in self._rows.get(entity, [])
             if self._in_scope(
                 r,
                 year,
-                as_of=as_of,
-                week=week,
+                as_of=scope_as_of,
+                week=_week(scope_week),
                 game_id=scope_game,
                 slate_id=scope_slate,
             )
@@ -244,7 +260,6 @@ class IdentityGraph:
                     r["source_ids"].get(k) == ref
                     for k in ("appearance_id", "ud_player_id", "consensus_id")
                 )
-                and not r["global_stable"]
             ]
             if scoped_matches and game_id is None and slate_id is None:
                 return IdentityResolution(
@@ -270,6 +285,14 @@ class IdentityGraph:
                 ref,
                 season=year,
                 reason="multiple valid scoped mappings",
+            )
+        if len({r.get("team_gsis_id") for r in matches}) > 1:
+            return IdentityResolution(
+                entity,
+                IdentityStatus.AMBIGUOUS,
+                ref,
+                season=year,
+                reason="overlapping team context mappings",
             )
         row = matches[0]
         return IdentityResolution(
@@ -350,6 +373,7 @@ class IdentityGraph:
                 ("nflverse_id", "nflverse_id"),
                 ("ud_player_id", "ud_player_id"),
                 ("appearance_id", "appearance_id"),
+                ("consensus_id", "consensus_id"),
                 ("id", None),
                 ("playerId", None),
                 ("ud_id", "ud_id"),
