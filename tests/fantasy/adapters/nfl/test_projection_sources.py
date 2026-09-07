@@ -83,9 +83,9 @@ def test_tournament_is_deterministic_and_excludes_stale_or_paid_sources() -> Non
     winner = _source(source_id="winner", coverage_score=0.8)
     stale = _source(
         source_id="stale",
-        source_timestamp_utc=(as_of - timedelta(days=10)).isoformat().replace(
-            "+00:00", "Z"
-        ),
+        source_timestamp_utc=(as_of - timedelta(days=10))
+        .isoformat()
+        .replace("+00:00", "Z"),
     )
     paid = _source(source_id="paid", cost_usd=1.0)
 
@@ -145,15 +145,22 @@ def test_invalid_timestamp_fails_closed() -> None:
 
 def test_version_digest_and_boolean_types_fail_closed() -> None:
     as_of = datetime(2026, 9, 2, 12, tzinfo=UTC)
-    assert "version_missing" in audit_projection_source(
-        _source(version=""), as_of_utc=as_of
-    ).failures
-    assert "content_hash_missing" in audit_projection_source(
-        _source(content_sha256="A" * 64), as_of_utc=as_of
-    ).failures
-    assert "commercial_use_invalid" in audit_projection_source(
-        _source(commercial_use="true"), as_of_utc=as_of
-    ).failures
+    assert (
+        "version_missing"
+        in audit_projection_source(_source(version=""), as_of_utc=as_of).failures
+    )
+    assert (
+        "content_hash_missing"
+        in audit_projection_source(
+            _source(content_sha256="A" * 64), as_of_utc=as_of
+        ).failures
+    )
+    assert (
+        "commercial_use_invalid"
+        in audit_projection_source(
+            _source(commercial_use="true"), as_of_utc=as_of
+        ).failures
+    )
 
 
 def test_config_loader_rejects_string_booleans(tmp_path) -> None:

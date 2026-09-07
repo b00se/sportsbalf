@@ -7,6 +7,7 @@ same declaration to reproduce a source tournament from archived inputs.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import re
 from collections.abc import Iterable
@@ -50,6 +51,14 @@ class ProjectionSource:
     snapshot_path: str = ""
     snapshot_schema: tuple[str, ...] = ()
     policy: str = "noncommercial"
+
+    @property
+    def lineage(self) -> str:
+        """Return normalized publisher/domain lineage for independence checks."""
+
+        host = self.access_url.split("//", 1)[-1].split("/", 1)[0].lower()
+        domain = re.sub(r"^www\.", "", host)
+        return f"{re.sub(r'[^a-z0-9]+', '', self.publisher.lower())}:{domain}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,11 +216,11 @@ def run_projection_source_tournament(
         audit
         for audit in audits
         if audit.eligible
-        and audit.source.baseline_role
-        in {"public_projection", "consensus_reference"}
+        and audit.source.baseline_role in {"public_projection", "consensus_reference"}
     ]
-    publishers = {audit.source.publisher for audit in eligible}
-    if len(publishers) < 2:
+    roles = {audit.source.baseline_role for audit in eligible}
+    lineages = {audit.source.lineage for audit in eligible}
+    if roles != {"public_projection", "consensus_reference"} or len(lineages) < 2:
         raise SourceAuditError(
             "at least two independent eligible baseline roles are required"
         )
@@ -327,15 +336,25 @@ def load_projection_sources(path: str | Path) -> tuple[ProjectionSource, ...]:
 def score_rolling_origin_snapshot(
     path: str | Path,
     *,
+    public_path: str | Path | None = None,
+    consensus_path: str | Path | None = None,
     cutoff_utc: datetime | None = None,
     material_player_ids: Iterable[str] | None = None,
 ) -> EvaluationResult:
     """Score archived rows with projection, actual, and as-of columns."""
 
-    import csv
+    def read_rows(source_path: str | Path) -> list[dict[str, str]]:
+        try:
+            with Path(source_path).open(newline="", encoding="utf-8") as handle:
+                return list(csv.DictReader(handle))
+        except (OSError, UnicodeError, csv.Error) as exc:
+            raise SourceAuditError(
+                f"unable to read evaluation snapshot: {exc}"
+            ) from exc
 
-    with Path(path).open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
+    rows = read_rows(path)
+    public_rows = read_rows(public_path or path)
+    consensus_rows = read_rows(consensus_path or path)
     required = {
         "player_id",
         "game_id",
@@ -353,26 +372,54 @@ def score_rolling_origin_snapshot(
             cutoff_utc
         ):
             raise SourceAuditError("cutoff_utc must be timezone-aware UTC")
-        rows = [
+        rows = [row for row in rows if _parse_timestamp(row["as_of_utc"]) <= cutoff_utc]
+        if not rows:
+            raise SourceAuditError(
+                "evaluation snapshot has no rows at or before cutoff"
+            )
+
+    def numeric(row: dict[str, str], key: str) -> float:
+        try:
+            return float(row[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SourceAuditError(f"evaluation field '{key}' must be numeric") from exc
+
+    def cutoff_rows(source_rows: list[dict[str, str]]) -> list[dict[str, str]]:
+        if cutoff_utc is None:
+            return source_rows
+        return [
             row
-            for row in rows
+            for row in source_rows
             if _parse_timestamp(row["as_of_utc"]) <= cutoff_utc
         ]
-    if not rows:
-        raise SourceAuditError("evaluation snapshot has no rows at or before cutoff")
+
+    public_by_key = {
+        (r["player_id"], r["game_id"], r["season"], r["week"]): r
+        for r in cutoff_rows(public_rows)
+    }
+    consensus_by_key = {
+        (r["player_id"], r["game_id"], r["season"], r["week"]): r
+        for r in cutoff_rows(consensus_rows)
+    }
     material = set(material_player_ids or {row["player_id"] for row in rows})
+    for row in rows:
+        key = (row["player_id"], row["game_id"], row["season"], row["week"])
+        if key not in public_by_key or key not in consensus_by_key:
+            raise SourceAuditError("baseline snapshot is missing an evaluation key")
     covered = sum(
         row["player_id"] in material and row["projection"] != "" for row in rows
     )
-    errors = [abs(float(row["projection"]) - float(row["actual"])) for row in rows]
+    errors = [abs(numeric(row, "projection") - numeric(row, "actual")) for row in rows]
     historical = [
-        abs(float(row["historical_player_mean"]) - float(row["actual"])) for row in rows
+        abs(numeric(row, "historical_player_mean") - numeric(row, "actual"))
+        for row in rows
     ]
     public = [
-        abs(float(row["public_projection"]) - float(row["actual"])) for row in rows
+        abs(numeric(row, "public_projection") - numeric(row, "actual")) for row in rows
     ]
     consensus = [
-        abs(float(row["consensus_projection"]) - float(row["actual"])) for row in rows
+        abs(numeric(row, "consensus_projection") - numeric(row, "actual"))
+        for row in rows
     ]
     return EvaluationResult(
         len(rows),
