@@ -27,9 +27,24 @@ def _source(**overrides: object) -> ProjectionSource:
         "version": "2026.09.01",
         "retrieval_method": "manual_download",
         "source_timestamp_utc": "2026-09-01T12:00:00Z",
-        "content_sha256": "a" * 64,
+        "content_sha256": (
+            "56fa2d32b2b3b57cef8b1e28c9d59dcfda168362e26dc2c81cd4e2e1735b185c"
+        ),
         "coverage_score": 0.9,
         "baseline_role": "public_projection",
+        "snapshot_path": "tests/testdata/fantasy/nfl/projections/nflverse_week01.csv",
+        "snapshot_schema": (
+            "player_id",
+            "game_id",
+            "season",
+            "week",
+            "projection",
+            "actual",
+            "as_of_utc",
+            "historical_player_mean",
+            "public_projection",
+            "consensus_projection",
+        ),
     }
     values.update(overrides)
     return ProjectionSource(**values)
@@ -74,7 +89,11 @@ def test_tournament_is_deterministic_and_excludes_stale_or_paid_sources() -> Non
     )
     paid = _source(source_id="paid", cost_usd=1.0)
 
-    consensus = _source(source_id="consensus", baseline_role="consensus_reference")
+    consensus = _source(
+        source_id="consensus",
+        publisher="Other Publisher",
+        baseline_role="consensus_reference",
+    )
     tournament = run_projection_source_tournament(
         (paid, stale, winner, consensus), as_of_utc=as_of, max_age_hours=72
     )

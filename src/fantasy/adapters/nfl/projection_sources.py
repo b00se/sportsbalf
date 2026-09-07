@@ -80,6 +80,9 @@ class EvaluationResult:
     rows: int
     mean_absolute_error: float
     coverage: float
+    historical_mean_mae: float = 0.0
+    public_baseline_mae: float = 0.0
+    consensus_baseline_mae: float = 0.0
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -124,7 +127,9 @@ def audit_projection_source(
         failures.append("policy_not_approved")
     if commercial_mode:
         failures.append("commercial_mode_not_approved")
-    if source.snapshot_path:
+    if not source.snapshot_path:
+        failures.append("snapshot_missing")
+    else:
         snapshot = Path(source.snapshot_path)
         if not snapshot.is_file():
             failures.append("snapshot_missing")
@@ -205,8 +210,8 @@ def run_projection_source_tournament(
         and audit.source.baseline_role
         in {"public_projection", "consensus_reference"}
     ]
-    roles = {audit.source.baseline_role for audit in eligible}
-    if len(roles) < 2:
+    publishers = {audit.source.publisher for audit in eligible}
+    if len(publishers) < 2:
         raise SourceAuditError(
             "at least two independent eligible baseline roles are required"
         )
@@ -256,6 +261,7 @@ def load_projection_sources(path: str | Path) -> tuple[ProjectionSource, ...]:
         raise SourceAuditError(
             f"Unable to load projection source config: {exc}"
         ) from exc
+    registry_path = Path(path).resolve()
     rows = payload.get("projection_sources") if isinstance(payload, dict) else None
     if not isinstance(rows, list) or not rows:
         raise SourceAuditError("projection_sources must be a non-empty list")
@@ -303,7 +309,12 @@ def load_projection_sources(path: str | Path) -> tuple[ProjectionSource, ...]:
                 coverage_score=numeric["coverage_score"],
                 max_age_hours=numeric["max_age_hours"],
                 baseline_role=str(raw.get("baseline_role", "candidate")),
-                snapshot_path=_required_text(raw, "snapshot_path", index),
+                snapshot_path=str(
+                    (
+                        registry_path.parent
+                        / _required_text(raw, "snapshot_path", index)
+                    ).resolve()
+                ),
                 snapshot_schema=tuple(
                     _required_text(raw, "snapshot_schema", index).split(",")
                 ),
@@ -313,7 +324,12 @@ def load_projection_sources(path: str | Path) -> tuple[ProjectionSource, ...]:
     return tuple(parsed)
 
 
-def score_rolling_origin_snapshot(path: str | Path) -> EvaluationResult:
+def score_rolling_origin_snapshot(
+    path: str | Path,
+    *,
+    cutoff_utc: datetime | None = None,
+    material_player_ids: Iterable[str] | None = None,
+) -> EvaluationResult:
     """Score archived rows with projection, actual, and as-of columns."""
 
     import csv
@@ -329,10 +345,40 @@ def score_rolling_origin_snapshot(path: str | Path) -> EvaluationResult:
         "actual",
         "as_of_utc",
     }
+    required |= {"historical_player_mean", "public_projection", "consensus_projection"}
     if not rows or not required.issubset(rows[0]):
         raise SourceAuditError("evaluation snapshot is missing required columns")
-    errors = [abs(float(row["projection"]) - float(row["actual"])) for row in rows]
+    if cutoff_utc is not None:
+        if cutoff_utc.tzinfo is None or cutoff_utc.utcoffset() != UTC.utcoffset(
+            cutoff_utc
+        ):
+            raise SourceAuditError("cutoff_utc must be timezone-aware UTC")
+        rows = [
+            row
+            for row in rows
+            if _parse_timestamp(row["as_of_utc"]) <= cutoff_utc
+        ]
+    if not rows:
+        raise SourceAuditError("evaluation snapshot has no rows at or before cutoff")
+    material = set(material_player_ids or {row["player_id"] for row in rows})
     covered = sum(
-        bool(row["player_id"].strip()) and row["projection"] != "" for row in rows
+        row["player_id"] in material and row["projection"] != "" for row in rows
     )
-    return EvaluationResult(len(rows), sum(errors) / len(errors), covered / len(rows))
+    errors = [abs(float(row["projection"]) - float(row["actual"])) for row in rows]
+    historical = [
+        abs(float(row["historical_player_mean"]) - float(row["actual"])) for row in rows
+    ]
+    public = [
+        abs(float(row["public_projection"]) - float(row["actual"])) for row in rows
+    ]
+    consensus = [
+        abs(float(row["consensus_projection"]) - float(row["actual"])) for row in rows
+    ]
+    return EvaluationResult(
+        len(rows),
+        sum(errors) / len(errors),
+        covered / max(len(material), 1),
+        sum(historical) / len(rows),
+        sum(public) / len(rows),
+        sum(consensus) / len(rows),
+    )
