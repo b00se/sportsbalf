@@ -132,6 +132,7 @@ class IdentityGraph:
                 "from": _valid_date(raw.get("effective_from")),
                 "to": _valid_date(raw.get("effective_to")),
                 "team_gsis_id": _clean(raw.get("team_gsis_id")),
+                "global_stable": bool(raw.get("global_stable", False)),
             }
         )
 
@@ -181,13 +182,29 @@ class IdentityGraph:
                 season=year,
                 reason="valid season is required",
             )
+        scope_game = None if source == "nflverse_id" else game_id
+        scope_slate = None if source == "nflverse_id" else slate_id
         rows = [
             r
             for r in self._rows.get(entity, [])
             if self._in_scope(
-                r, year, as_of=as_of, week=week, game_id=game_id, slate_id=slate_id
+                r,
+                year,
+                as_of=as_of,
+                week=week,
+                game_id=scope_game,
+                slate_id=scope_slate,
             )
         ]
+        scoped_source = source in {"appearance_id", "ud_player_id", "consensus_id"}
+        if scoped_source and game_id is None and slate_id is None:
+            return IdentityResolution(
+                entity,
+                IdentityStatus.UNRESOLVED,
+                ref,
+                season=year,
+                reason="scoped reference requires game_id or slate_id",
+            )
         if not ref and name and allow_name_review:
             return IdentityResolution(
                 entity,
@@ -219,6 +236,24 @@ class IdentityGraph:
             if (source and r["source_ids"].get(source) == ref)
             or (not source and ref in r["source_ids"].values())
         ]
+        if not source and ref:
+            scoped_matches = [
+                r
+                for r in matches
+                if any(
+                    r["source_ids"].get(k) == ref
+                    for k in ("appearance_id", "ud_player_id", "consensus_id")
+                )
+                and not r["global_stable"]
+            ]
+            if scoped_matches and game_id is None and slate_id is None:
+                return IdentityResolution(
+                    entity,
+                    IdentityStatus.UNRESOLVED,
+                    ref,
+                    season=year,
+                    reason="scoped reference requires game_id or slate_id",
+                )
         canonical = {r["canonical"] for r in matches}
         if not matches:
             return IdentityResolution(
@@ -311,36 +346,59 @@ class IdentityGraph:
         total = resolved = 0
         for item in players:
             context = item if isinstance(item, Mapping) else {}
-            reference = next(
-                (
-                    _clean(context.get(k))
-                    for k in (
-                        "nflverse_id",
-                        "ud_player_id",
-                        "appearance_id",
-                        "id",
-                        "playerId",
-                        "ud_id",
-                    )
-                    if _clean(context.get(k))
-                ),
-                item if not context else None,
+            aliases = (
+                ("nflverse_id", "nflverse_id"),
+                ("ud_player_id", "ud_player_id"),
+                ("appearance_id", "appearance_id"),
+                ("id", None),
+                ("playerId", None),
+                ("ud_id", "ud_id"),
             )
+            supplied = [
+                (key, _clean(context.get(key)), source)
+                for key, source in aliases
+                if _clean(context.get(key))
+            ]
+            reference = supplied[0][1] if supplied else (item if not context else None)
             key = _clean(reference) or "<missing>"
-            source = (
-                "appearance_id"
-                if context.get("appearance_id") and not context.get("ud_player_id")
-                else None
-            )
-            result = self.resolve_player(
-                reference,
-                season,
-                source=source,
-                game_id=context.get("game_id"),
-                slate_id=context.get("slate_id"),
-                as_of=context.get("as_of"),
-                week=context.get("week"),
-            )
+            outcomes = []
+            for alias, value, source in supplied:
+                outcomes.append(
+                    self.resolve_player(
+                        value,
+                        season,
+                        source=source,
+                        game_id=context.get("game_id"),
+                        slate_id=context.get("slate_id"),
+                        as_of=context.get("as_of"),
+                        week=context.get("week"),
+                    )
+                )
+            result = outcomes[0] if outcomes else self.resolve_player(reference, season)
+            canonical = {
+                out.nflverse_id
+                for out in outcomes
+                if out.status is IdentityStatus.RESOLVED
+            }
+            if len(canonical) > 1:
+                result = IdentityResolution(
+                    "player",
+                    IdentityStatus.AMBIGUOUS,
+                    reference,
+                    season=_season(season),
+                    reason="conflicting player aliases",
+                )
+            elif any(
+                out.status is not IdentityStatus.RESOLVED
+                and supplied[index][2] in {"appearance_id", "ud_player_id"}
+                for index, out in enumerate(outcomes)
+            ):
+                result = next(
+                    out
+                    for index, out in enumerate(outcomes)
+                    if out.status is not IdentityStatus.RESOLVED
+                    and supplied[index][2] in {"appearance_id", "ud_player_id"}
+                )
             total += 1
             if result.status is IdentityStatus.RESOLVED:
                 resolved += 1

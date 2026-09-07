@@ -57,3 +57,30 @@ def test_ambiguous_material_row_blocks_without_writing(tmp_path, scoped_graph):
             table, destination, identity_graph=scoped_graph, season=2026
         )
     assert not destination.exists()
+
+
+def test_appearance_requires_matching_scope(scoped_graph):
+    result = scoped_graph.resolve_appearance("app-week-1", 2026)
+    assert result.status is IdentityStatus.UNRESOLVED
+    assert "scope" in result.reason
+
+
+def test_conflicting_aliases_are_ambiguous(scoped_graph):
+    report = scoped_graph.check_material_players(
+        [
+            {
+                "nflverse_id": "mahomes",
+                "appearance_id": "app-week-1",
+                "game_id": "game-1",
+                "slate_id": "slate-1",
+            },
+            {
+                "nflverse_id": "trade-player",
+                "appearance_id": "app-week-1",
+                "game_id": "game-1",
+                "slate_id": "slate-1",
+            },
+        ],
+        2026,
+    )
+    assert report.ambiguous == ("trade-player",)
