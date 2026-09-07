@@ -32,9 +32,7 @@ def _fake_reverse_lookup(_ids: list[int], key_type: str = "fangraphs") -> pd.Dat
     )
 
 
-def _assert_resolution(
-    module, fixture_path: Path, monkeypatch
-) -> None:
+def _assert_resolution(module, fixture_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(module, "playerid_reverse_lookup", _fake_reverse_lookup)
     resolved = module.load_pitcher_ids(str(fixture_path), _raw_pitcher_df())
     resolved_map = {name: pid for name, pid in resolved}

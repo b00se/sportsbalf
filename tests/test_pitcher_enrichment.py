@@ -181,6 +181,8 @@ def test_aggregate_pitcher_games_is_order_independent():
         "whiff_rate_expanding",
         "csw_pct_expanding",
     ]
-    assert ordered_games[compare_cols].reset_index(drop=True).equals(
-        shuffled_games[compare_cols].reset_index(drop=True)
+    assert (
+        ordered_games[compare_cols]
+        .reset_index(drop=True)
+        .equals(shuffled_games[compare_cols].reset_index(drop=True))
     )

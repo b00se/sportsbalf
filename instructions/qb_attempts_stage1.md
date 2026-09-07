@@ -40,32 +40,40 @@ If any step in these instructions is unclear, ambiguous, or if a required functi
 3.  Filter for QBs and select relevant fields:
 
     ```python
-    qbs = weekly[weekly['position'] == 'QB'][[
-        'season', 'week', 'game_id',
-        'player_id', 'player_display_name',
-        'recent_team', 'opponent_team',
-        'attempts'
-    ]]
+    qbs = weekly[weekly["position"] == "QB"][
+        [
+            "season",
+            "week",
+            "game_id",
+            "player_id",
+            "player_display_name",
+            "recent_team",
+            "opponent_team",
+            "attempts",
+        ]
+    ]
     ```
 
 4.  Trim schedule to joinable fields:
 
     ```python
-    sched = sched[['game_id','season','week','home_team','away_team','spread_line','total_line']]
+    sched = sched[
+        ["game_id", "season", "week", "home_team", "away_team", "spread_line", "total_line"]
+    ]
     ```
 
 5.  **Ensure Consistent Data Types for Merge Keys**:
 
     ```python
     # Convert game_id columns to string to ensure a successful merge.
-    qbs['game_id'] = qbs['game_id'].astype(str)
-    sched['game_id'] = sched['game_id'].astype(str)
+    qbs["game_id"] = qbs["game_id"].astype(str)
+    sched["game_id"] = sched["game_id"].astype(str)
     ```
 
 6.  Merge schedules into QB data:
 
     ```python
-    qbs = qbs.merge(sched, on=['season','week','game_id'], how='left')
+    qbs = qbs.merge(sched, on=["season", "week", "game_id"], how="left")
     ```
 
 -----
@@ -105,17 +113,17 @@ Team abbreviations change over time (e.g., `OAK` → `LV`, `SD` → `LAC`, `STL`
 
 ```python
 team_map = {
-    'OAK': 'LV',
-    'SD': 'LAC',
-    'STL': 'LA',
+    "OAK": "LV",
+    "SD": "LAC",
+    "STL": "LA",
     # add others as needed
 }
 
 # Apply the mapping to the relevant columns
-qbs['recent_team'] = qbs['recent_team'].replace(team_map)
-qbs['opponent_team'] = qbs['opponent_team'].replace(team_map)
-sched['home_team'] = sched['home_team'].replace(team_map)
-sched['away_team'] = sched['away_team'].replace(team_map)
+qbs["recent_team"] = qbs["recent_team"].replace(team_map)
+qbs["opponent_team"] = qbs["opponent_team"].replace(team_map)
+sched["home_team"] = sched["home_team"].replace(team_map)
+sched["away_team"] = sched["away_team"].replace(team_map)
 ```
 
 -----
@@ -125,12 +133,13 @@ sched['away_team'] = sched['away_team'].replace(team_map)
 Add simple rolling features to test the pipeline:
 
 ```python
-qbs = qbs.sort_values(['player_id','season','week'])
-qbs['prev_attempts'] = qbs.groupby('player_id')['attempts'].shift(1)
-qbs['rolling3_attempts'] = (
-    qbs.groupby('player_id')['attempts']
-       .rolling(3).mean()
-       .reset_index(level=0, drop=True)
+qbs = qbs.sort_values(["player_id", "season", "week"])
+qbs["prev_attempts"] = qbs.groupby("player_id")["attempts"].shift(1)
+qbs["rolling3_attempts"] = (
+    qbs.groupby("player_id")["attempts"]
+    .rolling(3)
+    .mean()
+    .reset_index(level=0, drop=True)
 )
 ```
 
@@ -141,16 +150,18 @@ qbs['rolling3_attempts'] = (
 1.  **Rename Columns to Match Final Schema**:
 
     ```python
-    qbs = qbs.rename(columns={
-        'player_display_name': 'qb_name',
-        'player_id': 'qb_id',
-        'recent_team': 'team',
-        'opponent_team': 'opponent',
-        'attempts': 'pass_attempts',
-        'spread_line': 'spread',
-        'total_line': 'total',
-        'line': 'ud_line'
-    })
+    qbs = qbs.rename(
+        columns={
+            "player_display_name": "qb_name",
+            "player_id": "qb_id",
+            "recent_team": "team",
+            "opponent_team": "opponent",
+            "attempts": "pass_attempts",
+            "spread_line": "spread",
+            "total_line": "total",
+            "line": "ud_line",
+        }
+    )
     ```
 
 2.  **Save to Parquet:**

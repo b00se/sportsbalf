@@ -85,8 +85,9 @@ def test_add_opponent_tendency_same_date_rows_do_not_cross_leak() -> None:
     assert set(same_day["opponent_out_rate"].round(6).tolist()) == {10.0}
 
 
-def test_build_prediction_rows_preserves_pitcher_id_matching_when_names_missing(
-) -> None:
+def test_build_prediction_rows_preserves_pitcher_id_matching_when_names_missing() -> (
+    None
+):
     descriptor = get_stat_descriptor("outs_recorded")
     games = pd.DataFrame(
         [
@@ -227,9 +228,7 @@ def test_build_pitcher_game_table_marks_starter_from_first_inning() -> None:
     )
 
     games = (
-        build_pitcher_game_table(frame)
-        .sort_values("pitcher_id")
-        .reset_index(drop=True)
+        build_pitcher_game_table(frame).sort_values("pitcher_id").reset_index(drop=True)
     )
 
     assert int(games.loc[0, "is_starter"]) == 1
@@ -342,8 +341,9 @@ def test_build_pitcher_game_table_earned_runs_fallback_uses_game_level_value() -
     assert int(games.iloc[0]["earned_runs_fallback_used"]) == 1
 
 
-def test_build_pitcher_game_table_earned_runs_fallback_fills_partial_missing_rows(
-) -> None:
+def test_build_pitcher_game_table_earned_runs_fallback_fills_partial_missing_rows() -> (
+    None
+):
     frame = pd.DataFrame(
         [
             {
@@ -390,9 +390,7 @@ def test_build_pitcher_game_table_earned_runs_fallback_fills_partial_missing_row
     )
 
     games = (
-        build_pitcher_game_table(frame)
-        .sort_values("game_date")
-        .reset_index(drop=True)
+        build_pitcher_game_table(frame).sort_values("game_date").reset_index(drop=True)
     )
 
     assert float(games.loc[0, "earned_runs"]) == 1.0
@@ -466,8 +464,9 @@ def test_build_pitcher_game_table_high_fidelity_source_accepts_alias_columns() -
     assert int(games.iloc[0]["earned_runs_high_fidelity_used"]) == 1
 
 
-def test_build_pitcher_game_table_high_fidelity_join_normalizes_id_and_timezone(
-) -> None:
+def test_build_pitcher_game_table_high_fidelity_join_normalizes_id_and_timezone() -> (
+    None
+):
     frame = pd.DataFrame(
         [
             {

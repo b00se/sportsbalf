@@ -121,7 +121,7 @@ def parse_base_metrics(raw_metrics: Mapping[str, Any]) -> tuple[BaseMetricEntry,
 
 
 def parse_derived_metrics(
-    raw_metrics: Mapping[str, Any]
+    raw_metrics: Mapping[str, Any],
 ) -> tuple[DerivedMetricSpec, ...]:
     """Parse and validate derived metric declarations."""
 

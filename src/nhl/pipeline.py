@@ -143,8 +143,7 @@ def _prepare_training_frame(
     training = build_sog_training_features(
         skater_games=filtered,
         rolling_windows=[
-            int(value)
-            for value in section.get("feature_rolling_windows", [5, 10])
+            int(value) for value in section.get("feature_rolling_windows", [5, 10])
         ],
     )
 
@@ -201,10 +200,9 @@ def _train_or_load_model(
 
     residual_frame = training[["player_id", "shots_on_goal"]].copy()
     residual_frame["prediction"] = train_predictions.to_numpy()
-    residual_frame["residual"] = (
-        residual_frame["shots_on_goal"].to_numpy(dtype=float)
-        - residual_frame["prediction"].to_numpy(dtype=float)
-    )
+    residual_frame["residual"] = residual_frame["shots_on_goal"].to_numpy(
+        dtype=float
+    ) - residual_frame["prediction"].to_numpy(dtype=float)
 
     sigma_stats = (
         residual_frame.groupby("player_id", dropna=False)["residual"]
@@ -352,8 +350,7 @@ def run_shots_on_goal_pipeline(
         inference_rows=inference_frame,
         skater_games=provider_result.data,
         rolling_windows=[
-            int(value)
-            for value in section.get("feature_rolling_windows", [5, 10])
+            int(value) for value in section.get("feature_rolling_windows", [5, 10])
         ],
         fallback_prediction=fallback_prediction,
     )

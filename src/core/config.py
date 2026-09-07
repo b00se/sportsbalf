@@ -507,7 +507,7 @@ def extract_stat_section(
     stat_section = sport_section.get(normalized_stat)
     if not isinstance(stat_section, dict):
         raise ConfigValidationError(
-            "Missing stat section " f"'{normalized_sport}.{normalized_stat}' in config."
+            f"Missing stat section '{normalized_sport}.{normalized_stat}' in config."
         )
 
     return dict(stat_section)

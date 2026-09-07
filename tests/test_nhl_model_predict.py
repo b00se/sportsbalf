@@ -64,10 +64,13 @@ def test_schema_hash_mismatch_reports_incompatible(tmp_path: Path) -> None:
         model_path,
         expected_feature_columns=NHL_FEATURES,
     )
-    assert artifact_is_compatible(
-        metadata,
-        expected_feature_columns=NHL_FEATURES + ["future_feature"],
-    ) is False
+    assert (
+        artifact_is_compatible(
+            metadata,
+            expected_feature_columns=NHL_FEATURES + ["future_feature"],
+        )
+        is False
+    )
 
     with pytest.raises(ValueError, match="schema"):
         load_model(

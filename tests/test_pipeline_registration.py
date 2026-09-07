@@ -253,17 +253,22 @@ def test_onboarding_dummy_pipeline_minimal_boilerplate(tmp_path: Path) -> None:
     clear_registry()
     register_pipeline("nhl", "shots_on_goal", DummyPipeline)
     assert is_registered("nhl", "shots_on_goal") is True
-    assert get_pipeline("NHL", " SHOTS_ON_GOAL ").simulate(
-        pd.DataFrame(),
-        ModelBundle(),
-        PipelineConfig(
-            config_path=Path("config/test.yaml"),
-            sport="nhl",
-            stat="shots_on_goal",
-            raw={},
-            section={},
-        ),
-    ).shape[0] == 1
+    assert (
+        get_pipeline("NHL", " SHOTS_ON_GOAL ")
+        .simulate(
+            pd.DataFrame(),
+            ModelBundle(),
+            PipelineConfig(
+                config_path=Path("config/test.yaml"),
+                sport="nhl",
+                stat="shots_on_goal",
+                raw={},
+                section={},
+            ),
+        )
+        .shape[0]
+        == 1
+    )
 
     config_path = tmp_path / "nhl_dummy.yaml"
     config_path.write_text(

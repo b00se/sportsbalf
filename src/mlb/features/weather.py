@@ -95,9 +95,7 @@ def normalize_weather_payload(
             else float("nan")
         ),
         "wind_speed_mph": (
-            max(0.0, wind_speed_mph)
-            if pd.notna(wind_speed_mph)
-            else float("nan")
+            max(0.0, wind_speed_mph) if pd.notna(wind_speed_mph) else float("nan")
         ),
         "wind_out_to_cf_flag": int(wind_out_to_cf_flag),
     }

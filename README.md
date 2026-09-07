@@ -14,19 +14,21 @@ Current production-shaped stats:
 Use Python 3.11 and `uv` to create the locked repo environment.
 
 ```bash
-uv sync
+uv sync --locked
 ```
 
 `uv.lock` records the complete dependency graph. `requirements.txt` remains a
-legacy compatibility export; new environments should use `uv sync`.
+legacy compatibility export; new environments should use `uv sync --locked`.
+After the cache has been populated, add `--offline` to run the same locked
+workflow without network access.
 
 Run the offline quality checks:
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run pyright
-uv run pytest
+uv run --offline ruff check .
+uv run --offline ruff format --check .
+uv run --offline pyright
+uv run --offline pytest
 ```
 
 ### 2) Run Pipelines

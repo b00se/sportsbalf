@@ -17,7 +17,7 @@ class WalkForwardFold:
 
 
 def generate_walk_forward_folds(
-    seasons: tuple[int, ...]
+    seasons: tuple[int, ...],
 ) -> tuple[WalkForwardFold, ...]:
     """Generate `(train through N-1, test on N)` folds."""
 
@@ -147,11 +147,7 @@ def build_hit_rate_red_flag_dashboard(
             lambda s: next((str(value) for value in s if pd.notna(value)), ""),
         )
 
-    summary = (
-        hit_rows.groupby("fold", dropna=False)
-        .agg(**agg_spec)
-        .reset_index()
-    )
+    summary = hit_rows.groupby("fold", dropna=False).agg(**agg_spec).reset_index()
     summary["hit_rate_coverage_error_vs_target"] = (
         summary["hit_rate_coverage"] - float(coverage_target)
     ).abs()

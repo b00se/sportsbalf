@@ -30,7 +30,7 @@ def load_provider_player_mapping(path: str) -> pd.DataFrame:
     ]
     if missing:
         raise ValueError(
-            "Mapping file is missing required columns: " f"{', '.join(sorted(missing))}"
+            f"Mapping file is missing required columns: {', '.join(sorted(missing))}"
         )
     return frame.copy()
 

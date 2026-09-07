@@ -78,9 +78,9 @@ def add_rolling_park_factor(
     park_daily["park_recent"] = park_daily.groupby("home_team", sort=False)[
         "day_mean"
     ].transform(
-        lambda s: s.ewm(halflife=half_life_games, adjust=False, min_periods=1)
-        .mean()
-        .shift(1)
+        lambda s: (
+            s.ewm(halflife=half_life_games, adjust=False, min_periods=1).mean().shift(1)
+        )
     )
     park_daily["park_samples"] = (
         park_daily.groupby("home_team", sort=False)["day_games"]

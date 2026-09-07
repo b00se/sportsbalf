@@ -82,16 +82,16 @@ def assert_simulation_contract(
     for column in ["prob_over", "prob_under", "prob_push"]:
         values = pd.to_numeric(frame[column], errors="coerce")
         assert values.notna().all(), f"{column} contains non-numeric or NaN values."
-        assert np.isfinite(
-            values.to_numpy(dtype=float)
-        ).all(), f"{column} contains non-finite values."
+        assert np.isfinite(values.to_numpy(dtype=float)).all(), (
+            f"{column} contains non-finite values."
+        )
 
     for column in ["ev_over", "ev_under", "edge_over", "edge_under"]:
         values = pd.to_numeric(frame[column], errors="coerce")
         non_null = values[values.notna()]
-        assert np.isfinite(
-            non_null.to_numpy(dtype=float)
-        ).all(), f"{column} contains non-finite values."
+        assert np.isfinite(non_null.to_numpy(dtype=float)).all(), (
+            f"{column} contains non-finite values."
+        )
 
     assert_probability_columns_valid(frame)
 
@@ -121,9 +121,9 @@ def assert_horizon_semantics(
         baseline = pd.to_numeric(frame[per_game_baseline_col], errors="coerce")
         comparable = baseline.notna() & predictions.notna()
         if comparable.any():
-            assert (
-                predictions[comparable] >= baseline[comparable]
-            ).all(), "Season horizon predictions must be at least per-game baseline."
+            assert (predictions[comparable] >= baseline[comparable]).all(), (
+                "Season horizon predictions must be at least per-game baseline."
+            )
 
 
 def assert_no_temporal_leakage(
@@ -151,12 +151,12 @@ def assert_no_temporal_leakage(
     for column in compare_columns:
         left = pd.to_numeric(merged[f"{column}_base"], errors="coerce")
         right = pd.to_numeric(merged[f"{column}_mut"], errors="coerce")
-        assert (
-            left.notna().all() and right.notna().all()
-        ), f"{column} contains NaN in leakage comparison."
-        assert np.allclose(
-            left, right, atol=1e-8, rtol=0.0
-        ), f"Temporal leakage detected for {column}."
+        assert left.notna().all() and right.notna().all(), (
+            f"{column} contains NaN in leakage comparison."
+        )
+        assert np.allclose(left, right, atol=1e-8, rtol=0.0), (
+            f"Temporal leakage detected for {column}."
+        )
 
 
 def assert_ev_edge_sign_consistency(

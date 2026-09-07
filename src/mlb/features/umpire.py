@@ -41,9 +41,9 @@ def build_umpire_history_features(frame: pd.DataFrame) -> pd.DataFrame:
     umpire_k_avg = prior_k / denominator
     global_prior = enriched["_row_id"].map(global_prior_lookup)
     enriched["umpire_k_boost_expanding"] = umpire_k_avg - global_prior
-    enriched["umpire_k_boost_expanding"] = (
-        pd.to_numeric(enriched["umpire_k_boost_expanding"], errors="coerce").fillna(0.0)
-    )
+    enriched["umpire_k_boost_expanding"] = pd.to_numeric(
+        enriched["umpire_k_boost_expanding"], errors="coerce"
+    ).fillna(0.0)
     enriched.loc[prior_games == 0, "umpire_k_boost_expanding"] = 0.0
     enriched["umpire_sample_size"] = prior_games.astype(float)
     enriched["umpire_known_flag"] = (enriched["umpire"] != "unknown").astype(int)

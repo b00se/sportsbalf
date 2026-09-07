@@ -1073,9 +1073,9 @@ class MlbSeasonProjectionAdapter:
                     name="prediction",
                 )
                 actual = pd.to_numeric(train_frame[target_col], errors="coerce")
-                valid = actual.notna() & pd.to_numeric(
-                    prediction, errors="coerce"
-                ).notna()
+                valid = (
+                    actual.notna() & pd.to_numeric(prediction, errors="coerce").notna()
+                )
                 if not valid.any():
                     continue
                 err = (
@@ -1183,8 +1183,8 @@ class MlbSeasonProjectionAdapter:
     ) -> dict[str, pd.Series]:
         """Group residual vectors into configured season-to-date PA buckets."""
 
-        clean_residuals = pd.to_numeric(residuals, errors="coerce").dropna().astype(
-            "float64"
+        clean_residuals = (
+            pd.to_numeric(residuals, errors="coerce").dropna().astype("float64")
         )
         if clean_residuals.empty:
             return {"default": pd.Series([0.0], dtype="float64")}

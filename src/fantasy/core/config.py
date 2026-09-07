@@ -99,7 +99,7 @@ def _normalize_metadata(raw_metadata: Any) -> dict[str, str | int | float]:
 
 
 def _normalize_base_metrics(
-    base_metrics: tuple[BaseMetricEntry, ...]
+    base_metrics: tuple[BaseMetricEntry, ...],
 ) -> tuple[BaseMetricConfig, ...]:
     return tuple(
         BaseMetricConfig(
@@ -207,4 +207,4 @@ def load_unified_fantasy_config(config_path: str) -> UnifiedFantasyConfig:
         mapping=mapping,
         raw=raw,
     )
-    normalize_mode,
+    (normalize_mode,)

@@ -129,9 +129,7 @@ def normalize_live_pitcher_prop_lines(
     work["player_name"] = _clean_text_series(work["player_name"])
     resolved_player = work["player_name"].combine_first(work["player"])
     if resolved_player.isna().any():
-        raise ValueError(
-            "Live lines require a non-empty player_name or player value."
-        )
+        raise ValueError("Live lines require a non-empty player_name or player value.")
     work["player"] = resolved_player
     work["player_name"] = resolved_player
 

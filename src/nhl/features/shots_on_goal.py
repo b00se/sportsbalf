@@ -148,9 +148,9 @@ def _build_team_game_context_features(
         ["team", "opponent", "game_id", "team_sog_for_avg_last_5"]
     ].copy()
     context = context.merge(
-        opponent_allowed[
-            ["team", "game_id", "opponent_sog_allowed_avg_last_5"]
-        ].rename(columns={"team": "opponent"}),
+        opponent_allowed[["team", "game_id", "opponent_sog_allowed_avg_last_5"]].rename(
+            columns={"team": "opponent"}
+        ),
         on=["opponent", "game_id"],
         how="left",
     )
@@ -241,9 +241,7 @@ def _build_player_inference_summary(
     short_window: int,
     long_window: int,
 ) -> pd.DataFrame:
-    ordered = history.sort_values(
-        ["player_id", "game_date", "game_id"]
-    )
+    ordered = history.sort_values(["player_id", "game_date", "game_id"])
     grouped = ordered.groupby("player_id", dropna=False)
     latest_player_rows = ordered.drop_duplicates("player_id", keep="last")
 
@@ -254,19 +252,19 @@ def _build_player_inference_summary(
             "history_opponent": latest_player_rows["opponent"]
             .astype("string")
             .to_numpy(),
-            "sog_avg_last_5": grouped["shots_on_goal"].apply(
-                lambda values: _tail_mean(values, short_window)
-            ).to_numpy(),
-            "sog_avg_last_10": grouped["shots_on_goal"].apply(
-                lambda values: _tail_mean(values, long_window)
-            ).to_numpy(),
+            "sog_avg_last_5": grouped["shots_on_goal"]
+            .apply(lambda values: _tail_mean(values, short_window))
+            .to_numpy(),
+            "sog_avg_last_10": grouped["shots_on_goal"]
+            .apply(lambda values: _tail_mean(values, long_window))
+            .to_numpy(),
             "sog_avg_season_to_date": grouped["shots_on_goal"].mean().to_numpy(),
-            "toi_avg_last_5": grouped["time_on_ice_minutes"].apply(
-                lambda values: _tail_mean(values, short_window)
-            ).to_numpy(),
-            "toi_avg_last_10": grouped["time_on_ice_minutes"].apply(
-                lambda values: _tail_mean(values, long_window)
-            ).to_numpy(),
+            "toi_avg_last_5": grouped["time_on_ice_minutes"]
+            .apply(lambda values: _tail_mean(values, short_window))
+            .to_numpy(),
+            "toi_avg_last_10": grouped["time_on_ice_minutes"]
+            .apply(lambda values: _tail_mean(values, long_window))
+            .to_numpy(),
             "games_played_to_date": grouped.size().astype(float).to_numpy(),
             "days_since_last_game": grouped["game_date"]
             .apply(_recent_rest_days)

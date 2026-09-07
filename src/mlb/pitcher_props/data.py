@@ -46,9 +46,9 @@ def _canonical_pitcher_join_key(values: pd.Series) -> pd.Series:
     numeric_mask = numeric.notna()
     if numeric_mask.any():
         key.loc[numeric_mask] = numeric.loc[numeric_mask].map(
-            lambda x: str(int(float(x)))
-            if float(x).is_integer()
-            else f"{float(x):.12g}"
+            lambda x: (
+                str(int(float(x))) if float(x).is_integer() else f"{float(x):.12g}"
+            )
         )
     key = key.replace({"": np.nan, "nan": np.nan, "none": np.nan})
     return key

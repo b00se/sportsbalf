@@ -64,7 +64,9 @@ def _prepare_training_frame(section: dict[str, object]) -> pd.DataFrame:
     current_games = _normalize_opponent_feature_columns(current_games)
     current_games = build_historical_live_features(current_games)
 
-    training_paths = cast(Sequence[str], section.get("training_data_paths") or [pitch_path])
+    training_paths = cast(
+        Sequence[str], section.get("training_data_paths") or [pitch_path]
+    )
     frames: list[pd.DataFrame] = []
     for path in training_paths:
         if Path(path).resolve() == Path(pitch_path).resolve():

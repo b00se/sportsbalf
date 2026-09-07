@@ -46,4 +46,6 @@ exclude = ["**/__pycache__", "data", "models", "notebooks"]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
 reportMissingImports = false
+# PyYAML is installed but ships without inline type source for Pyright to inspect.
+reportMissingModuleSource = false
 reportMissingTypeStubs = false

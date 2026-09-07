@@ -7,6 +7,12 @@ import socket
 
 import pytest
 
+# Keep sklearn's OpenMP-backed estimators single-threaded in the offline test
+# sandbox. The Windows sandbox denies the named pipes joblib creates for a
+# worker pool, while one thread exercises the same estimator behavior.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", "1")
+
 
 @pytest.fixture(autouse=True)
 def block_network(monkeypatch: pytest.MonkeyPatch) -> None:

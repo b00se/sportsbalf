@@ -151,8 +151,7 @@ def _run_nhl(tmp_path: Path) -> pd.DataFrame:
                 "model_path": str(tmp_path / "nhl_sog_model.joblib"),
                 "provider_seasons": [2024],
                 "moneypuck_skater_games_snapshot_path": (
-                    "tests/testdata/nhl/moneypuck/"
-                    "skater_games_full_snapshot_sample.csv"
+                    "tests/testdata/nhl/moneypuck/skater_games_full_snapshot_sample.csv"
                 ),
                 "moneypuck_skater_games_curated_cache_path": str(
                     tmp_path / "curated.parquet"

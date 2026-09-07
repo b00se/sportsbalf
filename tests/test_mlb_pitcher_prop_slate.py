@@ -36,8 +36,9 @@ def _scored_frame(stat: str, player: str, line: float) -> pd.DataFrame:
     )
 
 
-def test_run_mlb_pitcher_prop_slate_combines_successful_stats_and_tracks_skips(
-    ) -> None:
+def test_run_mlb_pitcher_prop_slate_combines_successful_stats_and_tracks_skips() -> (
+    None
+):
     completed = {
         "strikeouts": _pipeline_config("strikeouts"),
         "outs_recorded": _pipeline_config("outs_recorded"),
@@ -66,8 +67,7 @@ def test_run_mlb_pitcher_prop_slate_combines_successful_stats_and_tracks_skips(
     assert result.skipped_stats == {
         "earned_runs": "no config provided",
         "hits_allowed": (
-            "Pitcher prop lines file not found: "
-            "/tmp/hits_allowed_2026-03-25.csv"
+            "Pitcher prop lines file not found: /tmp/hits_allowed_2026-03-25.csv"
         ),
     }
     assert result.failed_stats == {"bb_allowed": "could not open /tmp/model.joblib"}

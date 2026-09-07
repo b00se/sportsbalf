@@ -39,8 +39,7 @@ def test_legacy_markers_present_with_canonical_pointer() -> None:
 
     for module_path in legacy_modules:
         assert (
-            _module_constant(module_path, "MODULE_STATUS")
-            == "legacy_non_authoritative"
+            _module_constant(module_path, "MODULE_STATUS") == "legacy_non_authoritative"
         )
 
         authoritative_entrypoint = _module_constant(

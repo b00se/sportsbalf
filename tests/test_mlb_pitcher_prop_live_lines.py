@@ -114,8 +114,9 @@ def test_normalize_live_pitcher_prop_lines_falls_back_to_player_when_name_blank(
     assert list(frame["player_name"]) == ["Aaron Nola", "Zack Wheeler"]
 
 
-def test_normalize_live_pitcher_prop_lines_keeps_uuid_backed_provider_stat_ids(
-) -> None:
+def test_normalize_live_pitcher_prop_lines_keeps_uuid_backed_provider_stat_ids() -> (
+    None
+):
     frame = _unified_rows("strikeouts").copy()
     frame["stat_id"] = "311b6775-4d03-4466-8ab9-776442468b27"
 
@@ -152,8 +153,9 @@ def test_write_live_pitcher_prop_snapshot_writes_deterministic_csv(
     assert loaded["book"].tolist() == ["Underdog", "Underdog"]
 
 
-def test_normalize_live_pitcher_prop_lines_returns_empty_frame_for_missing_stat(
-) -> None:
+def test_normalize_live_pitcher_prop_lines_returns_empty_frame_for_missing_stat() -> (
+    None
+):
     frame = normalize_live_pitcher_prop_lines(_unified_rows("strikeouts"), "bb_allowed")
 
     assert frame.empty

@@ -67,9 +67,7 @@ def test_prepare_training_frame_rebuilds_historical_live_features_globally(
         "add_rolling_features",
         lambda df: df.copy(),
     )
-    monkeypatch.setattr(
-        backtest_script, "add_park_factor", lambda df, _park: df.copy()
-    )
+    monkeypatch.setattr(backtest_script, "add_park_factor", lambda df, _park: df.copy())
     monkeypatch.setattr(backtest_script, "add_opponent_k_rate", lambda df: df.copy())
     monkeypatch.setattr(
         backtest_script,
