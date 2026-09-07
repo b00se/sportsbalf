@@ -284,8 +284,20 @@ Nested quality controls:
 
 Reference config: `config/nfl_daily_rankings.yaml`.
 
-The NFL Daily Rankings loader validates scoring mode, standard roster slots,
-draft/field size, QB/RB/WR/TE caps, entry fee, and payout ladder. Half-PPR is
-the default only when scoring is omitted; `ppr` is an explicit override; any
-other scoring mode fails closed. The initial vertical slice supports
-`QB1/RB1/WR2/FLEX1/TE1`; later slate variants require their own contract.
+The NFL Daily Rankings loader validates contest-specific terms. `scoring`
+defaults to half-PPR and accepts explicit scoring coefficients for receptions,
+receiving/rushing/passing yards and touchdowns, interceptions, two-point
+conversions, and fumbles lost; `ppr` is an explicit override and unknown modes
+fail closed. The initial vertical slice supports `QB1/RB1/WR2/FLEX1/TE1`.
+
+`field` retains separate `field_size`, `entry_fee`, `prize_pool`, decimal
+`rake`, and `max_entries` values. Payouts accept individual `rank` entries or
+`rank_start`/`rank_end` ranges, which are expanded to a rank-to-payout ladder.
+The expanded ladder must equal `prize_pool` exactly; prize pool must reconcile
+exactly to final entry fees after rake. Historical source metadata belongs in
+the optional `provenance` mapping, including the source's live field count and
+the final settled field size when they differ.
+
+Historical fixture: `tests/testdata/fantasy/nfl/ud_week2_royale_2025.yaml`
+captures the user-provided 2025 UD Week 2 Royale Admin terms. It is a versioned
+reference fixture, not a default or universal live Royale template.

@@ -186,6 +186,8 @@ Runtime semantics:
 R1 adds an offline-only contract layer under `src/fantasy/adapters/nfl/` and
 does not alter the canonical `pipeline/main.py` path. Rankings and exposure
 adapters validate provider CSV schemas at the boundary; contest configuration
-is typed and config-driven; provenance creates canonical, deterministic
-manifests for later R4 exports. Account interaction, draft entry, upload, and
+is typed and config-driven, with contest-specific scoring, field economics,
+payout expansion, and historical source provenance. Provenance creates
+canonical, deterministic manifests for later R4 exports. Account interaction,
+draft entry, upload, and
 Autopilot automation are deliberately outside this architecture.

@@ -256,3 +256,7 @@ Phase 1.5 policy:
   secrets, passwords, and tokens are rejected.
 - Autopilot row-order/cap behavior is a human-operated validation gate, not an
   automated-draft feature. See `docs/plans/planned/nfl-2026/evidence/R1.2-autopilot-proof.md`.
+- NFL contest configurations retain scoring coefficients, roster/draft terms,
+  `field_size`, `entry_fee`, `prize_pool`, rake, entry limit, and an expanded
+  rank-to-payout ladder as independent values. Historical source provenance may
+  retain both a live and a final settled field count.
