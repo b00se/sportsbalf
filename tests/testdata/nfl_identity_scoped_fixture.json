@@ -1,0 +1,14 @@
+{
+  "players": [
+    {"nflverse_id": "mahomes", "gsis_id": "00-0033873", "name": "Patrick Mahomes", "season": 2026},
+    {"nflverse_id": "trade-player", "gsis_id": "00-0099999", "name": "Trade Player", "season": 2026}
+  ],
+  "appearances": [
+    {"nflverse_id": "mahomes", "appearance_id": "app-week-1", "game_id": "game-1", "slate_id": "slate-1", "season": 2026},
+    {"nflverse_id": "mahomes", "appearance_id": "app-week-2", "game_id": "game-2", "slate_id": "slate-2", "season": 2026},
+    {"nflverse_id": "trade-player", "ud_player_id": "ud-trade", "slate_id": "slate-1", "team_gsis_id": "KC", "effective_to": "2026-09-10", "season": 2026},
+    {"nflverse_id": "trade-player", "ud_player_id": "ud-trade", "slate_id": "slate-2", "team_gsis_id": "BUF", "effective_from": "2026-09-11", "season": 2026}
+  ],
+  "teams": [],
+  "games": []
+}

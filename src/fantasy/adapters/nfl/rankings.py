@@ -13,8 +13,18 @@ from typing import IO
 from src.nfl.data.identity import IdentityGraph
 
 RANKINGS_COLUMNS: tuple[str, ...] = (
-    "id", "playerId", "firstName", "lastName", "adp", "projectedPoints",
-    "salary", "positionRank", "slotName", "teamName", "lineupStatus", "byeWeek",
+    "id",
+    "playerId",
+    "firstName",
+    "lastName",
+    "adp",
+    "projectedPoints",
+    "salary",
+    "positionRank",
+    "slotName",
+    "teamName",
+    "lineupStatus",
+    "byeWeek",
 )
 _NUMERIC_COLUMNS = {"adp", "projectedPoints", "salary", "byeWeek"}
 _POSITIONS = {"QB", "RB", "WR", "TE", "K", "DST", "DEF"}
@@ -148,9 +158,7 @@ def export_rankings_csv(
                 "unattended rankings export requires identity_graph and season"
             )
         try:
-            identity_graph.check_material_players(
-                table.rows, season, unattended=True
-            )
+            identity_graph.check_material_players(table.rows, season, unattended=True)
         except ValueError as exc:
             raise RankingsSchemaError(str(exc)) from exc
     output = StringIO(newline="")
@@ -172,6 +180,27 @@ def export_rankings_csv(
         else:
             destination.write(text)
     return text
+
+
+def export_unattended_rankings_csv(
+    table: RankingsTable,
+    destination: str | Path | IO[str],
+    *,
+    identity_graph: IdentityGraph,
+    season: int,
+) -> str:
+    """Export only after the mandatory material-player identity gate.
+
+    This is the single entry point for unattended output; validation happens
+    before opening the destination, so a blocked export cannot create a file.
+    """
+    return export_rankings_csv(
+        table,
+        destination,
+        identity_graph=identity_graph,
+        season=season,
+        unattended=True,
+    )
 
 
 load_rankings_csv = parse_rankings_csv
