@@ -239,3 +239,20 @@ Phase 1.5 policy:
 - Keep pybaseball priors optional with cache-first/offline fallbacks.
 - Support model-family anti-churn selection (`modeling.selection_min_delta_mae`) using MAE/RMSE/abs-bias tie-breaks.
 - Support hit-rate interval calibration via residual scaling and sparse-bucket fallback controls.
+
+## NFL Daily Rankings Contracts (R1)
+
+- Rankings input and upload output use the exact 12-column Underdog schema:
+  `id, playerId, firstName, lastName, adp, projectedPoints, salary,
+  positionRank, slotName, teamName, lineupStatus, byeWeek`.
+- The R1 exporter is lossless: it validates and preserves source cells and
+  changes only row order. It never overwrites the source input.
+- Exposure input has an exact validated 27-column schema. User entries are
+  reconstructed by `Draft Entry` with ordered, unique picks; nullable
+  tournament fields remain nullable.
+- Snapshot manifests record SHA-256 hashes for source inputs, configuration,
+  and outputs plus source timestamps and non-sensitive run metadata. Canonical
+  JSON serialization makes identical runs byte-stable. Credentials, cookies,
+  secrets, passwords, and tokens are rejected.
+- Autopilot row-order/cap behavior is a human-operated validation gate, not an
+  automated-draft feature. See `docs/plans/planned/nfl-2026/evidence/R1.2-autopilot-proof.md`.

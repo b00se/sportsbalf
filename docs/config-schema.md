@@ -279,3 +279,13 @@ Nested quality controls:
 - `modeling.hit_rate_derivation_source` (default: `counts_only`)
 - `modeling.hit_rate_uncertainty_draws` (default: `500`)
 - `evaluation.primary_metric_focus` (default: `hit_rate`)
+
+## NFL Daily Rankings Contest Schema (R1)
+
+Reference config: `config/nfl_daily_rankings.yaml`.
+
+The NFL Daily Rankings loader validates scoring mode, standard roster slots,
+draft/field size, QB/RB/WR/TE caps, entry fee, and payout ladder. Half-PPR is
+the default only when scoring is omitted; `ppr` is an explicit override; any
+other scoring mode fails closed. The initial vertical slice supports
+`QB1/RB1/WR2/FLEX1/TE1`; later slate variants require their own contract.

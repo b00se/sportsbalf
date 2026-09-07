@@ -180,3 +180,12 @@ Runtime semantics:
 3. uncertainty is sampled from count residual banks and transformed to bounded rate intervals with configurable residual scaling and sparse-bucket fallback
 4. output contract remains stable (`p10/p50/p90/stddev` + provenance fields)
 5. optional model-family selection can switch off default model only when MAE gain clears configured anti-churn threshold
+
+## NFL Daily Rankings R1 Architecture
+
+R1 adds an offline-only contract layer under `src/fantasy/adapters/nfl/` and
+does not alter the canonical `pipeline/main.py` path. Rankings and exposure
+adapters validate provider CSV schemas at the boundary; contest configuration
+is typed and config-driven; provenance creates canonical, deterministic
+manifests for later R4 exports. Account interaction, draft entry, upload, and
+Autopilot automation are deliberately outside this architecture.

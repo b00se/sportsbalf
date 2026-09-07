@@ -1,6 +1,6 @@
 # Wave R1 — Contracts
 
-Status: Planned; not started. Branch from current `main` after R0 closeout.
+Status: Complete; R1.2 accepted by operator override on 2026-09-06.
 
 ## Packets
 
@@ -16,4 +16,7 @@ R1.1, R1.3, and R1.4 may run concurrently with disjoint files. R1.5 follows R1.1
 
 ## Gate
 
-All fixture contracts pass offline, payouts reconcile, source CSV values survive reordering, manifests are deterministic, and the real Autopilot proof succeeds.
+All fixture contracts must pass offline, payouts must reconcile, source CSV
+values must survive reordering, manifests must be deterministic, and the real
+human-operated Autopilot proof must succeed. Implementation tests do not close
+the R1.2 launch gate.
