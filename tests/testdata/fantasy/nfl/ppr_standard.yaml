@@ -1,0 +1,12 @@
+contest_id: ppr-standard
+scoring:
+  ruleset: ppr
+roster: {qb: 1, rb: 1, wr: 2, flex: 1, te: 1}
+draft: {entrants: 4, rounds: 6}
+field: {size: 500, entry_fee: 10}
+position_caps: {qb: 2, rb: 4, wr: 6, te: 3}
+payouts:
+  - {rank: 1, amount: 2500}
+  - {rank: 2, amount: 1500}
+  - {rank: 3, amount: 1000}
+objective: expected_net_payout

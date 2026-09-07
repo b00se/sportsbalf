@@ -1,0 +1,3 @@
+id,playerId,firstName,lastName,adp,projectedPoints,salary,positionRank,slotName,teamName,lineupStatus,byeWeek
+b,2,Jane,Doe,2.00,101.50,5500,2,RB,BUF,questionable,7
+a,1,John,Smith,1.00,100.00,6000,1,QB,KC,,9

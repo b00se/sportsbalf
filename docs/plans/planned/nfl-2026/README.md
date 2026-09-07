@@ -1,10 +1,22 @@
 # NFL 2026 Execution Index
 
-Status: R0 complete; R1 not started
+Status: R0 complete; R1 contracts implemented; R1.2 human gate pending
 
 ## Objective
 
 Ship a verified Underdog NFL Daily rankings workflow, then build a pregame 6box Prediction Markets decision system. The authoritative product specification is [the master roadmap](../fantasy-rankings/nfl-daily-rankings-and-prediction-markets-roadmap.md).
+
+## R1 Contract Surfaces
+
+- Lossless 12-column Underdog rankings import/reorder/export and 27-column
+  exposure reconstruction are offline fixture contracts.
+- Contest configuration is typed and fail-closed: half-PPR is the default,
+  full-PPR requires an explicit override, and unknown scoring is rejected.
+- Snapshot manifests canonically hash source inputs, configuration, outputs,
+  source timestamps, and non-sensitive run metadata.
+- The controlled Autopilot proof remains a human gate documented in
+  [R1.2-autopilot-proof.md](evidence/R1.2-autopilot-proof.md); it is not
+  satisfied by implementation tests.
 
 ## Execution
 
