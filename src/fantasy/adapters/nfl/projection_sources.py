@@ -62,7 +62,10 @@ class ProjectionSource:
     def lineage_publisher(self) -> str:
         """Return a normalized publisher lineage token."""
 
-        return re.sub(r"[^a-z0-9]+", "", self.publisher.casefold())
+        normalized = re.sub(r"[^a-z0-9]+", "", self.publisher.casefold())
+        if normalized in {"fantasypros", "dynastyprocess"}:
+            return "fantasypros"
+        return normalized
 
     @property
     def lineage_domain(self) -> str:
@@ -72,7 +75,14 @@ class ProjectionSource:
             (urlparse(self.access_url).hostname or "").casefold().removeprefix("www.")
         )
         parts = [part for part in host.split(".") if part]
-        return ".".join(parts[-2:]) if len(parts) >= 2 else host
+        if len(parts) < 2 or any(
+            not re.fullmatch(r"[a-z0-9-]+", part) for part in parts
+        ):
+            return ""
+        suffix = (
+            3 if len(parts) >= 3 and ".".join(parts[-2:]) in {"co.uk", "com.au"} else 2
+        )
+        return ".".join(parts[-suffix:])
 
 
 @dataclass(frozen=True, slots=True)
@@ -429,6 +439,8 @@ def score_rolling_origin_snapshot(
             _parse_timestamp(row.get("target_cutoff_utc", "")) if target else None
         )
         if target:
+            if as_of > target_cutoff:
+                raise SourceAuditError("target as_of_utc exceeds target_cutoff_utc")
             numeric(row, "actual")
         return {
             **row,
@@ -451,16 +463,12 @@ def score_rolling_origin_snapshot(
     def key(row: dict[str, Any]) -> tuple[str, str, int, int]:
         return row["_player"], row["_game"], row["_season"], row["_week"]
 
-    public_by_key = {
-        key(row): row
-        for row in public_rows
-        if cutoff_utc is None or row["_as_of"] <= cutoff_utc
-    }
-    consensus_by_key = {
-        key(row): row
-        for row in consensus_rows
-        if cutoff_utc is None or row["_as_of"] <= cutoff_utc
-    }
+    public_by_key: dict[tuple[str, str, int, int], list[dict[str, Any]]] = {}
+    consensus_by_key: dict[tuple[str, str, int, int], list[dict[str, Any]]] = {}
+    for row in public_rows:
+        public_by_key.setdefault(key(row), []).append(row)
+    for row in consensus_rows:
+        consensus_by_key.setdefault(key(row), []).append(row)
     material_input = (
         (row["_player"] for row in rows)
         if material_player_ids is None
@@ -479,9 +487,15 @@ def score_rolling_origin_snapshot(
         for lookup in (public_by_key, consensus_by_key):
             if row_key not in lookup:
                 raise SourceAuditError("baseline snapshot is missing an evaluation key")
-            baseline = lookup[row_key]
-            if baseline["_as_of"] > row["_target"]:
+            candidates = [
+                candidate
+                for candidate in lookup[row_key]
+                if (cutoff_utc is None or candidate["_as_of"] <= cutoff_utc)
+                and candidate["_as_of"] <= row["_target"]
+            ]
+            if not candidates:
                 raise SourceAuditError("baseline timestamp is after target cutoff")
+            baseline = max(candidates, key=lambda candidate: candidate["_as_of"])
             baselines.append(numeric(baseline, "projection"))
         projection, actual = numeric(row, "projection"), numeric(row, "actual")
         errors.append(abs(projection - actual))
@@ -499,13 +513,12 @@ def score_rolling_origin_snapshot(
             historical.append(abs(sum(earlier) / len(earlier) - actual))
         public.append(abs(baselines[0] - actual))
         consensus.append(abs(baselines[1] - actual))
-    if not historical:
-        raise SourceAuditError("historical mean requires an earlier observation")
+    historical_mae = sum(historical) / len(historical) if historical else 0.0
     return EvaluationResult(
         len(rows),
         sum(errors) / len(errors),
         (len(covered_ids) / len(material)) if material else 0.0,
-        sum(historical) / len(historical),
+        historical_mae,
         sum(public) / len(public),
         sum(consensus) / len(consensus),
     )

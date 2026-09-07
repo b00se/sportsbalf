@@ -406,3 +406,68 @@ def test_historical_mean_excludes_prior_as_of_after_target_cutoff(tmp_path) -> N
     _write_eval(target, rows)
     result = score_rolling_origin_snapshot(target)
     assert result.historical_mean_mae == 1.0
+
+
+def test_target_as_of_after_its_cutoff_is_rejected(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    _write_eval(
+        target,
+        [
+            {
+                "player_id": "p",
+                "game_id": "g",
+                "season": "2026",
+                "week": "1",
+                "projection": "1",
+                "actual": "1",
+                "as_of_utc": "2026-08-02T00:00:00Z",
+                "target_cutoff_utc": "2026-08-01T00:00:00Z",
+            }
+        ],
+    )
+    with pytest.raises(SourceAuditError, match="as_of"):
+        score_rolling_origin_snapshot(target)
+
+
+def test_baseline_uses_newest_candidate_before_target_cutoff(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    public = tmp_path / "public.csv"
+    consensus = tmp_path / "consensus.csv"
+    row = {
+        "player_id": "p",
+        "game_id": "g",
+        "season": "2026",
+        "week": "1",
+        "projection": "1",
+        "actual": "3",
+        "as_of_utc": "2026-08-01T00:00:00Z",
+        "target_cutoff_utc": "2026-08-03T00:00:00Z",
+    }
+    _write_eval(target, [row])
+    old = {**row, "projection": "99", "as_of_utc": "2026-08-01T00:00:00Z"}
+    new = {**row, "projection": "4", "as_of_utc": "2026-08-02T00:00:00Z"}
+    future = {**row, "projection": "100", "as_of_utc": "2026-08-04T00:00:00Z"}
+    _write_eval(public, [new, future, old])
+    _write_eval(consensus, [new, future, old])
+    assert (
+        score_rolling_origin_snapshot(
+            target, public_path=public, consensus_path=consensus
+        ).public_baseline_mae
+        == 1.0
+    )
+
+
+def test_fantasypros_family_is_not_independent_from_dynastyprocess() -> None:
+    public = _source(
+        publisher="DynastyProcess", access_url="https://dynastyprocess.com/a"
+    )
+    consensus = _source(
+        source_id="c",
+        baseline_role="consensus_reference",
+        publisher="FantasyPros",
+        access_url="https://fantasypros.com/a",
+    )
+    with pytest.raises(SourceAuditError, match="independent"):
+        run_projection_source_tournament(
+            (public, consensus), as_of_utc=datetime(2026, 9, 2, 12, tzinfo=UTC)
+        )
