@@ -1,40 +1,49 @@
-[tool.black]
-line-length = 88
-target-version = ["py311"]
-include = '\.pyi?$'
-extend-exclude = '''
-(
-  ^/data/
-| ^/models/
-| ^/notebooks/
-| ^/.venv/
-)
-'''
+[project]
+name = "sportsbalf"
+version = "0.1.0"
+description = "Sports prop betting analytics pipelines"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "joblib>=1.5.1,<1.6",
+  "matplotlib>=3.9.4,<3.10",
+  "nflreadpy==0.1.3",
+  "numpy>=1.26.4,<1.27",
+  "pandas>=2.2.3,<2.3",
+  "pyarrow>=17.0.0,<18",
+  "pybaseball>=2.2.7,<2.3",
+  "pyyaml>=6.0.1,<6.1",
+  "requests>=2.32.3,<2.33",
+  "scikit-learn>=1.6.1,<1.7",
+  "seaborn>=0.13.2,<0.14",
+  "xgboost>=2.1.4,<2.2",
+]
+
+[dependency-groups]
+dev = [
+  "pyright>=1.1.390,<2",
+  "pytest>=8.3,<9",
+  "ruff>=0.6.8,<1",
+]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 88
 src = ["src", "pipeline", "cli", "tests"]
-exclude = [
-  ".venv",
-  "data",
-  "models",
-  "notebooks",
-]
+exclude = [".venv", "data", "models", "notebooks"]
 
 [tool.ruff.lint]
-select = [
-  "E",   # pycodestyle errors
-  "F",   # pyflakes
-  "I",   # isort
-  "UP",  # pyupgrade
-]
-ignore = [
-  # keep minimal; extend as needed
-]
+select = ["E", "F", "I", "UP"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[tool.pyright]
+include = ["src", "pipeline", "cli", "scripts"]
+exclude = ["**/__pycache__", "data", "models", "notebooks"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+reportMissingImports = false
+reportMissingTypeStubs = false

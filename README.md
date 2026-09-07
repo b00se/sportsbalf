@@ -11,15 +11,23 @@ Current production-shaped stats:
 
 ### 1) Environment
 
-Use Python 3.11 and repo-local executables.
+Use Python 3.11 and `uv` to create the locked repo environment.
 
 ```bash
-python3.11 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+uv sync
 ```
 
-Command convention in this repo:
-- Always prefer `.venv/bin/...` over shell activation assumptions.
+`uv.lock` records the complete dependency graph. `requirements.txt` remains a
+legacy compatibility export; new environments should use `uv sync`.
+
+Run the offline quality checks:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright
+uv run pytest
+```
 
 ### 2) Run Pipelines
 
