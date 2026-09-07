@@ -588,9 +588,31 @@ def test_scoring_rejects_public_consensus_path_alias(tmp_path) -> None:
         "projection": "1", "actual": "1", "as_of_utc": "2026-08-01T00:00:00Z",
         "target_cutoff_utc": "2026-08-01T00:00:00Z",
     }])
+    public = target.with_name("p.csv")
+    shutil.copyfile(target, public)
     with pytest.raises(SourceAuditError, match="distinct"):
         score_rolling_origin_snapshot(
             target,
-            public_path=target.with_name("p.csv"),
-            consensus_path=target.with_name("p.csv"),
+            public_path=public,
+            consensus_path=public,
+        )
+
+
+def test_scoring_rejects_hardlink_alias_to_target(tmp_path) -> None:
+    target = tmp_path / "target.csv"
+    _write_eval(target, [{
+        "player_id": "p", "game_id": "g", "season": "2026", "week": "1",
+        "projection": "1", "actual": "1", "as_of_utc": "2026-08-01T00:00:00Z",
+        "target_cutoff_utc": "2026-08-01T00:00:00Z",
+    }])
+    public = tmp_path / "public.csv"
+    consensus = tmp_path / "consensus.csv"
+    try:
+        public.hardlink_to(target)
+        consensus.write_bytes(target.read_bytes())
+    except (OSError, NotImplementedError):
+        pytest.skip("hardlinks unavailable on this filesystem")
+    with pytest.raises(SourceAuditError, match="alias"):
+        score_rolling_origin_snapshot(
+            target, public_path=public, consensus_path=consensus
         )

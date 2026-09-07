@@ -431,10 +431,33 @@ def score_rolling_origin_snapshot(
     target_resolved = Path(path).resolve()
     public_resolved = Path(public_path).resolve()
     consensus_resolved = Path(consensus_path).resolve()
+    paths = {
+        "target": Path(path),
+        "public": Path(public_path),
+        "consensus": Path(consensus_path),
+    }
+    missing = [name for name, candidate in paths.items() if not candidate.is_file()]
+    if missing:
+        raise SourceAuditError(
+            f"baseline or target snapshot is missing: {', '.join(missing)}"
+        )
     if target_resolved in {public_resolved, consensus_resolved}:
         raise SourceAuditError("baseline paths must not alias the target snapshot")
     if public_resolved == consensus_resolved:
         raise SourceAuditError("public and consensus baseline paths must be distinct")
+    try:
+        if paths["target"].samefile(paths["public"]) or paths["target"].samefile(
+            paths["consensus"]
+        ):
+            raise SourceAuditError("baseline paths must not alias the target snapshot")
+        if paths["public"].samefile(paths["consensus"]):
+            raise SourceAuditError(
+                "public and consensus baseline paths must be distinct"
+            )
+    except OSError as exc:
+        raise SourceAuditError(
+            f"unable to verify snapshot file identity: {exc}"
+        ) from exc
     rows = read_rows(path)
     public_rows = read_rows(public_path)
     consensus_rows = read_rows(consensus_path)
