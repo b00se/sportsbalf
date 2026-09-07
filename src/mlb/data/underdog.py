@@ -98,7 +98,7 @@ def _resolve_appearance(
     """Resolve the best available appearance id and appearance payload."""
 
     appearance_id = appearance_stat.get("appearance_id") or line.get("appearance_id")
-    appearance = appearances.get(appearance_id)
+    appearance = appearances.get(str(appearance_id)) if appearance_id is not None else None
     if appearance is not None:
         return str(appearance_id), appearance
 

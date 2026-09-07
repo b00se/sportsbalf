@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 from src.core.config import load_pipeline_config
@@ -17,7 +19,11 @@ from src.mlb.features import (
     build_historical_live_features,
 )
 from src.mlb.models.buckets import segmentation_config_from_model_selection
-from src.mlb.models.evaluation import run_walk_forward_tournament, select_champion
+from src.mlb.models.evaluation import (
+    ChampionSelection,
+    run_walk_forward_tournament,
+    select_champion,
+)
 from src.mlb.models.predict import FEATURES
 from src.mlb.models.registry import SIMPLE_MODEL_PREFERENCE, resolve_model_specs
 from src.mlb.models.strategy import strategy_candidates_from_config
@@ -58,7 +64,7 @@ def _prepare_training_frame(section: dict[str, object]) -> pd.DataFrame:
     current_games = _normalize_opponent_feature_columns(current_games)
     current_games = build_historical_live_features(current_games)
 
-    training_paths = section.get("training_data_paths") or [pitch_path]
+    training_paths = cast(Sequence[str], section.get("training_data_paths") or [pitch_path])
     frames: list[pd.DataFrame] = []
     for path in training_paths:
         if Path(path).resolve() == Path(pitch_path).resolve():
@@ -88,16 +94,22 @@ def _run_tournament(
     *,
     selection_cfg: dict[str, object],
     features: list[str],
-) -> tuple[pd.DataFrame, pd.DataFrame, object]:
+) -> tuple[pd.DataFrame, pd.DataFrame, ChampionSelection]:
     """Run tournament for a feature set and return fold metrics, leaderboard, winner."""
 
-    candidates = selection_cfg.get("candidates")
+    candidates = cast(Sequence[str] | None, selection_cfg.get("candidates"))
     primary_metric = str(selection_cfg.get("primary_metric", "mae"))
-    tie_breakers = list(selection_cfg.get("tie_breakers", ["rmse", "r2"]))
-    tie_epsilon = float(selection_cfg.get("tie_epsilon", 1e-6))
-    tuning_cfg = selection_cfg.get("tuning") or {}
+    tie_breakers = list(
+        cast(Sequence[str], selection_cfg.get("tie_breakers", ["rmse", "r2"]))
+    )
+    tie_epsilon = float(cast(float, selection_cfg.get("tie_epsilon", 1e-6)))
+    tuning_cfg = cast(Mapping[str, object], selection_cfg.get("tuning") or {})
     tuning_enabled = bool(tuning_cfg.get("enabled", False))
-    max_trials = int(tuning_cfg.get("max_trials_per_model", 1)) if tuning_enabled else 1
+    max_trials = (
+        int(cast(int, tuning_cfg.get("max_trials_per_model", 1)))
+        if tuning_enabled
+        else 1
+    )
     segmentation = segmentation_config_from_model_selection(selection_cfg)
     strategies = strategy_candidates_from_config(segmentation)
 
@@ -212,11 +224,12 @@ def run_feature_set_comparison(
             .mean()
         ),
         "roof_known_pct": float(
-            (~frame.get("roof_state", pd.Series("unknown", index=frame.index))
-            .astype(str)
-            .str.lower()
-            .eq("unknown"))
-            .mean()
+            (
+                ~frame.get("roof_state", pd.Series("unknown", index=frame.index))
+                .astype(str)
+                .str.lower()
+                .eq("unknown")
+            ).mean()
         ),
         "umpire_known_pct": float(
             pd.to_numeric(frame.get("umpire_known_flag"), errors="coerce")

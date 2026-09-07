@@ -193,22 +193,28 @@ class LiveContextService:
                     used_secondary = True
                     fetched = secondary_rows.copy()
             else:
-                missing_weather = fetched[
-                    [
-                        col
-                        for col in ("game_temp_f", "humidity_pct", "wind_speed_mph")
-                        if col in fetched.columns
+                missing_weather = (
+                    fetched[
+                        [
+                            col
+                            for col in ("game_temp_f", "humidity_pct", "wind_speed_mph")
+                            if col in fetched.columns
+                        ]
                     ]
-                ].isna().any(axis=1)
+                    .isna()
+                    .any(axis=1)
+                )
                 needs_roof_fill = (
-                    fetched["roof_state"].isna()
-                    | fetched["roof_state"]
-                    .astype(str)
-                    .str.strip()
-                    .str.lower()
-                    .isin({"", "unknown", "none", "nan"})
-                ) if "roof_state" in fetched.columns else pd.Series(
-                    False, index=fetched.index
+                    (
+                        fetched["roof_state"].isna()
+                        | fetched["roof_state"]
+                        .astype(str)
+                        .str.strip()
+                        .str.lower()
+                        .isin({"", "unknown", "none", "nan"})
+                    )
+                    if "roof_state" in fetched.columns
+                    else pd.Series(False, index=fetched.index)
                 )
                 needs_secondary = missing_weather | needs_roof_fill
                 if needs_secondary.any():
@@ -509,6 +515,8 @@ class LiveContextService:
                 return None if cached is None else cached.copy()
 
         fetched: pd.DataFrame | None = None
+        if schedule_and_record is None:
+            return None
         schedule = schedule_and_record(year, opponent)
         if schedule is not None and not schedule.empty:
             fetched = schedule.copy()

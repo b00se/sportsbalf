@@ -7,6 +7,8 @@ import logging
 import re
 from hashlib import sha256
 from pathlib import Path
+from collections.abc import Sequence
+from typing import cast
 
 import joblib
 import numpy as np
@@ -259,10 +261,9 @@ def _add_opponent_tendency(
         )
         .sort_values("game_date", kind="stable")
     )
-    global_daily["global_prior"] = (
-        global_daily["day_target_sum"].cumsum().shift(1)
-        / global_daily["day_target_count"].cumsum().shift(1).replace(0.0, np.nan)
-    )
+    global_daily["global_prior"] = global_daily["day_target_sum"].cumsum().shift(
+        1
+    ) / global_daily["day_target_count"].cumsum().shift(1).replace(0.0, np.nan)
 
     merged = enriched.merge(
         opponent_daily[["opponent_team", "game_date", "_opponent_prior"]],
@@ -296,7 +297,10 @@ def _build_training_games(
 
     pitch_data_path = str(section["pitch_data_path"])
     training_paths = [
-        str(path) for path in (section.get("training_data_paths") or [pitch_data_path])
+        str(path)
+        for path in cast(
+            Sequence[object], section.get("training_data_paths") or [pitch_data_path]
+        )
     ]
 
     earned_runs_source: pd.DataFrame | None = None
@@ -350,8 +354,10 @@ def _build_training_games(
             games,
             target_col=descriptor.target_col,
             park_col=descriptor.park_factor_col,
-            min_samples=int(section.get("park_factor_min_samples", 20)),
-            half_life_games=int(section.get("park_factor_half_life_games", 60)),
+            min_samples=int(cast(int, section.get("park_factor_min_samples", 20))),
+            half_life_games=int(
+                cast(int, section.get("park_factor_half_life_games", 60))
+            ),
         )
         games = build_historical_live_features(games)
         games = ensure_live_feature_defaults(games)
@@ -500,9 +506,11 @@ def _persist_final_holdout_report(
     if dated.empty:
         return
     dated["season"] = dated["game_date"].dt.year.astype(int)
-    seasons = sorted(int(x) for x in dated["season"].unique())
+    seasons = sorted(int(cast(float, x)) for x in dated["season"].unique())
 
-    holdout_seasons = max(1, int(holdout_cfg.get("seasons", 1)))
+    holdout_seasons = max(
+        1, int(cast(int, holdout_cfg.get("seasons", 1)))
+    )
     if len(seasons) <= holdout_seasons:
         logger.warning(
             "Skipping final holdout report for '%s': only %d season(s) available.",
@@ -640,7 +648,7 @@ def _train_or_load(
     )
     if should_retrain_champion:
         try:
-            specs = resolve_model_specs(candidates)
+            specs = resolve_model_specs(cast(Sequence[str] | None, candidates))
             fold_metrics, leaderboard = run_walk_forward_tournament(
                 frame,
                 specs=specs,
@@ -654,8 +662,8 @@ def _train_or_load(
             winner = select_champion(
                 leaderboard,
                 primary_metric=str(selection["primary_metric"]),
-                tie_breakers=list(selection["tie_breakers"]),
-                epsilon=float(selection["tie_epsilon"]),
+                tie_breakers=list(cast(Sequence[str], selection["tie_breakers"])),
+                epsilon=float(cast(float, selection["tie_epsilon"])),
                 simplicity_order=SIMPLE_MODEL_PREFERENCE,
             )
             winner_spec = get_model_spec(winner.model_name)
@@ -710,7 +718,7 @@ def _train_or_load(
                     winner_params=winner.params,
                     segmentation=segmentation,
                     features=features,
-                    holdout_cfg=dict(selection["final_holdout"]),
+                    holdout_cfg=cast(dict[str, object], selection["final_holdout"]),
                 )
             except Exception as exc:
                 logger.warning(
@@ -810,8 +818,7 @@ def _build_prediction_rows(
         record["under_decimal_price"] = getattr(line, "under_decimal_price", np.nan)
         if pd.notna(record.get("game_date")):
             rest_days = (
-                target_date.normalize()
-                - pd.Timestamp(record["game_date"]).normalize()
+                target_date.normalize() - pd.Timestamp(record["game_date"]).normalize()
             ).days
             record["rest_days"] = max(rest_days, 0)
         if pd.notna(record.get("home_team")):

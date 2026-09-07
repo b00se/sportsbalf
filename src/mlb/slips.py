@@ -71,7 +71,7 @@ class SlipBuilderConfig:
     max_legs_per_player: int = 3
     max_shared_legs: int = 3
     min_leg_ev: float = 0.0
-    payout_table: dict[int, float] = None
+    payout_table: dict[int, float] | None = None
 
     def __post_init__(self) -> None:
         if self.payout_table is None:
@@ -115,9 +115,7 @@ def _legacy_stat_subframes(df: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
     if "stat_id" not in df.columns:
         return [("strikeouts", df.copy())]
 
-    stat_values = (
-        df["stat_id"].fillna("strikeouts").astype(str).str.strip().str.lower()
-    )
+    stat_values = df["stat_id"].fillna("strikeouts").astype(str).str.strip().str.lower()
     work = df.copy()
     work["stat_id"] = stat_values
 
@@ -475,6 +473,7 @@ def build_slip_sets(
     """Create conservative and full-send slip collections from pipeline output."""
 
     cfg = config or SlipBuilderConfig()
+    payout_table = cfg.payout_table if cfg.payout_table is not None else {}
     long_df = prepare_long_df(
         results,
         top_n=cfg.top_n,
@@ -484,7 +483,7 @@ def build_slip_sets(
     conservative_candidates = generate_slips(
         long_df,
         slip_size=2,
-        payout_table=cfg.payout_table,
+        payout_table=payout_table,
         max_legs_per_player=cfg.max_legs_per_player,
     )
     conservative_ranked = sorted(
@@ -503,7 +502,7 @@ def build_slip_sets(
                 generate_slips(
                     long_df,
                     slip_size=size,
-                    payout_table=cfg.payout_table,
+                    payout_table=payout_table,
                     max_legs_per_player=cfg.max_legs_per_player,
                 )
             )

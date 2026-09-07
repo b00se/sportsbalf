@@ -129,7 +129,7 @@ def run_mlb_pitcher_prop_slate(
             continue
 
         try:
-            scored = scorer(config, retrain=retrain)
+            scored = scorer(config, retrain)
         except FileNotFoundError as exc:
             if _is_expected_missing_input_error(exc):
                 skipped_stats[stat] = str(exc)
