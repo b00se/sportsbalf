@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
 from typing import Any
 from urllib.error import HTTPError
 
@@ -14,7 +13,6 @@ from .base import (
     CANONICAL_DATASETS,
     CapabilityRecord,
     FailureMetadata,
-    FreshnessMetadata,
     LoadResult,
     NFLDataProvider,
     ProviderCapabilities,
@@ -157,6 +155,19 @@ def _coalesce_columns(frame: pd.DataFrame, aliases: dict[str, tuple[str, ...]]) 
                 break
 
 
+def _failure_for_exception(exc: Exception, year: int) -> FailureMetadata:
+    """Classify one provider exception and attach it to a season."""
+    message = str(exc)
+    unavailable = isinstance(exc, HTTPError) and exc.code == 404
+    unavailable = unavailable or "404" in message or "not found" in message.lower()
+    return FailureMetadata(
+        "unavailable" if unavailable else "error",
+        message,
+        type(exc).__name__,
+        int(year),
+    )
+
+
 def _fetch_with_fallback(
     label: str,
     fetch_fn: Callable[[list[int]], Any],
@@ -171,41 +182,21 @@ def _fetch_with_fallback(
 
     try:
         frame = _to_pandas(fetch_fn(list(years_list)))
-    except HTTPError as exc:  # pragma: no cover - network exception path
-        if exc.code != 404:
-            pass
-        failures.append(FailureMetadata("unavailable", str(exc), type(exc).__name__))
-    except Exception as exc:  # pragma: no cover - unexpected network error
-        message = str(exc)
-        if "404" not in message and "Not Found" not in message:
-            pass
+    except Exception:  # pragma: no cover - network exception path
+        # Bulk failures have no season scope. Retry each season and let the
+        # shared reconciliation contract create the final typed records.
+        frame = None
     else:
-        if not frame.empty:
-            available = (
-                tuple(sorted({int(value) for value in frame["season"].dropna()}))
-                if "season" in frame
-                else ()
-            )
-            skipped = [year for year in years_list if year not in available]
-            missing_failures = tuple(
-                FailureMetadata(
-                    "unavailable", "season absent from response", "MissingSeason", year
-                )
-                for year in skipped
-            )
-            freshness = FreshnessMetadata(
-                tuple(years_list),
-                available,
-                datetime.now(UTC),
-                "partial" if skipped else "complete",
-            )
-            if skipped:
+        if frame is not None and not frame.empty:
+            result = reconcile_seasons(frame, years_list)
+            if result.skipped_years:
                 warnings.warn(
-                    f"Skipping {label} data for unavailable seasons: {skipped}",
+                    f"Skipping {label} data for unavailable seasons: "
+                    f"{result.skipped_years}",
                     RuntimeWarning,
                     stacklevel=3,
                 )
-            return reconcile_seasons(frame, years_list, missing_failures)
+            return result
 
     frames: list[pd.DataFrame] = []
     skipped: list[int] = []
@@ -213,27 +204,12 @@ def _fetch_with_fallback(
         try:
             frame = _to_pandas(fetch_fn([int(year)]))
         except HTTPError as exc:  # pragma: no cover - network exception path
-            if exc.code == 404:
-                skipped.append(year)
-                failures.append(
-                    FailureMetadata("unavailable", str(exc), type(exc).__name__, year)
-                )
-                continue
             skipped.append(year)
-            failures.append(
-                FailureMetadata("error", str(exc), type(exc).__name__, year)
-            )
+            failures.append(_failure_for_exception(exc, year))
             continue
         except Exception as exc:  # pragma: no cover - unexpected network error
-            message = str(exc)
-            if "404" in message or "Not Found" in message:
-                skipped.append(year)
-                failures.append(
-                    FailureMetadata("unavailable", message, type(exc).__name__, year)
-                )
-                continue
             skipped.append(year)
-            failures.append(FailureMetadata("error", message, type(exc).__name__, year))
+            failures.append(_failure_for_exception(exc, year))
             continue
         if frame.empty:
             skipped.append(year)
@@ -244,7 +220,6 @@ def _fetch_with_fallback(
         frames.append(frame)
 
     if not frames:
-        freshness = FreshnessMetadata(tuple(years_list), (), datetime.now(UTC), "empty")
         return reconcile_seasons(pd.DataFrame(), years_list, failures)
 
     if skipped:
@@ -255,16 +230,14 @@ def _fetch_with_fallback(
         )
 
     data = pd.concat(frames, ignore_index=True)
-    available = (
-        tuple(sorted({int(value) for value in data["season"].dropna()}))
-        if "season" in data
-        else ()
-    )
-    status = "partial" if skipped else "complete"
-    freshness = FreshnessMetadata(
-        tuple(years_list), available, datetime.now(UTC), status
-    )
-    return LoadResult(data, skipped, freshness, tuple(failures))
+    result = reconcile_seasons(data, years_list, failures)
+    if result.skipped_years:
+        warnings.warn(
+            f"Skipping {label} data for unavailable seasons: {result.skipped_years}",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return result
 
 
 def _normalize_weekly(frame: pd.DataFrame) -> pd.DataFrame:

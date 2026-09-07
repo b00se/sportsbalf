@@ -92,16 +92,24 @@ def reconcile_seasons(
 ) -> LoadResult:
     """Reconcile requested seasons and emit one typed failure per missing year."""
     requested = tuple(dict.fromkeys(int(year) for year in years))
-    available = (
-        tuple(sorted({int(value) for value in data["season"].dropna()}))
-        if "season" in data
-        else ()
-    )
-    existing = {failure.year for failure in failures}
+    normalized = data.copy().drop_duplicates(ignore_index=True)
+    available_values: set[int] = set()
+    if "season" in normalized:
+        values = pd.to_numeric(normalized["season"], errors="coerce").dropna()
+        available_values = {int(value) for value in values if float(value).is_integer()}
+    available = tuple(sorted(available_values))
+    # Keep at most one typed failure per requested year.  Unscoped failures are
+    # intentionally excluded: reconciliation owns attribution to seasons.
+    by_year: dict[int, FailureMetadata] = {}
+    for failure in failures:
+        if failure.year in requested and failure.year not in by_year:
+            by_year[failure.year] = failure
     missing = [
-        year for year in requested if year not in available and year not in existing
+        year for year in requested if year not in available and year not in by_year
     ]
-    all_failures = tuple(failures) + tuple(
+    all_failures = tuple(
+        by_year[year] for year in requested if year in by_year
+    ) + tuple(
         FailureMetadata(
             "unavailable", "season absent from response", "MissingSeason", year
         )
@@ -112,7 +120,7 @@ def reconcile_seasons(
         "empty" if not available else ("partial" if skipped else "complete")
     )
     return LoadResult(
-        data,
+        normalized,
         skipped,
         FreshnessMetadata(requested, available, datetime.now(UTC), status),
         all_failures,

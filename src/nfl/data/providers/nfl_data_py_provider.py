@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -12,7 +11,6 @@ from .base import (
     CANONICAL_DATASETS,
     CapabilityRecord,
     FailureMetadata,
-    FreshnessMetadata,
     LoadResult,
     NFLDataProvider,
     ProviderCapabilities,
@@ -144,14 +142,10 @@ class NflDataPyProvider(NFLDataProvider):
             )
 
         requested = [int(year) for year in years]
-        return LoadResult(
-            pd.DataFrame(),
-            requested,
-            FreshnessMetadata(tuple(requested), (), datetime.now(UTC), "empty"),
-            tuple(
-                FailureMetadata(
-                    "error", "unsupported NGS capability", "UnsupportedCapability", year
-                )
-                for year in requested
-            ),
+        failures = tuple(
+            FailureMetadata(
+                "error", "unsupported NGS capability", "UnsupportedCapability", year
+            )
+            for year in requested
         )
+        return reconcile_seasons(pd.DataFrame(), requested, failures)

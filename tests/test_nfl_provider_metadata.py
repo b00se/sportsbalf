@@ -161,3 +161,65 @@ def test_fixture_bytes_are_loaded_and_hash_verified():
     frame = pd.read_csv(path)
     assert list(frame.columns) == manifest["columns"]
     assert frame.loc[0, "season"] == 2024
+
+
+def test_fixture_is_exercised_through_weekly_normalization(monkeypatch):
+    path = Path(__file__).parent / "testdata" / "nflreadpy_weekly.csv"
+
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            return pd.read_csv(path)
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_weekly([2024])
+    assert result.freshness.status == "complete"
+    assert result.data.loc[0, "attempts"] == 30
+
+
+def test_bulk_failure_is_not_unscoped_or_duplicated(monkeypatch):
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            if len(years) > 1:
+                raise RuntimeError("500 Service Unavailable")
+            if years == [2024]:
+                raise RuntimeError("404 Not Found")
+            return pd.DataFrame({"season": [2025], "week": [1]})
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_weekly([2024, 2025])
+    assert result.freshness.status == "partial"
+    assert [(failure.year, failure.kind) for failure in result.failures] == [
+        (2024, "unavailable")
+    ]
+    assert all(failure.year is not None for failure in result.failures)
+
+
+def test_missing_season_column_uses_shared_reconciliation(monkeypatch):
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            return pd.DataFrame({"week": [1], "pass_attempts": [20]})
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_weekly([2024, 2025])
+    assert result.data.drop_duplicates().shape[0] == 1
+    assert result.skipped_years == [2024, 2025]
+    assert [failure.year for failure in result.failures] == [2024, 2025]
+
+
+def test_legacy_empty_and_partial_responses_reconcile_seasons(monkeypatch):
+    class Stub:
+        def import_weekly_data(self, years):
+            return pd.DataFrame({"season": [years[0]], "week": [1]})
+
+    import src.nfl.data.providers.nfl_data_py_provider as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NflDataPyProvider().load_weekly([2024, 2025])
+    assert result.skipped_years == [2025]
+    assert [failure.year for failure in result.failures] == [2025]
