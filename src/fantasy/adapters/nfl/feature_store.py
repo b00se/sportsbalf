@@ -1,8 +1,4 @@
-"""Leakage-safe NFL game/player feature-store adapter.
-
-This is an inference boundary: callers provide canonical, snapshot-backed
-tables and the adapter refuses evidence that cannot be dated and audited.
-"""
+"""Leakage-safe NFL game/player feature-store adapter."""
 
 from __future__ import annotations
 
@@ -22,48 +18,54 @@ class FeatureStoreError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class SnapshotEvidence:
-    """A normalized source table and its immutable snapshot identity."""
+    """A defensively copied source table and its retrieval metadata.
+
+    ``snapshot_sha256`` is optional audit metadata.  The production gate is
+    the supplied snapshot plus dated observations, not a cryptographic hash.
+    """
 
     frame: pd.DataFrame
     snapshot_id: str
-    snapshot_sha256: str
-    manifest_ref: str
+    retrieved_at: pd.Timestamp
+    row_count: int
+    manifest_ref: str = ""
+    snapshot_sha256: str | None = None
     global_safe: bool = False
 
     def __post_init__(self) -> None:
-        if not all(
-            isinstance(value, str) and value.strip()
-            for value in (self.snapshot_id, self.snapshot_sha256, self.manifest_ref)
+        if not isinstance(self.frame, pd.DataFrame):
+            raise FeatureStoreError("snapshot frame must be a DataFrame")
+        if not isinstance(self.snapshot_id, str) or not self.snapshot_id.strip():
+            raise FeatureStoreError("snapshot source identity is required")
+        if not isinstance(self.row_count, int) or self.row_count < 0:
+            raise FeatureStoreError("snapshot row_count must be a nonnegative integer")
+        if self.row_count != len(self.frame):
+            raise FeatureStoreError("snapshot row_count does not match source frame")
+        retrieved = pd.Timestamp(self.retrieved_at)
+        if retrieved.tzinfo is None:
+            raise FeatureStoreError("snapshot retrieved_at must be timezone-aware")
+        if self.snapshot_sha256 is not None and not re.fullmatch(
+            r"[0-9a-f]{64}", self.snapshot_sha256
         ):
-            raise FeatureStoreError(
-                "snapshot_id, snapshot_sha256, and manifest_ref are required"
-            )
-        if not re.fullmatch(r"[0-9a-f]{64}", self.snapshot_sha256):
             raise FeatureStoreError(
                 "snapshot_sha256 must be lowercase 64-character hex"
             )
-        calculated = _hash_frame(self.frame)
-        pinned = str(self.frame.attrs.get("manifest_sha256", ""))
-        if self.snapshot_sha256 not in {calculated, pinned}:
-            raise FeatureStoreError(
-                "snapshot_sha256 does not match source frame or manifest"
-            )
+        copied = self.frame.copy(deep=True)
+        object.__setattr__(self, "frame", copied)
+        object.__setattr__(self, "retrieved_at", retrieved)
 
     @classmethod
-    def from_frame(
-        cls,
-        frame: pd.DataFrame,
-        *,
-        snapshot_id: str | None = None,
-        snapshot_sha256: str | None = None,
-        manifest_ref: str | None = None,
-        global_safe: bool = False,
-    ) -> SnapshotEvidence:
-        """Create evidence from a frame carrying optional snapshot attrs."""
-        identifier = snapshot_id or str(frame.attrs.get("snapshot_id", ""))
-        digest = snapshot_sha256 or str(frame.attrs.get("snapshot_sha256", ""))
-        manifest = manifest_ref or str(frame.attrs.get("manifest_ref", ""))
-        return cls(frame, identifier, digest, manifest, global_safe)
+    def from_frame(cls, frame: pd.DataFrame) -> SnapshotEvidence:
+        """Create evidence from required snapshot metadata stored in attrs."""
+        return cls(
+            frame=frame,
+            snapshot_id=str(frame.attrs.get("snapshot_id", "")),
+            retrieved_at=frame.attrs.get("retrieved_at"),
+            row_count=frame.attrs.get("row_count", -1),
+            manifest_ref=str(frame.attrs.get("manifest_ref", "")),
+            snapshot_sha256=frame.attrs.get("snapshot_sha256"),
+            global_safe=bool(frame.attrs.get("global_safe", False)),
+        )
 
 
 FEATURE_COLUMNS: tuple[str, ...] = (
@@ -83,6 +85,7 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "projection",
 )
 NUMERIC_FEATURES = frozenset(FEATURE_COLUMNS) - {"role", "availability"}
+SCOPES = ("game_id", "event_id", "slate_id")
 
 
 def _strict_timestamp(frame: pd.DataFrame, column: str, label: str) -> pd.Series:
@@ -93,31 +96,42 @@ def _strict_timestamp(frame: pd.DataFrame, column: str, label: str) -> pd.Series
         raise FeatureStoreError(
             f"{label} timestamp must be timezone-aware datetime values"
         )
-    if getattr(values.dt, "tz", None) is None:
-        raise FeatureStoreError(f"{label} timestamp must be timezone-aware")
-    if values.isna().any():
-        raise FeatureStoreError(f"{label} contains a missing timestamp")
+    if getattr(values.dt, "tz", None) is None or values.isna().any():
+        raise FeatureStoreError(
+            f"{label} timestamp must be timezone-aware and nonmissing"
+        )
     return values
 
 
 def _canonical(frame: pd.DataFrame, label: str) -> None:
     if "nflverse_id" not in frame.columns:
         raise FeatureStoreError(f"{label} requires canonical nflverse_id")
-    ids = frame["nflverse_id"]
-    if ids.isna().any() or ids.astype(str).str.strip().eq("").any():
+    if (
+        frame["nflverse_id"].isna().any()
+        or frame["nflverse_id"].astype(str).str.strip().eq("").any()
+    ):
         raise FeatureStoreError(f"{label} contains unresolved nflverse_id")
 
 
-def _as_evidence(name: str, value: SnapshotEvidence | pd.DataFrame) -> SnapshotEvidence:
-    if isinstance(value, SnapshotEvidence):
-        return value
-    return SnapshotEvidence.from_frame(value)
+def _validate_scopes(frame: pd.DataFrame, label: str) -> None:
+    for scope in SCOPES:
+        if scope in frame.columns:
+            values = frame[scope]
+            if values.isna().any() or values.astype(str).str.strip().eq("").any():
+                raise FeatureStoreError(f"{label} contains blank {scope}")
+
+
+def _as_evidence(value: SnapshotEvidence | pd.DataFrame) -> SnapshotEvidence:
+    return (
+        value
+        if isinstance(value, SnapshotEvidence)
+        else SnapshotEvidence.from_frame(value)
+    )
 
 
 def _hash_frame(frame: pd.DataFrame) -> str:
-    """Return a deterministic digest for a source when callers need one."""
-    payload = frame.to_csv(index=False).encode("utf-8")
-    return sha256(payload).hexdigest()
+    """Return optional deterministic audit metadata for callers that want it."""
+    return sha256(frame.to_csv(index=False).encode("utf-8")).hexdigest()
 
 
 def _fallback_values(
@@ -127,28 +141,52 @@ def _fallback_values(
     *,
     cutoff: pd.Timestamp,
 ) -> Any:
-    """Return a deterministic prior-season, then global hierarchical value."""
+    """Return a snapshot-backed prior-season value, then a global prior."""
     prior: list[Any] = []
     global_prior: list[Any] = []
-    for _, evidence, frame in normalized:
+    for _, _, frame in normalized:
         eligible = frame.loc[frame["source_timestamp_utc"] <= cutoff]
         if "game_id" in frame.columns and "game_id" in target.index:
             eligible = eligible.loc[eligible["game_id"] != target["game_id"]]
         if feature not in eligible.columns:
             continue
-        numeric = pd.to_numeric(eligible[feature], errors="coerce").dropna()
-        global_prior.extend(numeric.tolist())
+        global_prior.extend(
+            pd.to_numeric(eligible[feature], errors="coerce").dropna().tolist()
+        )
         if "season" in frame.columns and "season" in target.index:
-            numeric = pd.to_numeric(
-                eligible.loc[eligible["season"] < target["season"], feature],
-                errors="coerce",
-            ).dropna()
-            prior.extend(numeric.tolist())
+            prior.extend(
+                pd.to_numeric(
+                    eligible.loc[eligible["season"] < target["season"], feature],
+                    errors="coerce",
+                )
+                .dropna()
+                .tolist()
+            )
     if prior:
         return float(pd.Series(prior).mean())
-    if global_prior:
-        return float(pd.Series(global_prior).mean())
-    return pd.NA
+    return float(pd.Series(global_prior).mean()) if global_prior else pd.NA
+
+
+def _latest_categorical(
+    feature: str, eligible: list[tuple[str, SnapshotEvidence, pd.Series]]
+) -> Any:
+    values = [
+        (name, row)
+        for name, _, row in eligible
+        if feature in row.index and pd.notna(row[feature])
+    ]
+    if not values:
+        return pd.NA
+    latest = max(row["source_timestamp_utc"] for _, row in values)
+    tied = [
+        (name, row[feature])
+        for name, row in values
+        if row["source_timestamp_utc"] == latest
+    ]
+    distinct = {str(value) for _, value in tied}
+    if len(distinct) != 1:
+        raise FeatureStoreError(f"unresolved categorical tie for {feature} at {latest}")
+    return tied[0][1]
 
 
 def build_nfl_feature_store(
@@ -157,33 +195,26 @@ def build_nfl_feature_store(
     *,
     availability: SnapshotEvidence | pd.DataFrame | None = None,
     projections: SnapshotEvidence | pd.DataFrame | None = None,
-    require_evidence: bool = True,
 ) -> pd.DataFrame:
-    """Build pre-target rolling features for canonical player/game rows.
-
-    Every source is required to be snapshot-backed. Source rows must use a
-    timezone-aware datetime column named ``source_timestamp_utc``. If a source
-    contains ``game_id`` it is event-scoped; unscoped rows are rejected unless
-    explicitly marked ``global_safe``. Rolling numeric features use prior rows
-    only; missing values receive deterministic fallback and missingness rates.
-    """
+    """Build features using only supplied observations dated before each cutoff."""
     if targets is None or targets.empty:
         raise FeatureStoreError("targets must be nonempty")
     _canonical(targets, "targets")
+    _validate_scopes(targets, "targets")
     cutoff = _strict_timestamp(targets, "as_of_utc", "targets")
     if not sources and availability is None and projections is None:
         raise FeatureStoreError("at least one source snapshot is required")
-    all_sources: dict[str, SnapshotEvidence] = {
-        name: _as_evidence(name, evidence) for name, evidence in sources.items()
-    }
+    all_sources = {name: _as_evidence(value) for name, value in sources.items()}
     if availability is not None:
-        all_sources["availability"] = _as_evidence("availability", availability)
+        all_sources["availability"] = _as_evidence(availability)
     if projections is not None:
-        all_sources["projections"] = _as_evidence("projections", projections)
+        all_sources["projections"] = _as_evidence(projections)
+
     normalized: list[tuple[str, SnapshotEvidence, pd.DataFrame]] = []
-    for name, evidence in all_sources.items():
-        frame = evidence.frame.copy()
+    for name, evidence in sorted(all_sources.items()):
+        frame = evidence.frame.copy(deep=True)
         _canonical(frame, f"source {name}")
+        _validate_scopes(frame, f"source {name}")
         _strict_timestamp(frame, "source_timestamp_utc", f"source {name}")
         if (
             "provenance" not in frame.columns
@@ -191,37 +222,34 @@ def build_nfl_feature_store(
             or frame["provenance"].astype(str).str.strip().eq("").any()
         ):
             raise FeatureStoreError(f"source {name} requires nonempty provenance")
-        for scope in ("game_id", "event_id", "slate_id"):
-            if scope in frame.columns and frame[scope].isna().any():
-                raise FeatureStoreError(f"source {name} contains blank {scope}")
         if "game_id" not in frame.columns and not evidence.global_safe:
             raise FeatureStoreError(
                 f"source {name} is unscoped; mark it global_safe explicitly"
             )
+        duplicate_key = [
+            "nflverse_id",
+            "source_timestamp_utc",
+            *[scope for scope in SCOPES if scope in frame.columns],
+        ]
+        if frame.duplicated(subset=duplicate_key).any():
+            raise FeatureStoreError(f"source {name} contains duplicate observations")
         normalized.append((name, evidence, frame))
 
     result = targets.copy()
     result["as_of_utc"] = cutoff
     rows: list[dict[str, Any]] = []
-    for target_index, target in result.iterrows():
+    for _, target in result.iterrows():
         eligible: list[tuple[str, SnapshotEvidence, pd.Series]] = []
+        active: list[tuple[str, SnapshotEvidence]] = []
         for name, evidence, frame in normalized:
-            candidates = frame.loc[
-                (frame["nflverse_id"] == target["nflverse_id"])
-                & (frame["source_timestamp_utc"] <= target["as_of_utc"])
-            ]
-            if "game_id" in frame.columns and "game_id" in result.columns:
-                candidates = candidates.loc[candidates["game_id"] != target["game_id"]]
-            elif not evidence.global_safe:
-                raise FeatureStoreError(f"source {name} lacks safe target scope")
-            if candidates.empty:
-                continue
-            candidates = candidates.sort_values(
-                "source_timestamp_utc", kind="mergesort"
-            )
-            for _, candidate in candidates.iterrows():
-                eligible.append((name, evidence, candidate))
-        if require_evidence and not eligible:
+            dated = frame.loc[frame["source_timestamp_utc"] <= target["as_of_utc"]]
+            if "game_id" in frame.columns:
+                dated = dated.loc[dated["game_id"] != target["game_id"]]
+            if not dated.empty:
+                active.append((name, evidence))
+            candidates = dated.loc[dated["nflverse_id"] == target["nflverse_id"]]
+            eligible.extend((name, evidence, row) for _, row in candidates.iterrows())
+        if not active:
             raise FeatureStoreError(
                 f"no snapshot-backed prior evidence for target {target['nflverse_id']}"
             )
@@ -234,43 +262,41 @@ def build_nfl_feature_store(
             ]
             if feature in NUMERIC_FEATURES:
                 numeric = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
-                output[f"{feature}_missing_rate"] = 1.0 - (
-                    len(numeric) / max(len(eligible), 1)
+                output[f"{feature}_missing_rate"] = 1.0 - len(numeric) / max(
+                    len(eligible), 1
                 )
-                if not numeric.empty:
-                    output[feature] = float(numeric.mean())
-                    output[f"{feature}_fallback"] = False
-                else:
-                    prior = _fallback_values(
+                output[feature] = (
+                    float(numeric.mean())
+                    if not numeric.empty
+                    else _fallback_values(
                         feature, target, normalized, cutoff=target["as_of_utc"]
                     )
-                    output[feature] = prior
-                    output[f"{feature}_fallback"] = True
-            else:
-                output[f"{feature}_missing_rate"] = 1.0 - (
-                    len(values) / max(len(eligible), 1)
                 )
-                output[feature] = values[-1] if values else pd.NA
+                output[f"{feature}_fallback"] = numeric.empty
+            else:
+                output[f"{feature}_missing_rate"] = 1.0 - len(values) / max(
+                    len(eligible), 1
+                )
+                output[feature] = _latest_categorical(feature, eligible)
                 output[f"{feature}_fallback"] = not values
         snapshots = sorted(
             {
-                (evidence.snapshot_id, evidence.snapshot_sha256, evidence.manifest_ref)
-                for _, evidence, _ in eligible
+                (e.snapshot_id, e.snapshot_sha256 or "", e.manifest_ref, e.row_count)
+                for _, e in active
             }
         )
         output["source_snapshot_id"] = "|".join(item[0] for item in snapshots)
         output["source_snapshot_sha256"] = "|".join(item[1] for item in snapshots)
         output["source_manifest_ref"] = "|".join(item[2] for item in snapshots)
+        output["source_row_count"] = sum(item[3] for item in snapshots)
         output["source_count"] = len(snapshots)
-        summary = {
-            feature: output[f"{feature}_missing_rate"] for feature in FEATURE_COLUMNS
-        }
-        output["feature_missingness_summary"] = json.dumps(summary, sort_keys=True)
+        output["feature_missingness_summary"] = json.dumps(
+            {feature: output[f"{feature}_missing_rate"] for feature in FEATURE_COLUMNS},
+            sort_keys=True,
+        )
         output["season"] = target.get("season", pd.NA)
-        output["as_of_utc"] = target["as_of_utc"]
         rows.append(output)
-    features = pd.DataFrame(rows, index=result.index)
-    return pd.concat([result, features.drop(columns=["as_of_utc"])], axis=1)
+    return pd.concat([result, pd.DataFrame(rows, index=result.index)], axis=1)
 
 
 __all__ = [
