@@ -1,6 +1,6 @@
 # NFL 2026 Execution Index
 
-Status: R0 complete; R1 accepted by operator override
+Status: R0 complete; R1 accepted by operator override; R2 accepted pending merge
 
 ## Objective
 
@@ -64,5 +64,6 @@ baseline, tooling, and closeout records are retained under [evidence/](evidence/
 The authoritative raw QB recovery remains reachable at `refs/recovery/r0.1-qb`;
 it is historical evidence, not an implementation starting point.
 
-The next active wave is R1. Create its branch from current `main`, verify a clean
-working tree, and do not begin a later wave until the R1 gate has passed.
+R2 is accepted on its feature branch and awaits merge. R3 is the next wave,
+but it must start only in a fresh task after R2 has merged and the working tree
+is clean. Do not begin R3 from this closeout packet.
