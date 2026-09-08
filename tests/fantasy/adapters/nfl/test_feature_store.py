@@ -1,5 +1,6 @@
 """Acceptance tests for snapshot-backed NFL feature construction."""
 
+import importlib.util
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
@@ -85,6 +86,28 @@ def test_future_same_player_perturbation_is_inert() -> None:
     changed.loc[1, "availability"] = "inactive"
     after = build_nfl_feature_store(_targets(), {"stats": _evidence(changed)})
     pd.testing.assert_frame_equal(before, after)
+
+
+def test_future_availability_row_and_provenance_perturbation_are_inert() -> None:
+    """Future status data cannot alter a pre-kickoff feature or its audit row."""
+    before = build_nfl_feature_store(_targets(), {"stats": _source()})
+    changed = _source().frame.copy()
+    changed.loc[1, "availability"] = "inactive"
+    changed.loc[1, "provenance"] = "fixture:future-mutated"
+    after = build_nfl_feature_store(_targets(), {"stats": _evidence(changed)})
+    pd.testing.assert_frame_equal(before, after)
+
+
+def test_empty_provenance_fails_closed() -> None:
+    source = _source().frame.copy()
+    source.loc[0, "provenance"] = " "
+    with pytest.raises(FeatureStoreError, match="provenance"):
+        build_nfl_feature_store(_targets(), {"stats": _evidence(source)})
+
+
+def test_legacy_nfl_asof_store_module_is_absent() -> None:
+    """R2.5 has exactly one production as-of feature-store implementation."""
+    assert importlib.util.find_spec("src.nfl.features.asof_store") is None
 
 
 def test_snapshot_retains_copy_when_caller_mutates_frame() -> None:
