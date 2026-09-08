@@ -31,8 +31,11 @@ feature-store simplification.
 
 ## Final validation
 
-- Full offline suite: `.venv\\Scripts\\pytest.exe -q` — `533 passed` (173
-  pre-existing warnings).
+- Post-consolidation full offline suite: `.venv\\Scripts\\pytest.exe -q` —
+  `530 passed` (173 pre-existing warnings).
+- Historical R2.5 closure validation at `f68a3d0`: `533 passed`; that count
+  predates the reviewed feature-store consolidation and is retained in the
+  R2.5 packet evidence rather than used as this branch's final result.
 - Full lint: `.venv\\Scripts\\ruff.exe check .` — passed.
 - Whitespace: `git diff --check` — passed.
 
