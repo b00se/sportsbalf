@@ -1,14 +1,32 @@
 """nflreadpy-backed provider."""
+
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Sequence
 from typing import Any
-import warnings
 from urllib.error import HTTPError
 
 import pandas as pd
 
-from .base import LoadResult, NFLDataProvider
+from .base import (
+    CapabilityRecord,
+    FailureMetadata,
+    LoadResult,
+    NFLDataProvider,
+    ProviderCapabilities,
+    reconcile_seasons,
+)
+
+# These are the datasets for which this adapter has a concrete loader and
+# normalization contract.  Do not advertise provider surfaces we cannot load.
+SUPPORTED_DATASETS = ("schedules", "player_stats", "pbp", "ngs")
+DATASET_LOADERS = {
+    "schedules": "load_schedules",
+    "player_stats": "load_weekly",
+    "pbp": "load_pbp",
+    "ngs": "load_ngs_passing",
+}
 
 try:  # pragma: no cover - optional dependency
     import nflreadpy as nfl  # type: ignore
@@ -109,7 +127,8 @@ def _require_nflreadpy() -> Any:
     """Return the nflreadpy module or raise a helpful error."""
     if nfl is None:
         raise ImportError(
-            "nflreadpy is required for this provider. Install the package before running."
+            "nflreadpy is required for this provider. "
+            "Install the package before running."
         ) from _NFL_IMPORT_ERROR
     return nfl
 
@@ -145,6 +164,34 @@ def _coalesce_columns(frame: pd.DataFrame, aliases: dict[str, tuple[str, ...]]) 
                 break
 
 
+def _failure_for_exception(exc: Exception, year: int) -> FailureMetadata:
+    """Classify one provider exception and attach it to a season."""
+    message = str(exc)
+    unavailable = isinstance(exc, HTTPError) and exc.code == 404
+    unavailable = unavailable or "404" in message or "not found" in message.lower()
+    return FailureMetadata(
+        "unavailable" if unavailable else "error",
+        message,
+        type(exc).__name__,
+        int(year),
+    )
+
+
+def _retain_requested_seasons(
+    frame: pd.DataFrame, years: Sequence[int]
+) -> pd.DataFrame:
+    """Drop provider rows whose season is outside the requested set."""
+    if "season" not in frame.columns:
+        # A response without season provenance cannot safely be attributed to
+        # any requested year.  Fail closed; reconciliation will emit one typed
+        # MissingSeason record per requested year.
+        return pd.DataFrame(columns=frame.columns)
+    seasons = pd.to_numeric(frame["season"], errors="coerce")
+    return frame.loc[seasons.isin({int(year) for year in years})].copy().reset_index(
+        drop=True
+    )
+
+
 def _fetch_with_fallback(
     label: str,
     fetch_fn: Callable[[list[int]], Any],
@@ -155,51 +202,70 @@ def _fetch_with_fallback(
     if not years_list:
         return LoadResult.empty()
 
+    failures: list[FailureMetadata] = []
     try:
         frame = _to_pandas(fetch_fn(list(years_list)))
-    except HTTPError as exc:  # pragma: no cover - network exception path
-        if exc.code != 404:
-            raise
-    except Exception as exc:  # pragma: no cover - unexpected network error
-        message = str(exc)
-        if "404" not in message and "Not Found" not in message:
-            raise
+    except Exception:  # pragma: no cover - network exception path
+        # Bulk failures have no season scope. Retry each season and let the
+        # shared reconciliation contract create the final typed records.
+        frame = None
     else:
-        if not frame.empty:
-            return LoadResult(frame, [])
+        frame = _retain_requested_seasons(frame, years_list)
+        available = set()
+        if "season" in frame:
+            available = set(
+                pd.to_numeric(frame["season"], errors="coerce").dropna().astype(int)
+            )
+        if frame is not None and all(year in available for year in years_list):
+            return reconcile_seasons(frame, years_list)
 
     frames: list[pd.DataFrame] = []
-    skipped: list[int] = []
-    for year in years_list:
+    bulk_frame = frame if frame is not None else pd.DataFrame()
+    bulk_available = set()
+    if "season" in bulk_frame:
+        bulk_available = set(
+            pd.to_numeric(bulk_frame["season"], errors="coerce").dropna().astype(int)
+        )
+    retry_years = [year for year in years_list if year not in bulk_available]
+    for year in retry_years:
         try:
-            frame = _to_pandas(fetch_fn([int(year)]))
+            raw_frame = _to_pandas(fetch_fn([int(year)]))
         except HTTPError as exc:  # pragma: no cover - network exception path
-            if exc.code == 404:
-                skipped.append(year)
-                continue
-            raise
+            failures.append(_failure_for_exception(exc, year))
+            continue
         except Exception as exc:  # pragma: no cover - unexpected network error
-            message = str(exc)
-            if "404" in message or "Not Found" in message:
-                skipped.append(year)
-                continue
-            raise
+            failures.append(_failure_for_exception(exc, year))
+            continue
+        if "season" not in raw_frame.columns:
+            failures.append(
+                FailureMetadata(
+                    "unavailable",
+                    "season absent from response",
+                    "MissingSeason",
+                    year,
+                )
+            )
+            continue
+        frame = _retain_requested_seasons(raw_frame, [year])
         if frame.empty:
-            skipped.append(year)
+            failures.append(
+                FailureMetadata("unavailable", "empty response", "EmptyResponse", year)
+            )
             continue
         frames.append(frame)
 
-    if not frames:
-        raise ValueError(f"No {label} data available for seasons {sorted(set(years_list))}")
-
-    if skipped:
+    frames.insert(0, bulk_frame)
+    frames = [item for item in frames if not item.empty]
+    data = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    result = reconcile_seasons(data, years_list, failures)
+    if result.skipped_years:
         warnings.warn(
-            f"Skipping {label} data for unavailable seasons: {sorted(set(skipped))}",
+            f"Skipping {label} data for unavailable seasons: "
+            f"{result.skipped_years}",
             RuntimeWarning,
             stacklevel=3,
         )
-
-    return LoadResult(pd.concat(frames, ignore_index=True), skipped)
+    return result
 
 
 def _normalize_weekly(frame: pd.DataFrame) -> pd.DataFrame:
@@ -244,19 +310,56 @@ class NFLReadPyProvider(NFLDataProvider):
         """Return the provider identifier."""
         return "nflreadpy"
 
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        """Return the audited nflreadpy dataset capabilities."""
+        return ProviderCapabilities(
+            provider=self.name,
+            datasets=SUPPORTED_DATASETS,
+            supports_current_season=True,
+            source_license="nflverse data license",
+            audit=tuple(
+                CapabilityRecord(
+                    dataset,
+                    "1999-present",
+                    "weekly or per-season",
+                    "nflverse data license",
+                    "skip unavailable season",
+                )
+                for dataset in SUPPORTED_DATASETS
+            ),
+        )
+
+    @staticmethod
+    def _failure(exc: Exception, years: Sequence[int]) -> LoadResult:
+        """Return typed metadata when nflreadpy cannot be imported."""
+        failures = tuple(
+            FailureMetadata("error", str(exc), type(exc).__name__, int(year))
+            for year in years
+        )
+        return reconcile_seasons(pd.DataFrame(), years, failures)
+
     def load_weekly(self, years: Sequence[int]) -> LoadResult:
-        module = _require_nflreadpy()
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
         result = _fetch_with_fallback(
             "weekly",
-            lambda season_list: module.load_player_stats(list(season_list), summary_level="week"),
+            lambda season_list: module.load_player_stats(
+                list(season_list), summary_level="week"
+            ),
             years,
         )
         if result.data.empty:
             return result
-        return LoadResult(_normalize_weekly(result.data), result.skipped_years)
+        return result.with_data(_normalize_weekly(result.data))
 
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
-        module = _require_nflreadpy()
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
         result = _fetch_with_fallback(
             "schedule",
             lambda season_list: module.load_schedules(list(season_list)),
@@ -264,10 +367,13 @@ class NFLReadPyProvider(NFLDataProvider):
         )
         if result.data.empty:
             return result
-        return LoadResult(_normalize_schedule(result.data), result.skipped_years)
+        return result.with_data(_normalize_schedule(result.data))
 
     def load_pbp(self, years: Sequence[int]) -> LoadResult:
-        module = _require_nflreadpy()
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
         result = _fetch_with_fallback(
             "pbp",
             lambda season_list: module.load_pbp(list(season_list)),
@@ -275,15 +381,20 @@ class NFLReadPyProvider(NFLDataProvider):
         )
         if result.data.empty:
             return result
-        return LoadResult(_normalize_pbp(result.data), result.skipped_years)
+        return result.with_data(_normalize_pbp(result.data))
 
     def load_ngs_passing(self, years: Sequence[int]) -> LoadResult:
-        module = _require_nflreadpy()
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
         result = _fetch_with_fallback(
             "ngs passing",
-            lambda season_list: module.load_nextgen_stats(list(season_list), stat_type="passing"),
+            lambda season_list: module.load_nextgen_stats(
+                list(season_list), stat_type="passing"
+            ),
             years,
         )
         if result.data.empty:
             return result
-        return LoadResult(_normalize_ngs(result.data), result.skipped_years)
+        return result.with_data(_normalize_ngs(result.data))

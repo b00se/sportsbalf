@@ -1,6 +1,6 @@
 # Wave R2 — Data, Identity, Availability, and Features
 
-Status: Planned; not started.
+Status: Accepted; pending merge.
 
 ## Packets
 
@@ -17,3 +17,10 @@ R2.1 and R2.4 first. R2.2 follows provider knowledge. R2.3 follows identity. R2.
 ## Gate
 
 Material slate players resolve, sources have recorded licenses/freshness, high-impact status conflicts block unattended export, and future rows cannot affect historical features.
+
+## Closeout
+
+The R2 gate is accepted subject to the recorded packet evidence in
+[R2-closeout.md](../evidence/R2-closeout.md). R3 is the next wave, but must
+begin only after this branch is merged and in a fresh task; this document does
+not authorize R3 work.

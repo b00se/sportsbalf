@@ -1,0 +1,45 @@
+{
+  "fixture": "nflreadpy_weekly.csv",
+  "sha256": "fa2a451cbd17e58d8f6b467b67bb15be66fab5ba5c41fc0f8546590f11694afc",
+  "columns": ["season", "week", "player_id", "pass_attempts"],
+  "datasets": ["schedules", "player_stats", "pbp", "ngs"],
+  "fixtures": {
+    "player_stats": {
+      "fixture": "nflreadpy_weekly.csv",
+      "sha256": "fa2a451cbd17e58d8f6b467b67bb15be66fab5ba5c41fc0f8546590f11694afc",
+      "columns": ["season", "week", "player_id", "pass_attempts"]
+    },
+    "schedules": {
+      "fixture": "nflreadpy_schedules.csv",
+      "sha256": "b9a624d30232ef6361ef89265342d4efb0c18ce1aa2914ddf43777deafc50256",
+      "columns": ["season", "week", "game_id", "home_team", "away_team"]
+    },
+    "pbp": {
+      "fixture": "nflreadpy_pbp.csv",
+      "sha256": "e2a4a26df08b3c54cfe6437206a19cd3573328cb39af4419c27a0e575e7701f3",
+      "columns": ["season", "week", "game_id", "pass_attempt", "posteam", "defteam"]
+    },
+    "ngs": {
+      "fixture": "nflreadpy_ngs.csv",
+      "sha256": "03e16ac6513d46a6f673751ab5deba4daed5452c264443b637bfbad8e63bd061",
+      "columns": ["season", "week", "player_gsis_id", "avg_time_to_throw"]
+    }
+  },
+  "alias_fixtures": {
+    "schedules": {
+      "fixture": "nflreadpy_schedules_aliases.csv",
+      "sha256": "d5de9c8afffad49481e83b78ec8c02037f7d672cc27509d650efe20b5dca3a7f",
+      "columns": ["season", "game_week", "gsis_game_id", "game_date", "home", "away", "home_spread"]
+    },
+    "pbp": {
+      "fixture": "nflreadpy_pbp_aliases.csv",
+      "sha256": "7b65f36a2496e50255506d28b3a623a5f0a6746484d1b449cd030ed4832c5404",
+      "columns": ["season", "week", "gsis_game_id", "is_pass_attempt", "pos_team", "def_team"]
+    },
+    "ngs": {
+      "fixture": "nflreadpy_ngs_aliases.csv",
+      "sha256": "a7a2980c001c297419aec3031d00cda439bb83b6ccbdae5d5143a09ecf8c35ff",
+      "columns": ["season", "week", "player_id", "average_time_to_throw", "intended_air_yards_avg"]
+    }
+  }
+}

@@ -8,5 +8,6 @@ __pycache__/
 /betslips/
 /models/
 /runtime/
+/validation-output/
 .worktrees/
 !src/nfl/data/

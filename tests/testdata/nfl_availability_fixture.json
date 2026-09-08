@@ -1,0 +1,6 @@
+[
+  {"nflverse_id":"p1","source":"ud","status":"inactive","confidence":1.0,"observed_at_utc":"2026-09-07T12:00:00Z","provenance":"fixture:ud","season":2026,"game_id":"g1","slate_id":"s1"},
+  {"nflverse_id":"p1","source":"sleeper","status":"active","confidence":0.9,"observed_at_utc":"2026-09-07T12:00:00Z","provenance":"fixture:sleeper","season":2026,"game_id":"g1","slate_id":"s1"},
+  {"nflverse_id":"p2","source":"espn","status":"questionable","confidence":0.8,"observed_at_utc":"2026-09-07T12:00:00Z","provenance":"fixture:espn","season":2026,"game_id":"g1","slate_id":"s1"},
+  {"nflverse_id":"p2","source":"roster_depth","status":"questionable","confidence":0.7,"observed_at_utc":"2026-09-07T12:00:00Z","provenance":"fixture:depth","season":2026,"game_id":"g1","slate_id":"s1"}
+]

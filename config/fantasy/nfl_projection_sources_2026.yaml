@@ -1,0 +1,44 @@
+# R2.4 source declarations are metadata only; ingestion remains offline and
+# requires an archived snapshot plus its SHA-256 digest. URLs are documentation
+# pointers; the loader never fetches them.
+projection_sources:
+  - source_id: nflverse-player-projections
+    publisher: nflverse
+    source_family: nflverse
+    access_url: https://github.com/nflverse/nflverse-data
+    license_name: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0/
+    cost_usd: 0
+    commercial_use: true
+    redistribution_allowed: true
+    snapshot_format: csv
+    version: 2026-week-01
+    retrieval_method: manual_download
+    source_timestamp_utc: 2026-09-01T12:00:00Z
+    content_sha256: 3cc634e802d868801a77b6cc94fa2b72a5a19191fbe39b168328fe0d66707e59
+    coverage_score: 0.95
+    max_age_hours: 168
+    baseline_role: public_projection
+    snapshot_path: ../../tests/testdata/fantasy/nfl/projections/nflverse_week01.csv
+    snapshot_schema: player_id,game_id,season,week,projection,actual,as_of_utc,target_cutoff_utc,historical_player_mean,public_projection,consensus_projection
+    policy: noncommercial
+  - source_id: fantasypros-consensus
+    publisher: FantasyPros
+    source_family: fantasypros
+    access_url: https://www.fantasypros.com/nfl/rankings/consensus-cheatsheets.php
+    license_name: FantasyPros site terms (manual review required)
+    license_url: https://www.fantasypros.com/about/terms-of-use.php
+    cost_usd: 0
+    commercial_use: false
+    redistribution_allowed: false
+    snapshot_format: csv
+    version: 2026-week-01
+    retrieval_method: manual_download
+    source_timestamp_utc: 2026-09-01T12:00:00Z
+    content_sha256: 8bd8020c36edb7298b1d61a2c56bf0ef389ded1e73c585cdb393d557af1be0c1
+    coverage_score: 0.90
+    max_age_hours: 168
+    baseline_role: consensus_reference
+    snapshot_path: ../../tests/testdata/fantasy/nfl/projections/consensus_week01.csv
+    snapshot_schema: player_id,game_id,season,week,projection,actual,as_of_utc,target_cutoff_utc,historical_player_mean,public_projection,consensus_projection
+    policy: noncommercial

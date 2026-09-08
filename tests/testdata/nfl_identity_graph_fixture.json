@@ -1,0 +1,12 @@
+{
+  "players": [
+    {"ud_id": "ud-p1", "gsis_id": "00-001", "nflverse_id": "nfl-p1", "name": "A. Runner", "season": 2026},
+    {"ud_id": "ud-p2", "gsis_id": "00-002", "nflverse_id": "nfl-p2", "name": "B. Catcher", "season": 2026}
+  ],
+  "teams": [
+    {"ud_id": "ud-t1", "gsis_id": "KC", "season": 2026}
+  ],
+  "games": [
+    {"ud_id": "ud-g1", "gsis_id": "2026_01_KC_BUF", "season": 2026}
+  ]
+}
