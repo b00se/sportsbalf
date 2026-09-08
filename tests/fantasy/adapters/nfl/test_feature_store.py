@@ -160,3 +160,45 @@ def test_no_evidence_bypass_and_week_one_prior_requires_snapshot() -> None:
     )
     assert result.loc[target.index[0], "plays"] == 50
     assert result.loc[target.index[0], "plays_fallback"]
+
+
+def test_irrelevant_snapshot_rows_cannot_create_an_all_missing_feature_row() -> None:
+    source = pd.DataFrame(
+        {
+            "nflverse_id": ["somebody-else"],
+            "game_id": ["g0"],
+            "source_timestamp_utc": [AS_OF - timedelta(days=1)],
+            "provenance": ["fixture:irrelevant"],
+        }
+    )
+    with pytest.raises(FeatureStoreError, match="no usable snapshot-backed evidence"):
+        build_nfl_feature_store(_targets().iloc[[0]], {"stats": _evidence(source)})
+
+
+def test_duplicate_game_observation_cannot_hide_behind_other_scopes() -> None:
+    first = _source().frame.iloc[[0]].copy()
+    duplicate = first.copy()
+    first["event_id"] = "event-a"
+    duplicate["event_id"] = "event-b"
+    first["slate_id"] = "slate-a"
+    duplicate["slate_id"] = "slate-b"
+    frame = pd.concat([first, duplicate], ignore_index=True)
+    with pytest.raises(FeatureStoreError, match="duplicate"):
+        build_nfl_feature_store(_targets().iloc[[0]], {"stats": _evidence(frame)})
+
+
+def test_event_scope_is_excluded_and_absent_target_scope_fails_closed() -> None:
+    frame = _source().frame.iloc[[0]].copy()
+    frame["event_id"] = "event-old"
+    same_event = frame.copy()
+    same_event["game_id"] = "another-game"
+    same_event["event_id"] = "event-target"
+    same_event["plays"] = 999
+    frame = pd.concat([frame, same_event], ignore_index=True)
+    target = _targets().iloc[[0]].copy()
+    target["event_id"] = "event-target"
+    result = build_nfl_feature_store(target, {"stats": _evidence(frame)})
+    assert result.loc[target.index[0], "plays"] == 60
+
+    with pytest.raises(FeatureStoreError, match="requires target event_id"):
+        build_nfl_feature_store(_targets().iloc[[0]], {"stats": _evidence(frame)})

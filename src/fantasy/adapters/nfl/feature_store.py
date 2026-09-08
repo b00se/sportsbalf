@@ -84,7 +84,11 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "availability",
     "projection",
 )
-NUMERIC_FEATURES = frozenset(FEATURE_COLUMNS) - {"role", "availability"}
+NUMERIC_FEATURES = frozenset(FEATURE_COLUMNS) - {
+    "weather",
+    "role",
+    "availability",
+}
 SCOPES = ("game_id", "event_id", "slate_id")
 
 
@@ -129,6 +133,20 @@ def _as_evidence(value: SnapshotEvidence | pd.DataFrame) -> SnapshotEvidence:
     )
 
 
+def _exclude_target_scopes(
+    frame: pd.DataFrame, target: pd.Series, *, label: str
+) -> pd.DataFrame:
+    """Remove all source rows that share any declared target scope."""
+    eligible = frame
+    for scope in SCOPES:
+        if scope not in frame.columns:
+            continue
+        if scope not in target.index:
+            raise FeatureStoreError(f"{label} requires target {scope}")
+        eligible = eligible.loc[eligible[scope] != target[scope]]
+    return eligible
+
+
 def _hash_frame(frame: pd.DataFrame) -> str:
     """Return optional deterministic audit metadata for callers that want it."""
     return sha256(frame.to_csv(index=False).encode("utf-8")).hexdigest()
@@ -144,10 +162,9 @@ def _fallback_values(
     """Return a snapshot-backed prior-season value, then a global prior."""
     prior: list[Any] = []
     global_prior: list[Any] = []
-    for _, _, frame in normalized:
+    for name, _, frame in normalized:
         eligible = frame.loc[frame["source_timestamp_utc"] <= cutoff]
-        if "game_id" in frame.columns and "game_id" in target.index:
-            eligible = eligible.loc[eligible["game_id"] != target["game_id"]]
+        eligible = _exclude_target_scopes(eligible, target, label=f"source {name}")
         if feature not in eligible.columns:
             continue
         global_prior.extend(
@@ -226,11 +243,9 @@ def build_nfl_feature_store(
             raise FeatureStoreError(
                 f"source {name} is unscoped; mark it global_safe explicitly"
             )
-        duplicate_key = [
-            "nflverse_id",
-            "source_timestamp_utc",
-            *[scope for scope in SCOPES if scope in frame.columns],
-        ]
+        duplicate_key = ["nflverse_id", "source_timestamp_utc"]
+        if "game_id" in frame.columns:
+            duplicate_key.append("game_id")
         if frame.duplicated(subset=duplicate_key).any():
             raise FeatureStoreError(f"source {name} contains duplicate observations")
         normalized.append((name, evidence, frame))
@@ -243,8 +258,7 @@ def build_nfl_feature_store(
         active: list[tuple[str, SnapshotEvidence]] = []
         for name, evidence, frame in normalized:
             dated = frame.loc[frame["source_timestamp_utc"] <= target["as_of_utc"]]
-            if "game_id" in frame.columns:
-                dated = dated.loc[dated["game_id"] != target["game_id"]]
+            dated = _exclude_target_scopes(dated, target, label=f"source {name}")
             if not dated.empty:
                 active.append((name, evidence))
             candidates = dated.loc[dated["nflverse_id"] == target["nflverse_id"]]
@@ -265,13 +279,19 @@ def build_nfl_feature_store(
                 output[f"{feature}_missing_rate"] = 1.0 - len(numeric) / max(
                     len(eligible), 1
                 )
-                output[feature] = (
+                feature_value = (
                     float(numeric.mean())
                     if not numeric.empty
                     else _fallback_values(
                         feature, target, normalized, cutoff=target["as_of_utc"]
                     )
                 )
+                if pd.isna(feature_value):
+                    raise FeatureStoreError(
+                        "no usable snapshot-backed evidence for "
+                        f"feature {feature} and target {target['nflverse_id']}"
+                    )
+                output[feature] = feature_value
                 output[f"{feature}_fallback"] = numeric.empty
             else:
                 output[f"{feature}_missing_rate"] = 1.0 - len(values) / max(
