@@ -150,6 +150,41 @@ def test_receiver_positions_use_receiving_components(position: str) -> None:
     assert result.loc[0, "fantasy_points"] == pytest.approx(15.0)
 
 
+def test_nflverse_receiving_touchdown_can_have_zero_receptions() -> None:
+    """Preserve valid NFLverse attribution rows with touchdown-only receiving."""
+    frame = _row(
+        player_id="J.Gibbs",
+        position="RB",
+        targets=0,
+        receptions=0,
+        receiving_yards=19,
+        receiving_tds=1,
+        **{
+            name: 0
+            for name in (
+                "pass_attempts",
+                "completions",
+                "passing_yards",
+                "passing_tds",
+                "interceptions",
+                "rushing_attempts",
+                "rushing_yards",
+                "rushing_tds",
+                "fumbles_lost",
+                "two_point_conversions",
+            )
+        },
+    )
+    result = derive_fantasy_points(frame)
+    assert result.loc[0, "receiving_points"] == pytest.approx(7.9)
+    assert result.loc[0, "fantasy_points"] == pytest.approx(7.9)
+
+
+def test_receiving_opportunity_count_validation_remains_fail_closed() -> None:
+    with pytest.raises(ValueError, match="completions plus interceptions"):
+        derive_fantasy_points(_row(targets=0, receptions=1))
+
+
 def test_invalid_boolean_nonfinite_and_incoherent_inputs_fail_closed() -> None:
     with pytest.raises(ValueError):
         derive_fantasy_points(_row(completions=31))

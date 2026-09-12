@@ -293,10 +293,12 @@ def derive_fantasy_points(
         (passing_tds > attempts).any()
         or (interceptions > attempts).any()
         or (rush_tds > rush_attempts).any()
-        or (receiving_tds > receptions).any()
         or (passing_tds > completions).any()
     ):
-        raise ValueError("touchdowns and interceptions exceed available opportunities")
+        raise ValueError(
+            "passing/rushing touchdowns and interceptions exceed available "
+            "opportunities"
+        )
     if (fumbles > attempts + rush_attempts + receptions).any():
         raise ValueError("fumbles lost exceed available player opportunities")
     result["passing_points"] = (
