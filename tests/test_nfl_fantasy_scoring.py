@@ -41,6 +41,52 @@ def test_exact_half_ppr_qb_accounting_and_breakdown() -> None:
     assert result.loc[0, "bonus_points"] == pytest.approx(2.0)
 
 
+def test_signed_yards_are_scored_while_negative_counts_fail_closed() -> None:
+    result = derive_fantasy_points(
+        _row(
+            passing_yards=-5,
+            rushing_yards=-4,
+            receiving_yards=-3,
+            targets=2,
+            receptions=1,
+            receiving_tds=0,
+        )
+    )
+    assert result.loc[0, "passing_points"] == pytest.approx(7.8)
+    assert result.loc[0, "rushing_points"] == pytest.approx(5.6)
+    assert result.loc[0, "receiving_points"] == pytest.approx(0.2)
+    assert result.loc[0, "fantasy_points"] == pytest.approx(12.6)
+    for field in ("pass_attempts", "receptions", "passing_tds", "fumbles_lost"):
+        with pytest.raises(ValueError, match="nonnegative"):
+            derive_fantasy_points(_row(**{field: -1}))
+
+
+def test_signed_rare_receiver_yards_are_scored() -> None:
+    result = derive_fantasy_points(
+        _row(
+            pass_attempts=0,
+            completions=0,
+            passing_yards=0,
+            passing_tds=0,
+            interceptions=0,
+            rushing_attempts=0,
+            rushing_yards=0,
+            rushing_tds=0,
+            rare_rush_attempts=2,
+            rare_rush_yards=-7,
+            rare_rush_tds=0,
+            targets=0,
+            receptions=0,
+            receiving_yards=0,
+            receiving_tds=0,
+            fumbles_lost=0,
+            two_point_conversions=0,
+        )
+    )
+    assert result.loc[0, "rushing_points"] == pytest.approx(-0.7)
+    assert result.loc[0, "fantasy_points"] == pytest.approx(-0.7)
+
+
 def test_full_ppr_changes_only_receptions() -> None:
     rb = _row(
         position="RB",

@@ -94,25 +94,26 @@ class FantasyScoringConfig:
 _NONNEGATIVE: Final[tuple[str, ...]] = (
     "pass_attempts",
     "completions",
-    "passing_yards",
     "passing_tds",
     "interceptions",
     "rushing_attempts",
-    "rushing_yards",
     "rushing_tds",
     "rush_attempts",
-    "rush_yards",
     "targets",
     "receptions",
-    "receiving_yards",
     "receiving_tds",
     "receiving_touchdowns",
     "rare_rush_attempts",
-    "rare_rush_yards",
     "rare_rush_tds",
     "fumbles_lost",
     "two_point_conversions",
     "two_point_conversion",
+)
+_SIGNED_YARDS: Final[tuple[str, ...]] = (
+    "passing_yards",
+    "rushing_yards",
+    "receiving_yards",
+    "rare_rush_yards",
 )
 _ALIASES: Final[dict[str, str]] = {
     "receiving_touchdowns": "receiving_tds",
@@ -158,21 +159,28 @@ def _value(frame: pd.DataFrame, name: str) -> pd.Series:
     sources = [name, *[a for a, canonical in _ALIASES.items() if canonical == name]]
     present = [source for source in sources if source in frame]
     if len(present) > 1:
-        parsed = [_value_single(frame, source) for source in present]
+        parsed = [
+            _value_single(frame, source, allow_signed=name in _SIGNED_YARDS)
+            for source in present
+        ]
         if any(not parsed[0].eq(other).all() for other in parsed[1:]):
             raise ValueError(f"conflicting aliases for {name}")
     source = present[0] if present else None
     if source is None:
         return pd.Series(0.0, index=frame.index)
-    return _value_single(frame, source)
+    return _value_single(frame, source, allow_signed=name in _SIGNED_YARDS)
 
 
-def _value_single(frame: pd.DataFrame, source: str) -> pd.Series:
+def _value_single(
+    frame: pd.DataFrame, source: str, *, allow_signed: bool = False
+) -> pd.Series:
     raw = frame[source]
     if raw.map(lambda x: isinstance(x, (bool, np.bool_))).any():
         raise ValueError(f"{source} must not contain booleans")
     values = pd.to_numeric(raw, errors="coerce")
-    if values.isna().any() or (~np.isfinite(values)).any() or (values < 0).any():
+    if values.isna().any() or (~np.isfinite(values)).any():
+        raise ValueError(f"{source} must contain finite numeric values")
+    if not allow_signed and (values < 0).any():
         raise ValueError(f"{source} must contain finite nonnegative values")
     return values.astype(float)
 
