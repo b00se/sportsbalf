@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import warnings
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -15,6 +16,8 @@ from .base import (
     LoadResult,
     NFLDataProvider,
     ProviderCapabilities,
+    ProviderProvenance,
+    RawSourceUnavailableError,
     reconcile_seasons,
 )
 
@@ -268,6 +271,56 @@ def _fetch_with_fallback(
     return result
 
 
+def _fetch_weekly_raw_strict(
+    fetch_fn: Callable[[list[int]], Any], years: Sequence[int]
+) -> pd.DataFrame:
+    """Fetch weekly rows without reconciliation or duplicate removal.
+
+    Archive backtests must inspect source identity before the shared loader's
+    compatibility deduplication. A partial or unscoped response is therefore a
+    hard failure, rather than a best-effort empty/partial frame.
+    """
+    requested = list(dict.fromkeys(int(year) for year in years))
+    if not requested:
+        return pd.DataFrame()
+    try:
+        frame = _to_pandas(fetch_fn(requested))
+    except Exception as exc:
+        raise RawSourceUnavailableError(
+            f"weekly raw source unavailable for seasons {requested}: {exc}"
+        ) from exc
+    if "season" not in frame.columns:
+        raise RawSourceUnavailableError(
+            "weekly raw source lacks season provenance; strict archive load refused"
+        )
+    frame = _retain_requested_seasons(frame, requested)
+    available = set(
+        pd.to_numeric(frame["season"], errors="coerce").dropna().astype(int)
+    )
+    missing = [year for year in requested if year not in available]
+    if missing:
+        extra: list[pd.DataFrame] = [frame]
+        for year in missing:
+            try:
+                year_frame = _to_pandas(fetch_fn([year]))
+            except Exception as exc:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source unavailable for season {year}: {exc}"
+                ) from exc
+            if "season" not in year_frame.columns:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source lacks season provenance for season {year}"
+                )
+            year_frame = _retain_requested_seasons(year_frame, [year])
+            if year_frame.empty:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source returned no rows for season {year}"
+                )
+            extra.append(year_frame)
+        frame = pd.concat(extra, ignore_index=True)
+    return _normalize_weekly(frame)
+
+
 def _normalize_weekly(frame: pd.DataFrame) -> pd.DataFrame:
     _coalesce_columns(frame, _WEEKLY_ALIASES)
     for column in ("season", "week"):
@@ -328,6 +381,21 @@ class NFLReadPyProvider(NFLDataProvider):
                 )
                 for dataset in SUPPORTED_DATASETS
             ),
+            provenance=self.provenance,
+        )
+
+    @property
+    def provenance(self) -> ProviderProvenance:
+        """Return nflverse source and installed adapter provenance."""
+        try:
+            version = importlib.metadata.version("nflreadpy")
+        except importlib.metadata.PackageNotFoundError:
+            version = "unknown"
+        return ProviderProvenance(
+            source_url="https://github.com/nflverse/nflverse-data",
+            source_version="nflverse-data",
+            package_name="nflreadpy",
+            package_version=version,
         )
 
     @staticmethod
@@ -354,6 +422,16 @@ class NFLReadPyProvider(NFLDataProvider):
         if result.data.empty:
             return result
         return result.with_data(_normalize_weekly(result.data))
+
+    def load_weekly_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Return un-reconciled weekly rows for strict archive validation."""
+        module = _require_nflreadpy()
+        return _fetch_weekly_raw_strict(
+            lambda season_list: module.load_player_stats(
+                list(season_list), summary_level="week"
+            ),
+            years,
+        )
 
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
         try:

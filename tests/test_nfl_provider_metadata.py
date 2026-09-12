@@ -9,6 +9,7 @@ from src.nfl.data.providers.base import (
     FailureMetadata,
     FreshnessMetadata,
     ProviderCapabilities,
+    RawSourceUnavailableError,
 )
 from src.nfl.data.providers.nfl_data_py_provider import NflDataPyProvider
 from src.nfl.data.providers.readpy import NFLReadPyProvider
@@ -37,6 +38,43 @@ def test_nflreadpy_declares_capabilities_and_typed_freshness(monkeypatch):
     assert result.freshness.status == "complete"
     assert result.freshness.retrieved_at.tzinfo == UTC
     assert result.failures == ()
+
+
+def test_configured_nflreadpy_raw_contract_preserves_duplicate_identity(monkeypatch):
+    frame = pd.DataFrame(
+        {
+            "season": [2024, 2024],
+            "week": [1, 1],
+            "player_id": ["QB-1", "QB-1"],
+            "passing_yards": [200, 200],
+        }
+    )
+
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            return frame.copy()
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    provider = NFLReadPyProvider()
+    assert len(provider.load_weekly([2024]).data) == 1
+    raw = provider.load_weekly_raw([2024])
+    assert len(raw) == 2
+    assert raw.duplicated(["season", "week", "player_id"]).any()
+    assert provider.capabilities.provenance == provider.provenance
+
+
+def test_raw_contract_fails_closed_for_partial_configured_source(monkeypatch):
+    class Stub:
+        def load_player_stats(self, years, summary_level="week"):
+            return pd.DataFrame({"season": [2024], "week": [1]})
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    with pytest.raises(RawSourceUnavailableError, match="season 2025"):
+        NFLReadPyProvider().load_weekly_raw([2024, 2025])
 
 
 def test_nflreadpy_records_typed_failure_for_skipped_year(monkeypatch):
@@ -85,6 +123,30 @@ def test_legacy_provider_exposes_capabilities_and_freshness(monkeypatch):
     result = NflDataPyProvider().load_weekly([2024])
     assert result.freshness.status == "complete"
     assert NflDataPyProvider().capabilities.datasets
+
+
+def test_configured_legacy_raw_contract_preserves_duplicate_identity(monkeypatch):
+    frame = pd.DataFrame(
+        {
+            "season": [2024, 2024],
+            "week": [1, 1],
+            "player_id": ["QB-1", "QB-1"],
+            "passing_yards": [200, 200],
+        }
+    )
+
+    class Stub:
+        def import_weekly_data(self, years):
+            return frame.copy()
+
+    import src.nfl.data.providers.nfl_data_py_provider as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    provider = NflDataPyProvider()
+    assert len(provider.load_weekly([2024]).data) == 1
+    raw = provider.load_weekly_raw([2024])
+    assert len(raw) == 2
+    assert raw.duplicated(["season", "week", "player_id"]).any()
 
 
 def test_all_unavailable_returns_typed_failure_result(monkeypatch):
