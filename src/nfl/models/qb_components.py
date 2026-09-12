@@ -28,6 +28,9 @@ _ALIASES: Final[dict[str, tuple[str, ...]]] = {
     "rushing_yards": ("rushing_yards", "rush_yards"),
     "rushing_tds": ("rushing_tds", "rush_touchdowns"),
 }
+_SIGNED_YARD_COMPONENTS: Final[frozenset[str]] = frozenset(
+    {"passing_yards", "rushing_yards"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +141,9 @@ def _normalise_history(history: pd.DataFrame) -> pd.DataFrame:
     )
     for column in [*COMPONENTS, "team_pass_attempts"]:
         values = result[column]
-        if np.isinf(values).any() or (values.dropna() < 0).any():
+        if np.isinf(values).any():
+            raise ValueError(f"{column} must contain finite values")
+        if column not in _SIGNED_YARD_COMPONENTS and (values.dropna() < 0).any():
             raise ValueError(f"{column} must contain finite nonnegative values")
     return result
 

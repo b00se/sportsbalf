@@ -258,13 +258,21 @@ def test_numpy_boolean_fallback_values_are_rejected(field: str) -> None:
 
 def test_adversarial_negative_and_infinite_values_are_rejected() -> None:
     negative = _history().iloc[:1].copy()
-    negative.loc[negative.index[0], "passing_yards"] = -1
+    negative.loc[negative.index[0], "pass_attempts"] = -1
     with pytest.raises(ValueError, match="nonnegative"):
         project_qb_components(negative)
     infinite = _history().iloc[:1].copy()
     infinite.loc[infinite.index[0], "pass_attempts"] = float("inf")
     with pytest.raises(ValueError, match="finite"):
         project_qb_components(infinite)
+
+
+def test_adapter_shaped_history_accepts_signed_passing_and_rushing_yards() -> None:
+    history = _history().iloc[:1].copy()
+    history.loc[history.index[0], ["passing_yards", "rushing_yards"]] = [-3, -4]
+    target = pd.DataFrame([{"qb_id": "q1", "season": 2024, "week": 2}])
+    result = project_qb_components(history, target)
+    assert len(result) == 1
 
 
 def test_nonpromotion_is_reported_when_model_loses_baseline() -> None:

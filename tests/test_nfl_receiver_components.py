@@ -167,6 +167,23 @@ def test_invalid_inputs_and_semantic_duplicates_fail_closed():
         project_receiver_components(duplicate)
 
 
+def test_adapter_shaped_history_accepts_signed_receiving_and_rare_rush_yards():
+    history = _history().iloc[:1].copy()
+    history.loc[history.index[0], ["receiving_yards", "rare_rush_yards"]] = [-3, -5]
+    target = pd.DataFrame(
+        [{"receiver_id": "w1", "position": "WR", "season": 2025, "week": 2}]
+    )
+    result = project_receiver_components(history, target)
+    assert len(result) == 1
+
+
+def test_negative_opportunity_still_fails_closed():
+    history = _history().copy()
+    history.loc[history.index[0], "targets"] = -1
+    with pytest.raises(ValueError, match="finite nonnegative"):
+        project_receiver_components(history)
+
+
 def test_malformed_required_stats_and_supplied_caps_fail_closed():
     bad_stats = _history().copy()
     bad_stats.loc[0, "targets"] = "bad"

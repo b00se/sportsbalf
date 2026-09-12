@@ -142,7 +142,7 @@ def test_empty_history_uses_safe_priors_and_invalid_rows_fail_closed() -> None:
     with pytest.raises(ValueError, match="duplicate"):
         project_rb_components(duplicate)
     invalid = _history().iloc[:1].copy()
-    invalid.loc[0, "rushing_yards"] = -1
+    invalid.loc[0, "rush_attempts"] = -1
     with pytest.raises(ValueError, match="finite nonnegative"):
         project_rb_components(invalid)
 
@@ -152,6 +152,14 @@ def test_empty_history_needs_only_identity_and_calendar() -> None:
     target = pd.DataFrame([{"rb_id": "rookie", "season": 2025, "week": 1}])
     result = project_rb_components(history, target)
     assert result.loc[0, "rush_attempts"] > 0
+
+
+def test_adapter_shaped_history_accepts_signed_rushing_and_receiving_yards() -> None:
+    history = _history().iloc[:1].copy()
+    history.loc[history.index[0], ["rushing_yards", "receiving_yards"]] = [-2, -3]
+    target = pd.DataFrame([{"rb_id": "r1", "season": 2024, "week": 2}])
+    result = project_rb_components(history, target)
+    assert len(result) == 1
 
 
 def test_historical_touchdowns_cannot_exceed_opportunity() -> None:

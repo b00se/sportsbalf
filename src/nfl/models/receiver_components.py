@@ -24,6 +24,9 @@ _CAPS: Final[tuple[str, ...]] = (
     "team_targets",
     "team_rush_attempts",
 )
+_SIGNED_YARD_COMPONENTS: Final[frozenset[str]] = frozenset(
+    {"receiving_yards", "rare_rush_yards"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,7 +133,9 @@ def _normalise(frame: pd.DataFrame, *, require_stats: bool) -> pd.DataFrame:
             require_stats and column in RECEIVER_COMPONENTS and values.isna().any()
         ) or (column in _CAPS and column in supplied and values.isna().any()):
             raise ValueError(f"{column} must contain numeric non-null values")
-        if np.isinf(values).any() or (values.dropna() < 0).any():
+        if np.isinf(values).any():
+            raise ValueError(f"{column} must contain finite values")
+        if column not in _SIGNED_YARD_COMPONENTS and (values.dropna() < 0).any():
             raise ValueError(f"{column} must contain finite nonnegative values")
     if require_stats and (result["receiving_tds"] > result["receptions"]).any():
         raise ValueError("receiving_tds cannot exceed receptions")

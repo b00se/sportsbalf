@@ -44,6 +44,9 @@ _ALIASES: Final[dict[str, tuple[str, ...]]] = {
     "rushing_tds": ("rushing_tds", "rush_touchdowns"),
     "receiving_tds": ("receiving_tds", "receiving_touchdowns"),
 }
+_SIGNED_YARD_COMPONENTS: Final[frozenset[str]] = frozenset(
+    {"rushing_yards", "receiving_yards"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,7 +201,9 @@ def _normalise(frame: pd.DataFrame, *, require_components: bool) -> pd.DataFrame
             require_components or column not in ("team_rush_attempts", "team_targets")
         ):
             raise ValueError(f"{column} must contain numeric values")
-        if np.isinf(values).any() or (values.dropna() < 0).any():
+        if np.isinf(values).any():
+            raise ValueError(f"{column} must contain finite values")
+        if column not in _SIGNED_YARD_COMPONENTS and (values.dropna() < 0).any():
             raise ValueError(f"{column} must contain finite nonnegative values")
     if (
         "receptions" in result
