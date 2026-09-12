@@ -88,3 +88,24 @@ def test_season_held_out_uses_prior_seasons_only_and_distinct_paths():
     assert qb["predicted_pass_attempts"] > 0
     assert rb["predicted_rush_attempts"] > 0
     assert qb["predicted_pass_attempts"] != rb["predicted_rush_attempts"]
+
+
+def test_source_shaped_signed_yardage_is_accepted_but_counts_stay_nonnegative():
+    signed = _rows()
+    signed.loc[
+        (signed["season"] == 2021)
+        & (signed["week"] == 1)
+        & (signed["position"] == "RB"),
+        "receiving_yards",
+    ] = -4
+    result = evaluate_archived_components(signed, mode="weekly")
+    assert not result.predictions.empty
+
+    invalid = _rows()
+    invalid.loc[0, "receptions"] = -1
+    try:
+        evaluate_archived_components(invalid, mode="weekly")
+    except ValueError as error:
+        assert "nonnegative" in str(error)
+    else:
+        raise AssertionError("negative event counts must be rejected")

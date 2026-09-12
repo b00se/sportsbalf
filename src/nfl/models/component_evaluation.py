@@ -80,14 +80,21 @@ def _validate_calendar(frame: pd.DataFrame) -> pd.DataFrame:
     missing_stats = sorted(needed - set(work.columns))
     if missing_stats:
         raise ValueError(f"weekly outcomes missing component columns: {missing_stats}")
-    for column in needed:
+    signed_yards = {
+        "passing_yards",
+        "rushing_yards",
+        "receiving_yards",
+        "rare_rush_yards",
+    }
+    validated_columns = needed | (signed_yards & set(work.columns))
+    for column in validated_columns:
         raw = work[column]
         if raw.map(lambda value: isinstance(value, (bool, np.bool_))).any():
             raise ValueError(f"{column} must not contain booleans")
         values = pd.to_numeric(raw, errors="coerce")
         if values.isna().any() or (~np.isfinite(values)).any():
             raise ValueError(f"{column} must contain finite numeric values")
-        if column not in {"passing_yards", "rushing_yards"} and (values < 0).any():
+        if column not in signed_yards and (values < 0).any():
             raise ValueError(f"{column} must be nonnegative")
         work[column] = values.astype(float)
     # The shared adapter also validates an empty receiver partition.  These
