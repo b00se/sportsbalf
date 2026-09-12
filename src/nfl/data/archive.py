@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import numbers
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -41,17 +43,53 @@ def _package_version() -> str:
     return "unknown"
 
 
-def _logical_dtype(dtype: Any) -> str:
-    """Map pandas storage dtypes to CSV-stable schema semantics."""
-    text = str(dtype).lower()
-    if "datetime" in text:
-        return "datetime"
-    if "bool" in text:
-        return "boolean"
-    if "int" in text or text == "uint":
-        return "integer"
-    if "float" in text or "decimal" in text:
-        return "number"
+_NUMERIC_TOKEN = re.compile(
+    r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$"
+)
+_DATE_TOKEN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$"
+)
+
+
+def _logical_csv_dtype(values: pd.Series) -> str:
+    """Infer a schema type from canonical CSV text rather than pandas storage."""
+    nonempty = values.loc[values.notna()]
+    dtype_kind = getattr(values.dtype, "kind", "")
+    if dtype_kind in "mM":
+        return "datetime" if not nonempty.empty else "string"
+    if dtype_kind == "b":
+        return "boolean" if not nonempty.empty else "string"
+    if nonempty.empty:
+        return "string"
+    first = nonempty.iloc[0]
+    if isinstance(first, (list, tuple, dict, set)):
+        return "string"
+    if isinstance(first, bool):
+        nonempty = nonempty.loc[nonempty != ""]
+        if nonempty.map(lambda value: isinstance(value, bool)).all():
+            return "boolean"
+    elif isinstance(first, str) and first in ("True", "False"):
+        nonempty = nonempty.loc[nonempty != ""]
+        if nonempty.isin(["True", "False"]).all():
+            return "boolean"
+    numeric_candidate = isinstance(first, numbers.Number) or (
+        isinstance(first, str) and _NUMERIC_TOKEN.fullmatch(first.strip()) is not None
+    )
+    if numeric_candidate:
+        nonempty = nonempty.loc[nonempty != ""]
+        numeric = pd.to_numeric(nonempty, errors="coerce")
+        if numeric.notna().all():
+            if (numeric % 1 == 0).all():
+                return "integer"
+            return "number"
+    if isinstance(first, str) and _DATE_TOKEN.fullmatch(first.strip()) is not None:
+        nonempty = nonempty.loc[nonempty != ""]
+        date_like = nonempty.map(
+            lambda value: isinstance(value, str)
+            and _DATE_TOKEN.fullmatch(value.strip()) is not None
+        )
+        if date_like.all():
+            return "datetime"
     return "string"
 
 
@@ -75,18 +113,10 @@ class ArchiveAdapter:
 
     @staticmethod
     def schema_fingerprint(frame: pd.DataFrame) -> str:
-        """Return a deterministic hash of sorted column names and dtypes."""
+        """Hash column names and types inferred from canonical value text."""
         schema = []
         for column in sorted(frame.columns, key=str):
-            series = frame[column]
-            logical = _logical_dtype(series.dtype)
-            if logical == "number":
-                numeric = pd.to_numeric(series, errors="coerce").dropna()
-                if numeric.empty:
-                    logical = "string"
-                elif (numeric % 1 == 0).all():
-                    logical = "integer"
-            schema.append([str(column), logical])
+            schema.append([str(column), _logical_csv_dtype(frame[column])])
         return hashlib.sha256(_canonical_json({"columns": schema})).hexdigest()
 
     @staticmethod

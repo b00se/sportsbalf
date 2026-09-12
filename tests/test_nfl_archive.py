@@ -75,6 +75,60 @@ def test_schema_fingerprint_survives_normalized_nullable_fixture(tmp_path):
     assert adapter.schema_fingerprint(loaded) == adapter.schema_fingerprint(frame)
 
 
+def test_schema_fingerprint_survives_mixed_provider_csv_round_trip(tmp_path):
+    """Object-backed nullable values must not change the archive schema."""
+    frame = pd.DataFrame(
+        {
+            "nullable_numeric": pd.Series([1, None, 3], dtype=object),
+            "nullable_text": pd.Series(["left", None, "right"], dtype=object),
+            "nullable_float": pd.Series([1.25, None, 2.5], dtype=object),
+            "nullable_bool": pd.Series([True, None, False], dtype=object),
+            "event_time": pd.to_datetime(
+                ["2024-09-01", None, "2024-09-08"]
+            ),
+        }
+    )
+    adapter = ArchiveAdapter(tmp_path)
+    result = adapter.write("mixed", frame, requested_seasons=[2024])
+
+    loaded, _ = adapter.load(result.payload_path)
+
+    assert adapter.schema_fingerprint(loaded) == adapter.schema_fingerprint(frame)
+
+
+def test_schema_fingerprint_does_not_parse_arbitrary_large_text(monkeypatch):
+    """Free-form NFLverse text must stay on the constant-memory string path."""
+    frame = pd.DataFrame(
+        {"description": ["left - option route / right"] * 10_000}
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("arbitrary text must not invoke datetime parsing")
+
+    monkeypatch.setattr(pd, "to_datetime", fail_if_called)
+
+    assert ArchiveAdapter.schema_fingerprint(frame)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [1, "", 3],
+        ["1", "", "3"],
+        [True, "", False],
+    ],
+)
+def test_schema_fingerprint_treats_csv_empty_fields_as_null(tmp_path, values):
+    """Empty fields emitted by to_csv must match read_csv null inference."""
+    frame = pd.DataFrame({"value": pd.Series(values, dtype=object)})
+    adapter = ArchiveAdapter(tmp_path)
+    result = adapter.write("empty_fields", frame, requested_seasons=[2024])
+
+    loaded, _ = adapter.load(result.payload_path)
+
+    assert adapter.schema_fingerprint(loaded) == adapter.schema_fingerprint(frame)
+
+
 def test_missing_payload_and_invalid_manifest_fields_fail_closed(tmp_path):
     adapter = ArchiveAdapter(tmp_path)
     result = adapter.write("weekly", _frame(), requested_seasons=[2023])
