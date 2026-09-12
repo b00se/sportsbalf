@@ -217,12 +217,6 @@ def _normalise(frame: pd.DataFrame, *, require_components: bool) -> pd.DataFrame
         and (result["rushing_tds"] > result["rush_attempts"]).any()
     ):
         raise ValueError("rushing_tds cannot exceed rush_attempts")
-    if (
-        "receiving_tds" in result
-        and "receptions" in result
-        and (result["receiving_tds"] > result["receptions"]).any()
-    ):
-        raise ValueError("receiving_tds cannot exceed receptions")
     if "availability_probability" in result:
         if (
             result["availability_probability"]

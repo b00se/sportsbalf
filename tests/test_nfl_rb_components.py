@@ -162,13 +162,24 @@ def test_adapter_shaped_history_accepts_signed_rushing_and_receiving_yards() -> 
     assert len(result) == 1
 
 
-def test_historical_touchdowns_cannot_exceed_opportunity() -> None:
+def test_adapter_shaped_touchdown_only_receiving_history_is_accepted() -> None:
+    history = _history().iloc[:1].copy()
+    history.loc[
+        history.index[0],
+        ["targets", "receptions", "receiving_yards", "receiving_tds"],
+    ] = [0, 0, 0, 1]
+    target = pd.DataFrame([{"rb_id": "r1", "season": 2024, "week": 2}])
+    result = project_rb_components(history, target)
+    assert len(result) == 1
+
+
+def test_historical_touchdowns_validate_counts_and_allow_zero_receptions() -> None:
     invalid = _history().iloc[:1].copy()
     invalid.loc[0, "rushing_tds"] = invalid.loc[0, "rush_attempts"] + 1
     with pytest.raises(ValueError, match="rushing_tds"):
         project_rb_components(invalid)
     invalid = _history().iloc[:1].copy()
-    invalid.loc[0, "receiving_tds"] = invalid.loc[0, "receptions"] + 1
+    invalid.loc[0, "receiving_tds"] = -1
     with pytest.raises(ValueError, match="receiving_tds"):
         project_rb_components(invalid)
 
