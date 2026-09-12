@@ -7,6 +7,7 @@ from src.nfl.models.direct_fp_evaluation import (
     evaluate_season_direct_fantasy_points,
     evaluate_weekly_direct_fantasy_points,
 )
+from src.nfl.models.fantasy_scoring import direct_fantasy_points_benchmark
 
 
 def _frame() -> pd.DataFrame:
@@ -79,3 +80,51 @@ def test_three_week_result_is_eligible_but_never_promoted() -> None:
 def test_invalid_window_fails_closed() -> None:
     with pytest.raises(ValueError, match="window must be a positive integer"):
         evaluate_direct_fantasy_points(_frame(), window=0)
+
+
+def test_weekly_predictions_match_canonical_benchmark() -> None:
+    frame = _frame()
+    result = evaluate_weekly_direct_fantasy_points(frame, window=2)
+    target = frame.query("season == 2025 and week == 3")
+    history = frame.query("season < 2025 or (season == 2025 and week < 3)")
+    expected = direct_fantasy_points_benchmark(
+        history[["player_id", "season", "week", "fantasy_points"]],
+        target[["player_id", "season", "week"]],
+        window=2,
+    ).sort_values("player_id")
+    actual = result.predictions.query("outer_fold == '2025-3'").sort_values(
+        "player_id"
+    )
+    pd.testing.assert_series_equal(
+        actual.prediction.reset_index(drop=True),
+        expected.direct_fantasy_points.reset_index(drop=True),
+        check_names=False,
+    )
+
+
+def test_realistic_archive_shape_is_evaluated_without_fold_duplication() -> None:
+    frame = pd.DataFrame(
+        {
+            "season": [
+                2021 + season for season in range(5) for _ in range(18 * 342)
+            ],
+            "week": [
+                week
+                for _ in range(5)
+                for week in range(1, 19)
+                for _ in range(342)
+            ],
+            "player_id": [
+                f"p{player}"
+                for _ in range(5)
+                for _ in range(18)
+                for player in range(342)
+            ],
+            "position": "RB",
+            "fantasy_points": 1.0,
+        }
+    )
+    result = evaluate_weekly_direct_fantasy_points(frame, window=6)
+    assert len(frame) == 30_780
+    assert result.predictions.outer_fold.nunique() == 89
+    assert len(result.predictions) == 89 * 342

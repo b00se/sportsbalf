@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 
 from .baseline_evaluation import BaselineEvaluationResult, _build_metrics, _validate
-from .fantasy_scoring import direct_fantasy_points_benchmark
 
 Mode = Literal["weekly", "season"]
 
@@ -22,9 +21,10 @@ def evaluate_direct_fantasy_points(
 ) -> BaselineEvaluationResult:
     """Evaluate direct trailing fantasy points on strict outer folds.
 
-    Each fold calls :func:`direct_fantasy_points_benchmark` with only rows
-    strictly before the fold.  Results are intentionally marked eligible or
-    inconclusive only; this evaluator never promotes a candidate.
+    The trailing means are precomputed from rows strictly before each
+    calendar fold, with the same semantics as
+    :func:`direct_fantasy_points_benchmark`. Results are intentionally marked
+    eligible or inconclusive only; this evaluator never promotes a candidate.
     """
     if mode not in ("weekly", "season"):
         raise ValueError("mode must be 'weekly' or 'season'")
@@ -40,39 +40,63 @@ def evaluate_direct_fantasy_points(
     )
     seasons = sorted(work["season"].unique())
     folds = keys if mode == "weekly" else [(season, None) for season in seasons]
+    calendar_key = work["season"] * 100 + work["week"]
+    ordered = work.assign(_calendar_key=calendar_key).sort_values(
+        ["player_id", "_calendar_key"], kind="mergesort"
+    )
+    if mode == "weekly":
+        ordered["_direct_prediction"] = (
+            ordered.groupby("player_id", sort=False)[target_col]
+            .transform(
+                lambda values: values.shift(1).rolling(
+                    window, min_periods=1
+                ).mean()
+            )
+            .fillna(0.0)
+        )
     predictions: list[pd.DataFrame] = []
     for season, week in folds:
         if mode == "weekly":
-            train = work[
-                (work["season"] < season)
-                | ((work["season"] == season) & (work["week"] < week))
-            ]
-            test = work[(work["season"] == season) & (work["week"] == week)].copy()
+            cutoff = season * 100 + week
+            if not (ordered["_calendar_key"] < cutoff).any():
+                continue
+            test = ordered[
+                (ordered["season"] == season) & (ordered["week"] == week)
+            ].copy()
             fold_id = f"{season}-{week}"
         else:
             train = work[work["season"] < season]
             test = work[work["season"] == season].copy()
             fold_id = str(season)
-        if train.empty or test.empty:
+        if test.empty or (mode == "season" and train.empty):
             continue
-        history = train[["player_id", "season", "week", target_col]].rename(
-            columns={target_col: "fantasy_points"}
-        )
-        targets = test[["player_id", "season", "week"]]
-        candidate = direct_fantasy_points_benchmark(
-            history, targets, window=window
-        )
-        actual = test[
-            ["season", "week", "player_id", "position", target_col]
-        ].rename(columns={target_col: "actual"})
-        candidate = candidate.merge(
-            actual, on=["season", "week", "player_id"], how="left"
-        )
-        candidate["outer_fold"] = fold_id
+        if mode == "season":
+            history = train.sort_values(
+                ["season", "week", "player_id"], kind="mergesort"
+            )
+            trailing = history.groupby("player_id", sort=False).tail(window)
+            means = trailing.groupby("player_id")[target_col].mean()
+            candidate_prediction = test["player_id"].map(means).fillna(0.0)
+        else:
+            candidate_prediction = test["_direct_prediction"]
+        candidate = test[["season", "week", "player_id", "position"]].copy()
+        candidate["actual"] = test[target_col].astype(float)
         candidate["baseline"] = "direct_fantasy_points"
-        candidate["prediction"] = candidate["direct_fantasy_points"].astype(float)
+        candidate["prediction"] = candidate_prediction.astype(float)
         candidate["window"] = window
         candidate["fantasy_points"] = candidate["actual"]
+        candidate["outer_fold"] = fold_id
+        history_players = (
+            train["player_id"]
+            if mode == "season"
+            else ordered.loc[
+                ordered["_calendar_key"] < season * 100 + week, "player_id"
+            ]
+        )
+        candidate["fallback_used"] = ~candidate["player_id"].isin(history_players)
+        candidate["fallback_reason"] = candidate["fallback_used"].map(
+            {True: "no_player_history", False: "none"}
+        )
         predictions.append(
             candidate[[
                 "season", "week", "player_id", "position", "fantasy_points",
