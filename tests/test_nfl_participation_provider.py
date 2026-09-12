@@ -96,6 +96,63 @@ def test_nflreadpy_participation_rejects_malformed_game_identity(monkeypatch):
     assert result.failures[0].exception_type == "RawSourceUnavailableError"
 
 
+@pytest.mark.parametrize(
+    "game_id",
+    ["2015_01_DEN_OAK", "2024_00_DEN_OAK", "2024_99_DEN_OAK", "2099_01_DEN_OAK"],
+)
+def test_nflreadpy_participation_rejects_out_of_range_calendar(monkeypatch, game_id):
+    class Stub:
+        def load_participation(self, years):
+            return _source_frame().assign(nflverse_game_id=game_id)
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_participation([2024])
+    assert result.data.empty
+    assert result.failures[0].exception_type == "RawSourceUnavailableError"
+
+
+@pytest.mark.parametrize("play_id", [None, float("inf"), 1.5, True])
+def test_nflreadpy_participation_rejects_invalid_play_id(monkeypatch, play_id):
+    class Stub:
+        def load_participation(self, years):
+            return _source_frame().assign(play_id=play_id)
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_participation([2024])
+    assert result.data.empty
+    assert result.failures[0].exception_type == "RawSourceUnavailableError"
+
+
+def test_nflreadpy_participation_requires_categorical_route_column(monkeypatch):
+    class Stub:
+        def load_participation(self, years):
+            return _source_frame().drop(columns="route")
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_participation([2024])
+    assert result.data.empty
+    assert result.failures[0].exception_type == "RawSourceUnavailableError"
+
+
+def test_nflreadpy_participation_rejects_numeric_route_column(monkeypatch):
+    class Stub:
+        def load_participation(self, years):
+            return _source_frame().assign(route=[1, 2])
+
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    result = NFLReadPyProvider().load_participation([2024])
+    assert result.data.empty
+    assert result.failures[0].exception_type == "RawSourceUnavailableError"
+
+
 def test_legacy_participation_is_typed_unsupported(monkeypatch):
     import src.nfl.data.providers.nfl_data_py_provider as module
 

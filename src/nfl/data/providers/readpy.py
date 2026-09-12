@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib.metadata
+import math
 import warnings
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any
 from urllib.error import HTTPError
 
@@ -136,6 +138,8 @@ _PARTICIPATION_PLAYER_FIELDS = (
     "offense_players",
     "defense_players",
 )
+_PARTICIPATION_MIN_SEASON = 2016
+_PARTICIPATION_MAX_SEASON = datetime.now(UTC).year + 1
 
 
 def _require_nflreadpy() -> Any:
@@ -378,16 +382,44 @@ def _normalize_participation(frame: pd.DataFrame) -> pd.DataFrame:
         )
     frame["season"] = pd.to_numeric(parsed["season"], errors="coerce").astype("Int64")
     frame["week"] = pd.to_numeric(parsed["week"], errors="coerce").astype("Int64")
+    season_values = frame["season"].astype("int64")
+    week_values = frame["week"].astype("int64")
+    if not season_values.between(
+        _PARTICIPATION_MIN_SEASON, _PARTICIPATION_MAX_SEASON
+    ).all():
+        raise RawSourceUnavailableError(
+            "participation source contains season outside supported calendar "
+            f"range {_PARTICIPATION_MIN_SEASON}-{_PARTICIPATION_MAX_SEASON}"
+        )
+    if not week_values.between(1, 22).all():
+        raise RawSourceUnavailableError(
+            "participation source contains week outside supported range 1-22"
+        )
     # `game_id` is an explicit alias for the source game identity, not a new
     # inferred game key.  No player-week or numeric route aggregates are made.
     frame["game_id"] = game_ids
-    frame["play_id"] = pd.to_numeric(frame["play_id"], errors="coerce").astype("Int64")
+    play_values = pd.to_numeric(frame["play_id"], errors="coerce")
+    invalid_bool = frame["play_id"].map(lambda value: isinstance(value, bool))
+    invalid_play = play_values.isna() | invalid_bool
+    finite = play_values.map(
+        lambda value: math.isfinite(float(value)) if pd.notna(value) else False
+    )
+    invalid_play |= ~finite | ~play_values.mod(1).eq(0)
+    if invalid_play.any():
+        raise RawSourceUnavailableError(
+            "participation source contains missing, non-finite, or fractional play_id"
+        )
+    frame["play_id"] = play_values.astype("int64")
     return frame
 
 
 def _validate_participation_schema(frame: pd.DataFrame) -> None:
     """Refuse data that cannot preserve play-level participation identity."""
     missing = [column for column in _PARTICIPATION_REQUIRED if column not in frame]
+    if "route" not in frame:
+        missing.append("route")
+    elif pd.api.types.is_numeric_dtype(frame["route"]):
+        missing.append("categorical route (numeric route values are unsupported)")
     if not any(column in frame for column in _PARTICIPATION_PLAYER_FIELDS):
         missing.append("one of players_on_play/offense_players/defense_players")
     if missing:
