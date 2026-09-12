@@ -76,6 +76,8 @@ def test_runner_fetches_archives_and_evaluates_both_modes(tmp_path: Path) -> Non
     assert (tmp_path / "results" / "outcomes.csv").exists()
     assert (tmp_path / "results" / "weekly_metrics.csv").exists()
     assert (tmp_path / "results" / "season_metrics.csv").exists()
+    assert (tmp_path / "results" / "weekly_predictions.csv").exists()
+    assert (tmp_path / "results" / "season_predictions.csv").exists()
     assert result.weekly.mode == "weekly"
     assert result.season.mode == "season"
     assert result.weekly.status == "eligible_for_candidate_comparison"
@@ -110,6 +112,27 @@ def test_runner_rejects_duplicate_player_weeks(tmp_path: Path) -> None:
         )
 
 
+def test_runner_discards_non_player_rows_but_validates_supported_identity(
+    tmp_path: Path,
+) -> None:
+    aggregate = pd.DataFrame(
+        [{"season": 2023, "week": 1, "player_id": pd.NA, "position": pd.NA}]
+    )
+    with_aggregate = pd.concat([_weekly(), aggregate], ignore_index=True)
+    result = run_archived_baseline_backtest(
+        _FixtureProvider(with_aggregate), [2023, 2024], cache_dir=tmp_path, fetch=True
+    )
+    assert len(result.outcomes) == len(_weekly())
+
+    invalid_supported = _weekly()
+    invalid_supported.loc[0, "player_id"] = pd.NA
+    with pytest.raises(ValueError, match="missing identity"):
+        run_archived_baseline_backtest(
+            _FixtureProvider(invalid_supported), [2023, 2024],
+            cache_dir=tmp_path / "supported-invalid", fetch=True
+        )
+
+
 def test_runner_rejects_conflicting_aliases_and_sums_sacks(tmp_path: Path) -> None:
     bad = _weekly()
     bad["pass_yards"] = bad["passing_yards"] + 1
@@ -130,6 +153,28 @@ def test_runner_manifest_contains_reproduction_digests(tmp_path: Path) -> None:
     assert "archive_sha256" in manifest
     assert "archive_manifest_sha256" in manifest
     assert '"outcomes.csv"' in manifest
+
+
+def test_runner_manifest_audits_folds_and_provider_provenance(tmp_path: Path) -> None:
+    output = tmp_path / "results"
+    run_archived_baseline_backtest(
+        _FixtureProvider(), [2023, 2024], cache_dir=tmp_path, fetch=True,
+        output_dir=output,
+    )
+    parsed = __import__("json").loads(
+        (output / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert parsed["provider"]["name"] == "fixture"
+    assert parsed["provider"]["distribution"]["name"] == "fixture"
+    assert parsed["provider"]["distribution"]["version"] == "unknown"
+    assert parsed["reports"]["weekly"]["prediction_file"] == "weekly_predictions.csv"
+    assert parsed["reports"]["season"]["prediction_file"] == "season_predictions.csv"
+    assert parsed["reports"]["weekly"]["outer_fold_count"] >= 3
+    assert parsed["reports"]["season"]["outer_fold_count"] == 1
+    for report in parsed["reports"].values():
+        assert report["prediction_sha256"]
+        assert report["metrics_sha256"]
+        assert report["prediction_rows"] > 0
 
 
 @pytest.mark.parametrize("bad_seasons", [[True], [2024.5], [0]])

@@ -132,6 +132,82 @@ def _validate_calendar(
     return values.astype(int)
 
 
+def _provider_provenance(provider: NFLDataProvider) -> dict[str, object]:
+    """Describe the concrete provider and its distribution without guessing."""
+    name = str(getattr(provider, "name", "unknown"))
+    declared = getattr(getattr(provider, "capabilities", None), "provenance", None)
+    distribution_name = str(
+        getattr(declared, "package_name", None)
+        or getattr(provider, "distribution_name", None)
+        or name
+    )
+    distribution_version = getattr(declared, "package_version", None) or getattr(
+        provider, "distribution_version", None
+    )
+    if distribution_version is None:
+        try:
+            distribution_version = importlib.metadata.version(distribution_name)
+        except importlib.metadata.PackageNotFoundError:
+            distribution_version = "unknown"
+    return {
+        "name": name,
+        "class": f"{type(provider).__module__}.{type(provider).__qualname__}",
+        "source_url": str(
+            getattr(declared, "source_url", "https://github.com/nflverse/nflverse-data")
+        ),
+        "source_version": str(
+            getattr(declared, "source_version", "unknown")
+        ),
+        "distribution": {
+            "name": distribution_name,
+            "version": str(distribution_version),
+        },
+    }
+
+
+def _file_digest(path: Path) -> str:
+    """Return the SHA-256 digest of one persisted output."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _report_metadata(
+    destination: Path,
+    *,
+    predictions: pd.DataFrame,
+    metrics: pd.DataFrame,
+    prediction_file: str,
+    metrics_file: str,
+    mode: str,
+    status: str,
+) -> dict[str, object]:
+    """Return independently auditable metadata for one evaluation report."""
+    fold_columns = ["season", "week"] if mode == "weekly" else ["season"]
+    folds = (
+        predictions[fold_columns]
+        .drop_duplicates()
+        .sort_values(fold_columns, kind="mergesort")
+        .astype(object)
+        .where(lambda frame: frame.notna(), None)
+        .to_dict("records")
+    )
+    prediction_path = destination / prediction_file
+    metrics_path = destination / metrics_file
+    return {
+        "mode": mode,
+        "status": status,
+        "outer_fold_count": len(folds),
+        "folds": folds,
+        "prediction_file": prediction_file,
+        "prediction_rows": len(predictions),
+        "prediction_columns": [str(column) for column in predictions.columns],
+        "prediction_sha256": _file_digest(prediction_path),
+        "metrics_file": metrics_file,
+        "metrics_rows": len(metrics),
+        "metrics_columns": [str(column) for column in metrics.columns],
+        "metrics_sha256": _file_digest(metrics_path),
+    }
+
+
 def _canonical_outcomes(raw: pd.DataFrame, seasons: Sequence[int]) -> pd.DataFrame:
     """Normalize nflverse weekly rows and derive half-PPR fantasy points."""
     if not isinstance(raw, pd.DataFrame):
@@ -139,14 +215,18 @@ def _canonical_outcomes(raw: pd.DataFrame, seasons: Sequence[int]) -> pd.DataFra
     frame = raw.copy(deep=True)
     for target, names in _ALIASES.items():
         _coalesce(frame, target, names)
+    # nflverse weekly responses can include aggregate/team rows without a
+    # player identity.  They are outside this player-position backtest and may
+    # be discarded before identity validation; supported player rows remain
+    # subject to the strict checks below.
+    frame["position"] = frame["position"].astype("string").str.upper().str.strip()
+    frame = frame[frame["position"].isin({"QB", "RB", "WR", "TE"})].copy()
     required = {"season", "week", "player_id", "position"}
     if frame[sorted(required)].isna().any().any():
         raise ValueError("weekly data has missing identity or calendar fields")
     frame["season"] = _validate_calendar(frame["season"], "season", 1900, 9999)
     frame["week"] = _validate_calendar(frame["week"], "week", 1, 22)
     frame = frame[frame["season"].isin({int(year) for year in seasons})].copy()
-    frame["position"] = frame["position"].astype(str).str.upper().str.strip()
-    frame = frame[frame["position"].isin({"QB", "RB", "WR", "TE"})].copy()
     if frame.duplicated(["season", "week", "player_id"]).any():
         raise ValueError("duplicate player-week rows in weekly data")
     for column in _STAT_COLUMNS:
@@ -198,6 +278,8 @@ def run_archived_baseline_backtest(
     ):
         raise ValueError("archive cache must be external to repository protected paths")
     adapter = ArchiveAdapter(cache)
+    provider_provenance: dict[str, object] | None = None
+    archive_manifest_data: dict[str, object] | None = None
     if fetch:
         if provider is None:
             raise ValueError("provider is required when fetch=True")
@@ -208,6 +290,7 @@ def run_archived_baseline_backtest(
         raw_data = raw_loader(requested) if callable(raw_loader) else loaded.data
         if not isinstance(raw_data, pd.DataFrame):
             raise TypeError("provider raw weekly output must be a pandas DataFrame")
+        provider_provenance = _provider_provenance(provider)
         identity = {"season", "week", "player_id"}
         if identity <= set(raw_data.columns) and raw_data.duplicated(
             sorted(identity)
@@ -224,7 +307,9 @@ def run_archived_baseline_backtest(
             "nflverse_weekly",
             loaded.data,
             requested_seasons=requested,
-            source_version=getattr(provider, "name", "unknown"),
+            source_url=str(provider_provenance["source_url"]),
+            source_version=str(provider_provenance["source_version"]),
+            package_version=str(provider_provenance["distribution"]["version"]),
             cutoff_semantics=(
                 "completed weekly observations available at retrieval time"
             ),
@@ -233,8 +318,8 @@ def run_archived_baseline_backtest(
         if archive_path is None:
             raise ValueError("archive_path is required when fetch=False")
         payload = Path(archive_path)
-        _cached, manifest = adapter.load_cache_hit(payload)
-        if not set(requested) <= set(manifest["available_seasons"]):
+        _cached, archive_manifest_data = adapter.load_cache_hit(payload)
+        if not set(requested) <= set(archive_manifest_data["available_seasons"]):
             raise ValueError("archive does not cover every requested season")
         archive = ArchiveWriteResult(
             payload_path=payload,
@@ -257,16 +342,52 @@ def run_archived_baseline_backtest(
             )
         destination.mkdir(parents=True, exist_ok=True)
         outcomes.to_csv(destination / "outcomes.csv", index=False)
+        weekly.predictions.to_csv(destination / "weekly_predictions.csv", index=False)
         weekly.metrics.to_csv(destination / "weekly_metrics.csv", index=False)
+        season.predictions.to_csv(destination / "season_predictions.csv", index=False)
         season.metrics.to_csv(destination / "season_metrics.csv", index=False)
+        if provider_provenance is None:
+            source_version = (
+                archive_manifest_data.get("source_version", "unknown")
+                if archive_manifest_data
+                else "unknown"
+            )
+            package_version = (
+                archive_manifest_data.get("package_version", "unknown")
+                if archive_manifest_data
+                else "unknown"
+            )
+            provider_provenance = {
+                "name": "archive",
+                "class": "immutable_archive",
+                "distribution": {
+                    "name": "archive_manifest",
+                    "version": str(package_version),
+                },
+                "source_version": str(source_version),
+            }
+        output_files = {
+            name: _file_digest(destination / name)
+            for name in (
+                "outcomes.csv",
+                "weekly_predictions.csv",
+                "weekly_metrics.csv",
+                "season_predictions.csv",
+                "season_metrics.csv",
+            )
+        }
         (destination / "run_manifest.json").write_text(
             json.dumps(
                 {
-                    "invocation": (
-                        "run_archived_baseline_backtest(provider='nflreadpy', "
-                        f"seasons={list(requested)!r}, cache_dir={str(cache)!r}, "
-                        f"fetch={fetch!r}, output_dir={str(destination)!r})"
-                    ),
+                    "invocation": {
+                        "function": "run_archived_baseline_backtest",
+                        "provider": provider_provenance,
+                        "seasons": list(requested),
+                        "cache_dir": str(cache),
+                        "fetch": fetch,
+                        "output_dir": str(destination),
+                    },
+                    "provider": provider_provenance,
                     "config": {"scoring": "half_ppr", "target": "fantasy_points"},
                     "seasons": list(requested),
                     "fetch": fetch,
@@ -279,14 +400,27 @@ def run_archived_baseline_backtest(
                         archive.manifest_path.read_bytes()
                     ).hexdigest(),
                     "outputs": {
-                        name: hashlib.sha256(
-                            (destination / name).read_bytes()
-                        ).hexdigest()
-                        for name in (
-                            "outcomes.csv",
-                            "weekly_metrics.csv",
-                            "season_metrics.csv",
-                        )
+                        **output_files,
+                    },
+                    "reports": {
+                        "weekly": _report_metadata(
+                            destination,
+                            predictions=weekly.predictions,
+                            metrics=weekly.metrics,
+                            prediction_file="weekly_predictions.csv",
+                            metrics_file="weekly_metrics.csv",
+                            mode=weekly.mode,
+                            status=weekly.status,
+                        ),
+                        "season": _report_metadata(
+                            destination,
+                            predictions=season.predictions,
+                            metrics=season.metrics,
+                            prediction_file="season_predictions.csv",
+                            metrics_file="season_metrics.csv",
+                            mode=season.mode,
+                            status=season.status,
+                        ),
                     },
                     "weekly_status": weekly.status,
                     "season_status": season.status,
@@ -294,7 +428,7 @@ def run_archived_baseline_backtest(
                         "python": platform.python_version(),
                         "platform": platform.platform(),
                         "pandas": pd.__version__,
-                        "runner_package": importlib.metadata.version("pip"),
+                        "runner": "sportsbalf",
                     },
                 },
                 sort_keys=True, indent=2,
