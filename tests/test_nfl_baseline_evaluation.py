@@ -64,6 +64,10 @@ def test_season_holdout_has_no_within_season_training() -> None:
     result = evaluate_season_baselines(_frame(), target_col="fantasy_points")
     assert set(result.predictions.season) == {2025}
     assert (result.predictions[result.predictions.season == 2025].prediction > 0).all()
+    assert result.status == "inconclusive"
+    assert result.metrics.loc[
+        result.metrics["aggregation"] == "aggregate", "outer_folds"
+    ].eq(1).all()
 
 
 def test_unknown_player_falls_back_to_position_mean() -> None:
@@ -98,13 +102,35 @@ def test_metrics_and_three_week_gate() -> None:
     assert result.status == "eligible_for_candidate_comparison"
     assert result.status != "promoted"
     assert {
+        "scope",
+        "group",
+        "baseline",
+        "metric",
+        "value",
+        "aggregation",
+        "outer_folds",
+        "valid_folds",
+        "status",
+        "definition",
+    } <= set(result.metrics.columns)
+    assert "coverage" not in result.metrics.columns
+    aggregate = result.metrics.query(
+        "scope == 'overall' and aggregation == 'aggregate'"
+    )
+    assert set(aggregate.metric) >= {
         "mae",
         "crps",
         "mean_error",
-        "coverage",
         "spearman_rank",
         "top_k_recall",
-    } <= set(result.metrics.columns)
+        "calibration",
+    }
+    assert aggregate.loc[aggregate.metric == "crps", "definition"].iloc[0].startswith(
+        "mean absolute point-forecast error"
+    )
+    calibration = aggregate.loc[aggregate.metric == "calibration"].iloc[0]
+    assert calibration.status == "inconclusive"
+    assert calibration.value != calibration.value  # explicit NaN/unavailable
     assert (
         evaluate_weekly_baselines(
             _frame().query("week == 1"), target_col="fantasy_points"
@@ -142,9 +168,51 @@ def test_nfl_week_99_is_rejected() -> None:
         evaluate_baselines(bad)
 
 
+def test_empty_prediction_runs_keep_the_metric_schema() -> None:
+    result = evaluate_season_baselines(_frame().query("season == 2024"))
+    assert result.predictions.empty
+    assert {"metric", "value", "status", "outer_folds"} <= set(
+        result.metrics.columns
+    )
+
+
 @pytest.mark.parametrize("boolean_week", [True, np.bool_(False)])
 def test_boolean_nfl_week_is_rejected(boolean_week: bool) -> None:
     bad = _frame().iloc[[0]].copy()
     bad["week"] = boolean_week
     with pytest.raises(ValueError, match="week must not contain boolean"):
         evaluate_baselines(bad)
+
+
+def test_ranking_metrics_are_fold_local_with_deterministic_player_id_ties() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "season": 2024,
+                "week": week,
+                "player_id": player,
+                "position": "WR",
+                "fantasy_points": actual,
+            }
+            for week, values in ((1, {"b": 2.0, "a": 1.0}), (2, {"a": 2.0, "b": 1.0}),
+                                 (3, {"b": 2.0, "a": 1.0}))
+            for player, actual in values.items()
+        ]
+    )
+    result = evaluate_weekly_baselines(frame)
+    aggregate = result.metrics.query(
+        "scope == 'overall' and aggregation == 'aggregate' and "
+        "baseline == 'position_historical_mean'"
+    )
+    top_k = aggregate.loc[aggregate.metric == "top_k_recall"].iloc[0]
+    assert top_k.parameter == "k=3"
+    assert top_k.outer_folds == 2
+    assert top_k.valid_folds == 2
+    assert top_k.status == "inconclusive"
+    assert pd.isna(top_k.value)
+    fold_rows = result.metrics.query(
+        "scope == 'overall' and aggregation == 'fold' and "
+        "baseline == 'position_historical_mean' and metric == 'top_k_recall'"
+    )
+    assert set(fold_rows.fold) == {"2024-2", "2024-3"}
+    assert fold_rows.parameter.eq("k=3").all()

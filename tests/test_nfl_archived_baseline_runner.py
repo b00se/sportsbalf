@@ -81,7 +81,9 @@ def test_runner_fetches_archives_and_evaluates_both_modes(tmp_path: Path) -> Non
     assert result.weekly.mode == "weekly"
     assert result.season.mode == "season"
     assert result.weekly.status == "eligible_for_candidate_comparison"
-    assert result.season.status == "eligible_for_candidate_comparison"
+    # Only the second season has earlier-season history, so this fixture has
+    # one evaluable outer season and must remain below the R3 three-fold gate.
+    assert result.season.status == "inconclusive"
     points = result.outcomes.query(
         "player_id == 'rb-a' and season == 2024 and week == 1"
     )

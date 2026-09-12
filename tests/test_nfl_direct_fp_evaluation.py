@@ -63,9 +63,30 @@ def test_season_holdout_and_metrics_are_output_compatible() -> None:
     assert set(result.predictions.season) == {2025}
     assert result.predictions.outer_fold.nunique() == 1
     assert {
-        "scope", "group", "baseline", "mae", "crps", "mean_error",
-        "coverage", "spearman_rank", "top_k_recall",
+        "scope",
+        "group",
+        "baseline",
+        "metric",
+        "value",
+        "aggregation",
+        "outer_folds",
+        "valid_folds",
+        "status",
+        "definition",
     } <= set(result.metrics.columns)
+    assert "coverage" not in result.metrics.columns
+    aggregate = result.metrics.query(
+        "scope == 'overall' and aggregation == 'aggregate'"
+    )
+    assert set(aggregate.metric) >= {
+        "mae",
+        "crps",
+        "mean_error",
+        "spearman_rank",
+        "top_k_recall",
+        "calibration",
+    }
+    assert aggregate.loc[aggregate.metric == "calibration", "value"].isna().all()
     assert result.status == "inconclusive"
     assert result.status != "promoted"
 
@@ -128,3 +149,56 @@ def test_realistic_archive_shape_is_evaluated_without_fold_duplication() -> None
     assert len(frame) == 30_780
     assert result.predictions.outer_fold.nunique() == 89
     assert len(result.predictions) == 89 * 342
+
+
+def test_tied_rankings_use_player_id_as_deterministic_secondary_key() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "season": 2024,
+                "week": week,
+                "player_id": player,
+                "position": "WR",
+                "fantasy_points": actual,
+            }
+            for week, values in ((1, {"b": 2.0, "a": 1.0}),
+                                 (2, {"a": 2.0, "b": 1.0}),
+                                 (3, {"b": 2.0, "a": 1.0}),
+                                 (4, {"a": 2.0, "b": 1.0}))
+            for player, actual in values.items()
+        ]
+    )
+    result = evaluate_weekly_direct_fantasy_points(frame, window=1)
+    fold_rows = result.metrics.query(
+        "scope == 'overall' and aggregation == 'fold' and "
+        "metric == 'top_k_recall'"
+    )
+    assert set(fold_rows.fold) == {"2024-2", "2024-3", "2024-4"}
+    assert fold_rows.parameter.eq("k=3").all()
+
+
+def test_top_k_ties_are_resolved_by_ascending_player_id() -> None:
+    players = ("a", "b", "c", "d")
+    frame = pd.DataFrame(
+        [
+            {
+                "season": 2024,
+                "week": week,
+                "player_id": player,
+                "position": "WR",
+                "fantasy_points": (
+                    1.0
+                    if week == 1
+                    else {"a": 0.0, "b": 10.0, "c": 9.0, "d": 8.0}[player]
+                ),
+            }
+            for week in (1, 2, 3, 4)
+            for player in players
+        ]
+    )
+    result = evaluate_weekly_direct_fantasy_points(frame, window=1)
+    row = result.metrics.query(
+        "scope == 'overall' and aggregation == 'fold' and "
+        "metric == 'top_k_recall' and fold == '2024-2'"
+    ).iloc[0]
+    assert row.value == pytest.approx(2 / 3)

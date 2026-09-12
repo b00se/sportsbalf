@@ -126,11 +126,7 @@ def evaluate_direct_fantasy_points(
         prediction_frame["outer_fold"].nunique() if not prediction_frame.empty else 0
     )
     status = "eligible_for_candidate_comparison" if outer_folds >= 3 else "inconclusive"
-    metrics = (
-        _build_metrics(prediction_frame, "actual")
-        if not prediction_frame.empty
-        else pd.DataFrame()
-    )
+    metrics = _build_metrics(prediction_frame, "actual")
     return BaselineEvaluationResult(prediction_frame, metrics, status, mode)
 
 
