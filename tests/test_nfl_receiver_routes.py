@@ -179,3 +179,87 @@ def test_as_of_diagnostics_describe_only_the_returned_history() -> None:
 
     assert history.diagnostics.source_pass_route_rows == 1
     assert history.diagnostics.unmatched_participation_route_rows == 0
+
+
+def test_roster_fallback_filters_unmatched_incomplete_rows_before_validation() -> None:
+    participation, pbp = _inputs()
+    participation = participation.drop(
+        columns=["offense_players", "offense_positions"]
+    )
+    roster = pd.DataFrame(
+        {
+            "season": [2024, 2024, 2024, 2024],
+            "week": [2, 2, 2, 99],
+            "team": ["AAA", "AAA", "ZZZ", "AAA"],
+            "gsis_id": ["wr1", "te1", "", ""],
+            "position": ["WR", "TE", "", ""],
+        }
+    )
+
+    result = materialize_identified_receiver_routes(participation, pbp, roster)
+
+    assert result.frame["player_id"].tolist() == ["te1", "wr1"]
+
+
+def test_missing_alignment_cell_uses_exact_roster_candidate() -> None:
+    participation, pbp = _inputs()
+    participation.loc[0, "offense_players"] = pd.NA
+    roster = pd.DataFrame(
+        {
+            "season": [2024],
+            "week": [2],
+            "team": ["AAA"],
+            "gsis_id": ["wr1"],
+            "position": ["WR"],
+        }
+    )
+
+    result = materialize_identified_receiver_routes(participation, pbp, roster)
+
+    assert result.frame["player_id"].tolist() == ["te1", "wr1"]
+
+
+def test_complete_alignment_omitting_receiver_does_not_use_roster_fallback() -> None:
+    participation, pbp = _inputs()
+    pbp.loc[0, "receiver_player_id"] = "te2"
+    roster = pd.DataFrame(
+        {
+            "season": [2024],
+            "week": [2],
+            "team": ["AAA"],
+            "gsis_id": ["te2"],
+            "position": ["TE"],
+        }
+    )
+
+    result = materialize_identified_receiver_routes(participation, pbp, roster)
+
+    assert result.frame["player_id"].tolist() == ["te1"]
+
+
+def test_duplicate_exact_roster_candidates_fail_closed() -> None:
+    participation, pbp = _inputs()
+    participation = participation.drop(
+        columns=["offense_players", "offense_positions"]
+    )
+    roster = pd.DataFrame(
+        {
+            "season": [2024, 2024],
+            "week": [2, 2],
+            "team": ["AAA", "AAA"],
+            "gsis_id": ["wr1", "wr1"],
+            "position": ["WR", "WR"],
+        }
+    )
+
+    with pytest.raises(ReceiverRouteSchemaError, match="duplicate"):
+        materialize_identified_receiver_routes(participation, pbp, roster)
+
+
+def test_null_posteam_on_non_candidate_play_is_ignored() -> None:
+    participation, pbp = _inputs()
+    pbp.loc[4, "posteam"] = pd.NA
+
+    result = materialize_identified_receiver_routes(participation, pbp)
+
+    assert result.frame["identified_receiver_routes"].sum() == 2

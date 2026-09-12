@@ -146,6 +146,16 @@ def _split_aligned(value: Any, *, column: str, index: Any) -> list[str]:
     return values
 
 
+def _alignment_cell_missing(value: Any) -> bool:
+    """Return whether an alignment cell is absent rather than malformed."""
+    if value is None or value is pd.NA:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    missing = pd.isna(value)
+    return isinstance(missing, (bool, np.bool_)) and bool(missing)
+
+
 def _position_from_alignment(row: pd.Series, receiver_id: str) -> str | None:
     players = _split_aligned(
         row["offense_players"], column="offense_players", index=row.name
@@ -169,12 +179,41 @@ def _position_from_alignment(row: pd.Series, receiver_id: str) -> str | None:
 
 
 def _roster_positions(roster: pd.DataFrame, keys: pd.DataFrame) -> pd.Series:
+    """Resolve only roster rows that exactly match candidate receivers.
+
+    The weekly roster archive can contain unrelated players with incomplete
+    identity fields. Those rows are intentionally discarded before strict
+    roster validation; a row that does match a candidate key is validated and
+    duplicate matches fail closed.
+    """
     required = {"season", "week", "team", "position"}
     _require_columns(roster, required, "roster")
     id_column = "gsis_id" if "gsis_id" in roster.columns else "player_id"
     if id_column not in roster.columns:
         raise ReceiverRouteSchemaError("roster missing player identity column")
-    roster_frame = _calendar(roster, "roster")
+    # Filter on the complete candidate identity before validating the roster
+    # payload. Blank IDs or malformed calendar values on unrelated roster rows
+    # must not poison a valid candidate lookup.
+    if keys.empty:
+        return pd.Series(pd.NA, index=keys.index, dtype="string")
+    candidate_keys = pd.MultiIndex.from_frame(
+        keys[["season", "week", "posteam", "receiver_player_id"]].rename(
+            columns={"posteam": "team", "receiver_player_id": id_column}
+        )
+    )
+    roster_keys = pd.MultiIndex.from_arrays(
+        [
+            pd.to_numeric(roster["season"], errors="coerce"),
+            pd.to_numeric(roster["week"], errors="coerce"),
+            roster["team"].astype("string").str.strip(),
+            roster[id_column].astype("string").str.strip(),
+        ],
+        names=["season", "week", "team", id_column],
+    )
+    roster_frame = roster.loc[roster_keys.isin(candidate_keys)].copy()
+    if roster_frame.empty:
+        return pd.Series(pd.NA, index=keys.index, dtype="string")
+    roster_frame = _calendar(roster_frame, "roster")
     roster_frame["team"] = _key_series(roster_frame, "team", "roster")
     roster_frame[id_column] = _key_series(roster_frame, id_column, "roster")
     roster_frame["position"] = (
@@ -239,9 +278,6 @@ def materialize_identified_receiver_routes(
     season_type = season_type.str.strip().str.upper()
     if season_type.isna().any() or season_type.eq("").any():
         raise ReceiverRouteSchemaError("pbp season_type must be a nonempty string")
-    if not pbp_frame["posteam"].map(lambda value: isinstance(value, str)).all():
-        raise ReceiverRouteSchemaError("pbp posteam must be a nonempty string")
-    pbp_frame["posteam"] = _key_series(pbp_frame, "posteam", "pbp")
     pbp_frame["season_type"] = season_type
     route_part = part.loc[part["route"].notna() & part["route"].ne("")]
     matched = route_part[["nflverse_game_id", "play_id"]].merge(
@@ -276,19 +312,36 @@ def materialize_identified_receiver_routes(
     receiver = candidates["receiver_player_id"].astype("string").str.strip()
     candidates = candidates.loc[receiver.notna() & receiver.ne("")].copy()
     candidates["receiver_player_id"] = receiver.loc[candidates.index]
+    # Validate posteam only after candidate filtering. Null/malformed values
+    # on plays that cannot contribute a route are irrelevant to this lower
+    # bound and must not fail materialization.
+    if not candidates["posteam"].map(lambda value: isinstance(value, str)).all():
+        raise ReceiverRouteSchemaError("pbp posteam must be a nonempty string")
+    candidates["posteam"] = _key_series(candidates, "posteam", "pbp")
     linked_position = pd.Series(pd.NA, index=candidates.index, dtype="string")
     has_alignment = {"offense_players", "offense_positions"}.issubset(
         candidates.columns
     )
     if has_alignment:
-        linked_position = pd.Series(
-            [
-                _position_from_alignment(row, row["receiver_player_id"])
-                for _, row in candidates.iterrows()
-            ],
-            index=candidates.index,
-            dtype="string",
-        )
+        fallback_indices = []
+        for index, row in candidates.iterrows():
+            alignment_values = (row["offense_players"], row["offense_positions"])
+            if any(_alignment_cell_missing(value) for value in alignment_values):
+                fallback_indices.append(index)
+                continue
+            linked_position.at[index] = _position_from_alignment(
+                row, row["receiver_player_id"]
+            )
+        if fallback_indices:
+            if roster is None:
+                raise ReceiverRouteSchemaError(
+                    "participation requires aligned offense_players/"
+                    "offense_positions or roster"
+                )
+            fallback_keys = candidates.loc[fallback_indices]
+            linked_position.loc[fallback_indices] = _roster_positions(
+                roster, fallback_keys
+            )
     elif roster is not None:
         linked_position = _roster_positions(roster, candidates)
     else:
