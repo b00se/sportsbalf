@@ -1,6 +1,6 @@
 # Wave R3 — Bottom-Up Projections
 
-Status: Planned; not started.
+Status: Complete with no promotion; R4 blocked.
 
 ## Packets
 
