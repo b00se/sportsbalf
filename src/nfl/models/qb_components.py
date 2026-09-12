@@ -165,8 +165,35 @@ def _as_of_key(as_of: tuple[int, int] | None) -> float | None:
 
 
 def _mean(series: pd.Series, fallback: float) -> float:
-    values = pd.to_numeric(series, errors="coerce").dropna()
-    return float(values.mean()) if not values.empty else fallback
+    # Inputs are normalized once before projection.  Avoid constructing a
+    # pandas Series/index for every tiny rolling slice in a large walk-forward
+    # run while retaining pandas' NaN-ignoring mean semantics.
+    values = np.asarray(series, dtype=float)
+    values = values[~np.isnan(values)]
+    return float(values.mean()) if values.size else fallback
+
+
+def _ratio_mean(
+    frame: pd.DataFrame,
+    numerator: str,
+    denominator: str,
+    fallback: float,
+    *,
+    clip: tuple[float, float] | None = None,
+) -> float:
+    """Mean of a finite ratio without allocating pandas arithmetic objects."""
+    numerator_values = np.asarray(frame[numerator], dtype=float)
+    denominator_values = np.asarray(frame[denominator], dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.divide(
+            numerator_values,
+            denominator_values,
+            out=np.full(numerator_values.shape, np.nan, dtype=float),
+            where=denominator_values != 0,
+        )
+    if clip is not None:
+        ratio = np.clip(ratio, *clip)
+    return _mean(ratio, fallback)
 
 
 def _predecessor(season: int, week: int) -> tuple[int, int]:
@@ -190,7 +217,10 @@ def _project_one(
     as_of_key: float | None,
     effective_boundary: tuple[int, int],
 ) -> dict[str, float | int | str]:
-    qb_history = history.loc[history["qb_id"].eq(target["qb_id"])]
+    # ``project_qb_components`` supplies a pre-partitioned, key-sorted history
+    # for this player.  Keeping the helper on one entity avoids rescanning and
+    # resorting the complete archive for every target in a large outer fold.
+    qb_history = history
     target_key = float(target["_key"])
     cutoff = target_key if as_of_key is None else min(target_key, as_of_key + 1e-6)
     prior = (
@@ -206,40 +236,40 @@ def _project_one(
         target.get("team_pass_attempts"), errors="coerce"
     )
     if pd.notna(target_team_attempts) and not prior.empty:
-        share = (
-            prior["pass_attempts"] / prior["team_pass_attempts"].replace(0, np.nan)
-        ).clip(0, 1)
-        attempts = float(target_team_attempts) * _mean(share, 1.0)
+        share = _ratio_mean(
+            prior,
+            "pass_attempts",
+            "team_pass_attempts",
+            1.0,
+            clip=(0, 1),
+        )
+        attempts = float(target_team_attempts) * share
     if pd.notna(target_team_attempts):
         attempts = min(attempts, max(0.0, float(target_team_attempts)))
     attempts = max(0.0, attempts)
     completion_rate = np.clip(
-        _mean(
-            prior["completions"] / prior["pass_attempts"].replace(0, np.nan),
-            config.fallback_completion_rate,
+        _ratio_mean(
+            prior, "completions", "pass_attempts", config.fallback_completion_rate
         ),
         0,
         1,
     )
     yards_rate = max(
         0.0,
-        _mean(
-            prior["passing_yards"] / prior["pass_attempts"].replace(0, np.nan),
-            config.fallback_yards_per_attempt,
+        _ratio_mean(
+            prior, "passing_yards", "pass_attempts", config.fallback_yards_per_attempt
         ),
     )
     td_rate = max(
         0.0,
-        _mean(
-            prior["passing_tds"] / prior["pass_attempts"].replace(0, np.nan),
-            config.fallback_pass_td_rate,
+        _ratio_mean(
+            prior, "passing_tds", "pass_attempts", config.fallback_pass_td_rate
         ),
     )
     int_rate = max(
         0.0,
-        _mean(
-            prior["interceptions"] / prior["pass_attempts"].replace(0, np.nan),
-            config.fallback_interception_rate,
+        _ratio_mean(
+            prior, "interceptions", "pass_attempts", config.fallback_interception_rate
         ),
     )
     rush_attempts = max(
@@ -247,16 +277,17 @@ def _project_one(
     )
     rush_yards_rate = max(
         0.0,
-        _mean(
-            prior["rushing_yards"] / prior["rushing_attempts"].replace(0, np.nan),
+        _ratio_mean(
+            prior,
+            "rushing_yards",
+            "rushing_attempts",
             config.fallback_rush_yards_per_attempt,
         ),
     )
     rush_td_rate = max(
         0.0,
-        _mean(
-            prior["rushing_tds"] / prior["rushing_attempts"].replace(0, np.nan),
-            config.fallback_rush_td_rate,
+        _ratio_mean(
+            prior, "rushing_tds", "rushing_attempts", config.fallback_rush_td_rate
         ),
     )
     return {
@@ -295,9 +326,15 @@ def project_qb_components(
     boundaries = [
         _effective_boundary(row, cutoff) for _, row in target_frame.iterrows()
     ]
+    observed = observed.sort_values(["qb_id", "_key"], kind="mergesort")
+    histories = {
+        player_id: group
+        for player_id, group in observed.groupby("qb_id", sort=False)
+    }
+    empty_history = observed.iloc[0:0]
     rows = [
         _project_one(
-            observed,
+            histories.get(row["qb_id"], empty_history),
             row,
             config=cfg,
             as_of_key=(boundary[0] * 100 + boundary[1]),

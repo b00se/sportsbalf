@@ -275,11 +275,35 @@ def _availability(row: pd.Series, override: float | None) -> float:
 
 
 def _mean(values: pd.Series, fallback: float) -> float:
-    clean = pd.to_numeric(values, errors="coerce").dropna()
-    result = float(clean.mean()) if not clean.empty else fallback
+    clean = np.asarray(values, dtype=float)
+    clean = clean[~np.isnan(clean)]
+    result = float(clean.mean()) if clean.size else fallback
     if not np.isfinite(result):
         raise ValueError("projection inputs produce a non-finite rate")
     return result
+
+
+def _ratio_mean(
+    frame: pd.DataFrame,
+    numerator: str,
+    denominator: str,
+    fallback: float,
+    *,
+    clip: tuple[float, float] | None = None,
+) -> float:
+    """Mean of a finite ratio without allocating pandas arithmetic objects."""
+    numerator_values = np.asarray(frame[numerator], dtype=float)
+    denominator_values = np.asarray(frame[denominator], dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.divide(
+            numerator_values,
+            denominator_values,
+            out=np.full(numerator_values.shape, np.nan, dtype=float),
+            where=denominator_values != 0,
+        )
+    if clip is not None:
+        ratio = np.clip(ratio, *clip)
+    return _mean(ratio, fallback)
 
 
 def _project_one(
@@ -290,7 +314,10 @@ def _project_one(
     cutoff: float | None,
     availability_probability: float | None,
 ) -> dict[str, float | int | str]:
-    rb_history = history.loc[history["rb_id"].eq(target["rb_id"])]
+    # ``project_rb_components`` supplies a pre-partitioned, key-sorted history
+    # for this player.  Avoid rescanning and resorting the complete archive for
+    # every target in a large outer fold.
+    rb_history = history
     target_key = float(target["_key"])
     boundary = target_key if cutoff is None else min(target_key, cutoff + 1e-6)
     target_week = int(target["week"])
@@ -313,17 +340,23 @@ def _project_one(
         and not prior.empty
         and "team_rush_attempts" in prior
     ):
-        share = (
-            prior["rush_attempts"] / prior["team_rush_attempts"].replace(0, np.nan)
-        ).clip(0, 1)
-        rush = float(target["team_rush_attempts"]) * _mean(share, 1.0)
+        share = _ratio_mean(
+            prior,
+            "rush_attempts",
+            "team_rush_attempts",
+            1.0,
+            clip=(0, 1),
+        )
+        rush = float(target["team_rush_attempts"]) * share
     if (
         pd.notna(target.get("team_targets"))
         and not prior.empty
         and "team_targets" in prior
     ):
-        share = (prior["targets"] / prior["team_targets"].replace(0, np.nan)).clip(0, 1)
-        targets = float(target["team_targets"]) * _mean(share, 1.0)
+        share = _ratio_mean(
+            prior, "targets", "team_targets", 1.0, clip=(0, 1)
+        )
+        targets = float(target["team_targets"]) * share
     availability = _availability(target, availability_probability)
     rush = max(0.0, rush) * availability
     targets = max(0.0, targets) * availability
@@ -333,38 +366,37 @@ def _project_one(
         targets = min(targets, max(0.0, float(target["team_targets"])))
     ypa = max(
         0.0,
-        _mean(
-            prior["rushing_yards"] / prior["rush_attempts"].replace(0, np.nan),
+        _ratio_mean(
+            prior,
+            "rushing_yards",
+            "rush_attempts",
             config.fallback_rushing_yards_per_attempt,
         ),
     )
     rec_rate = np.clip(
-        _mean(
-            prior["receptions"] / prior["targets"].replace(0, np.nan),
-            config.fallback_reception_rate,
-        ),
+        _ratio_mean(prior, "receptions", "targets", config.fallback_reception_rate),
         0,
         1,
     )
     ypr = max(
         0.0,
-        _mean(
-            prior["receiving_yards"] / prior["receptions"].replace(0, np.nan),
+        _ratio_mean(
+            prior,
+            "receiving_yards",
+            "receptions",
             config.fallback_receiving_yards_per_reception,
         ),
     )
     rush_td = max(
         0.0,
-        _mean(
-            prior["rushing_tds"] / prior["rush_attempts"].replace(0, np.nan),
-            config.fallback_rushing_td_rate,
+        _ratio_mean(
+            prior, "rushing_tds", "rush_attempts", config.fallback_rushing_td_rate
         ),
     )
     rec_td = max(
         0.0,
-        _mean(
-            prior["receiving_tds"] / prior["receptions"].replace(0, np.nan),
-            config.fallback_receiving_td_rate,
+        _ratio_mean(
+            prior, "receiving_tds", "receptions", config.fallback_receiving_td_rate
         ),
     )
     receptions = min(targets, targets * rec_rate)
@@ -415,6 +447,12 @@ def project_rb_components(
         if targets is not None
         else observed
     )
+    observed = observed.sort_values(["rb_id", "_key"], kind="mergesort")
+    histories = {
+        player_id: group
+        for player_id, group in observed.groupby("rb_id", sort=False)
+    }
+    empty_history = observed.iloc[0:0]
     as_of_key = None
     if as_of is not None:
         if len(as_of) != 2 or any(
@@ -434,7 +472,7 @@ def project_rb_components(
             candidate["availability_status"] = availability_status
         rows.append(
             _project_one(
-                observed,
+                histories.get(candidate["rb_id"], empty_history),
                 candidate,
                 config=cfg,
                 cutoff=as_of_key,
