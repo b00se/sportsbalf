@@ -60,6 +60,70 @@ def test_weekly_component_evaluation_has_as_of_folds_and_metrics():
         result.metrics["metric"]
     )
     assert {"WR", "TE"} == set(result.unsupported_positions)
+    ranking = result.metrics.loc[
+        result.metrics["metric"].isin(
+            {"spearman_rank", "top_k_recall", "calibration"}
+        )
+        & result.metrics["aggregation"].eq("aggregate")
+    ]
+    assert {"overall", "position"} == set(ranking["scope"])
+    assert set(ranking["metric"]) == {
+        "spearman_rank",
+        "top_k_recall",
+        "calibration",
+    }
+    assert set(
+        ranking.loc[ranking["metric"] == "top_k_recall", "parameter"]
+    ) == {"k=3"}
+    assert dict(result.metric_definitions)["calibration"].startswith(
+        "unavailable"
+    )
+
+
+def test_ranking_metrics_are_fold_local_and_use_explicit_top_k_and_bins():
+    predictions = pd.DataFrame(
+        {
+            "fold": ["2024-1"] * 4,
+            "player_id": ["a", "b", "c", "d"],
+            "position": ["QB"] * 4,
+            "predicted_fantasy_points": [40.0, 30.0, 20.0, 10.0],
+            "actual_fantasy_points": [10.0, 20.0, 30.0, 40.0],
+        }
+    )
+
+    metrics = component_evaluation._metric_rows(predictions)
+    overall = metrics.query(
+        "scope == 'overall' and aggregation == 'aggregate'"
+    ).set_index("metric")
+
+    assert pd.isna(overall.loc["spearman_rank", "value"])
+    assert pd.isna(overall.loc["top_k_recall", "value"])
+    assert overall.loc["top_k_recall", "parameter"] == "k=3"
+    assert overall.loc["calibration", "parameter"] == "unavailable"
+
+
+def test_sparse_ranking_groups_are_explicitly_inconclusive():
+    predictions = pd.DataFrame(
+        {
+            "fold": ["2024-1", "2024-1"],
+            "player_id": ["a", "b"],
+            "position": ["QB", "QB"],
+            "predicted_fantasy_points": [10.0, 20.0],
+            "actual_fantasy_points": [20.0, 10.0],
+        }
+    )
+
+    metrics = component_evaluation._metric_rows(predictions)
+    aggregate = metrics.query(
+        "scope == 'position' and group == 'QB' and aggregation == 'aggregate'"
+    )
+    ranking = aggregate.loc[
+        aggregate["metric"].isin({"spearman_rank", "top_k_recall"})
+    ]
+
+    assert ranking["outer_folds"].eq(1).all()
+    assert ranking["status"].eq("inconclusive").all()
+    assert ranking["value"].isna().all()
 
 
 def test_target_week_mutation_cannot_change_prior_projection():

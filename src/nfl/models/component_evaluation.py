@@ -10,7 +10,7 @@ is available to the receiver projector.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Final, Literal
 
 import numpy as np
 import pandas as pd
@@ -26,6 +26,25 @@ from src.nfl.models.rb_components import RB_COMPONENTS, project_rb_components
 
 Mode = Literal["weekly", "season"]
 SUPPORTED_POSITIONS = ("QB", "RB")
+RANKING_TOP_K: Final[int] = 3
+METRIC_DEFINITIONS: Final[tuple[tuple[str, str], ...]] = (
+    (
+        "spearman_rank",
+        "mean per-fold Spearman correlation of predicted and actual half-PPR points; "
+        "folds with fewer than two distinct values are ineligible",
+    ),
+    (
+        "top_k_recall",
+        "mean per-fold recall of the actual top-k half-PPR players in the predicted "
+        "top-k, where k=min(3,n) for a slate; ties are resolved by player_id "
+        "ascending",
+    ),
+    (
+        "calibration",
+        "unavailable: deterministic point forecasts expose neither predictive "
+        "intervals nor probabilities, so empirical calibration cannot be computed",
+    ),
+)
 _ADAPTER_RECEIVER_DEFAULTS = (
     "routes",
     "rare_rush_attempts",
@@ -43,6 +62,7 @@ class ComponentEvaluationResult:
     status: str
     mode: Mode
     unsupported_positions: tuple[str, ...] = ("WR", "TE")
+    metric_definitions: tuple[tuple[str, str], ...] = METRIC_DEFINITIONS
 
 
 def _validate_calendar(frame: pd.DataFrame) -> pd.DataFrame:
@@ -229,6 +249,12 @@ def _metric_rows(predictions: pd.DataFrame) -> pd.DataFrame:
         ("overall", None, predictions),
         *[("position", p, g) for p, g in predictions.groupby("position", sort=True)],
     ]:
+        outer_folds = int(group["fold"].nunique())
+        aggregate_eligible = outer_folds >= 3
+        aggregate_status = "eligible" if aggregate_eligible else "inconclusive"
+        aggregate_reason = (
+            "" if aggregate_eligible else "fewer than three distinct outer folds"
+        )
         for component in component_columns:
             actual = f"actual_{component}"
             predicted = f"predicted_{component}"
@@ -241,8 +267,21 @@ def _metric_rows(predictions: pd.DataFrame) -> pd.DataFrame:
                     "group": group_key,
                     "metric": "component_mae",
                     "component": component,
+                    "fold": None,
+                    "aggregation": "aggregate",
                     "rows": len(group),
-                    "value": float(error.abs().mean()),
+                    "outer_folds": outer_folds,
+                    "valid_folds": outer_folds,
+                    "folds": outer_folds,
+                    "eligible": aggregate_eligible,
+                    "parameter": None,
+                    "definition": "mean absolute component error",
+                    "valid": aggregate_eligible,
+                    "status": aggregate_status,
+                    "reason": aggregate_reason,
+                    "value": float(error.abs().mean())
+                    if aggregate_eligible
+                    else float("nan"),
                 }
             )
         error = group["predicted_fantasy_points"] - group["actual_fantasy_points"]
@@ -252,13 +291,200 @@ def _metric_rows(predictions: pd.DataFrame) -> pd.DataFrame:
                 "group": group_key,
                 "metric": metric,
                 "component": "fantasy_points",
+                "fold": None,
+                "aggregation": "aggregate",
                 "rows": len(group),
-                "value": float(error.abs().mean()),
+                "outer_folds": outer_folds,
+                "valid_folds": outer_folds,
+                "folds": outer_folds,
+                "eligible": aggregate_eligible,
+                "parameter": None,
+                "definition": (
+                    "mean absolute point-forecast error; point-forecast CRPS equals "
+                    "MAE"
+                ),
+                "valid": aggregate_eligible,
+                "status": aggregate_status,
+                "reason": aggregate_reason,
+                "value": float(error.abs().mean())
+                if aggregate_eligible
+                else float("nan"),
             }
             for metric in ("fantasy_point_mae", "fantasy_point_crps")
         )
+        # Ranking metrics are computed within each outer fold.  This prevents
+        # cross-slate scale differences from masquerading as ranking quality
+        # and gives every reported slate equal weight in the aggregate.
+        fold_values: dict[str, list[float]] = {
+            "spearman_rank": [],
+            "top_k_recall": [],
+        }
+        for fold, fold_group in group.groupby("fold", sort=True):
+            predicted = pd.to_numeric(
+                fold_group["predicted_fantasy_points"], errors="coerce"
+            )
+            actual = pd.to_numeric(
+                fold_group["actual_fantasy_points"], errors="coerce"
+            )
+            if (
+                len(fold_group) >= 2
+                and predicted.nunique(dropna=True) >= 2
+                and actual.nunique(dropna=True) >= 2
+            ):
+                correlation = predicted.corr(actual, method="spearman")
+                if pd.notna(correlation):
+                    fold_values["spearman_rank"].append(float(correlation))
+                    spearman_value = float(correlation)
+                    spearman_valid = True
+                    spearman_reason = ""
+                else:
+                    spearman_value = float("nan")
+                    spearman_valid = False
+                    spearman_reason = "undefined Spearman correlation"
+            else:
+                spearman_value = float("nan")
+                spearman_valid = False
+                spearman_reason = (
+                    "requires at least two rows and two distinct predicted and "
+                    "actual values"
+                )
+            rows.append(
+                {
+                    "scope": scope,
+                    "group": group_key,
+                    "metric": "spearman_rank",
+                    "component": "fantasy_points",
+                    "fold": fold,
+                    "aggregation": "fold",
+                    "rows": len(fold_group),
+                    "outer_folds": 1,
+                    "valid_folds": int(spearman_valid),
+                    "folds": int(spearman_valid),
+                    "eligible": False,
+                    "parameter": None,
+                    "definition": dict(METRIC_DEFINITIONS)["spearman_rank"],
+                    "valid": spearman_valid,
+                    "status": "inconclusive",
+                    "reason": spearman_reason,
+                    "value": spearman_value,
+                }
+            )
+
+            if len(fold_group) > 0:
+                k = min(RANKING_TOP_K, len(fold_group))
+                predicted_order = fold_group.sort_values(
+                    ["predicted_fantasy_points", "player_id"],
+                    ascending=[False, True],
+                    kind="mergesort",
+                )
+                actual_order = fold_group.sort_values(
+                    ["actual_fantasy_points", "player_id"],
+                    ascending=[False, True],
+                    kind="mergesort",
+                )
+                predicted_top = set(predicted_order.head(k)["player_id"])
+                actual_top = set(actual_order.head(k)["player_id"])
+                top_k_value = float(len(predicted_top & actual_top) / k)
+                fold_values["top_k_recall"].append(top_k_value)
+                top_k_valid = True
+                top_k_reason = ""
+            else:
+                top_k_value = float("nan")
+                top_k_valid = False
+                top_k_reason = "requires at least one row"
+            rows.append(
+                {
+                    "scope": scope,
+                    "group": group_key,
+                    "metric": "top_k_recall",
+                    "component": "fantasy_points",
+                    "fold": fold,
+                    "aggregation": "fold",
+                    "rows": len(fold_group),
+                    "outer_folds": 1,
+                    "valid_folds": int(top_k_valid),
+                    "folds": int(top_k_valid),
+                    "eligible": False,
+                    "parameter": f"k={RANKING_TOP_K}",
+                    "definition": dict(METRIC_DEFINITIONS)["top_k_recall"],
+                    "valid": top_k_valid,
+                    "status": "inconclusive",
+                    "reason": top_k_reason,
+                    "value": top_k_value,
+                }
+            )
+
+        definitions = dict(METRIC_DEFINITIONS)
+        parameters = {
+            "spearman_rank": None,
+            "top_k_recall": f"k={RANKING_TOP_K}",
+            "calibration": "unavailable",
+        }
+        for metric, values in fold_values.items():
+            eligible = len(values) >= 3
+            rows.append(
+                {
+                    "scope": scope,
+                    "group": group_key,
+                    "metric": metric,
+                    "component": "fantasy_points",
+                    "fold": None,
+                    "aggregation": "aggregate",
+                    "rows": len(group),
+                    "outer_folds": outer_folds,
+                    "valid_folds": len(values),
+                    "folds": len(values),
+                    "eligible": eligible,
+                    "parameter": parameters[metric],
+                    "definition": definitions[metric],
+                    "valid": bool(values),
+                    "status": "eligible" if eligible else "inconclusive",
+                    "reason": "" if eligible else "fewer than three valid outer folds",
+                    "value": float(np.mean(values)) if eligible else float("nan"),
+                }
+            )
+        rows.append(
+            {
+                "scope": scope,
+                "group": group_key,
+                "metric": "calibration",
+                "component": "fantasy_points",
+                "fold": None,
+                "aggregation": "aggregate",
+                "rows": len(group),
+                "outer_folds": outer_folds,
+                "valid_folds": 0,
+                "folds": 0,
+                "eligible": False,
+                "parameter": parameters["calibration"],
+                "definition": definitions["calibration"],
+                "valid": False,
+                "status": "inconclusive",
+                "reason": definitions["calibration"],
+                "value": float("nan"),
+            }
+        )
     return pd.DataFrame(
-        rows, columns=["scope", "group", "metric", "component", "rows", "value"]
+        rows,
+        columns=[
+            "scope",
+            "group",
+            "metric",
+            "component",
+            "fold",
+            "aggregation",
+            "rows",
+            "outer_folds",
+            "valid_folds",
+            "folds",
+            "eligible",
+            "parameter",
+            "definition",
+            "valid",
+            "status",
+            "reason",
+            "value",
+        ],
     )
 
 
@@ -367,6 +593,8 @@ def evaluate_archived_component_candidates(
 
 __all__ = [
     "ComponentEvaluationResult",
+    "METRIC_DEFINITIONS",
+    "RANKING_TOP_K",
     "evaluate_archived_components",
     "evaluate_archived_component_candidates",
 ]
