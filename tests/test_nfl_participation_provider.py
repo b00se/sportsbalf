@@ -113,6 +113,33 @@ def test_nflreadpy_participation_rejects_out_of_range_calendar(monkeypatch, game
     assert result.failures[0].exception_type == "RawSourceUnavailableError"
 
 
+def test_nflreadpy_participation_caps_at_current_year_with_injected_boundary(
+    monkeypatch,
+):
+    import src.nfl.data.providers.readpy as module
+
+    monkeypatch.setattr(module, "_participation_max_season", lambda: 2026)
+
+    class Stub:
+        def load_participation(self, years):
+            return _source_frame().assign(nflverse_game_id="2026_01_DEN_OAK")
+
+    monkeypatch.setattr(module, "nfl", Stub())
+    accepted = module.NFLReadPyProvider().load_participation([2026])
+    assert accepted.freshness.status == "complete"
+    assert accepted.data["season"].iloc[0] == 2026
+
+    class FutureStub:
+        def load_participation(self, years):
+            return _source_frame().assign(nflverse_game_id="2027_01_DEN_OAK")
+
+    monkeypatch.setattr(module, "nfl", FutureStub())
+    rejected = module.NFLReadPyProvider().load_participation([2027])
+    assert rejected.data.empty
+    assert rejected.failures[0].exception_type == "RawSourceUnavailableError"
+    assert "2016-2026" in rejected.failures[0].message
+
+
 @pytest.mark.parametrize("play_id", [None, float("inf"), 1.5, True])
 def test_nflreadpy_participation_rejects_invalid_play_id(monkeypatch, play_id):
     class Stub:

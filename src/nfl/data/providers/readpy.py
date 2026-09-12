@@ -139,7 +139,17 @@ _PARTICIPATION_PLAYER_FIELDS = (
     "defense_players",
 )
 _PARTICIPATION_MIN_SEASON = 2016
-_PARTICIPATION_MAX_SEASON = datetime.now(UTC).year + 1
+
+
+def _participation_max_season() -> int:
+    """Return the latest season currently considered source-available.
+
+    The participation archive is published through the current season.  Do
+    not admit a future season merely because its game ID is syntactically
+    valid.  Keeping this as a call-time function also makes the availability
+    boundary deterministic and injectable for calendar-boundary tests.
+    """
+    return datetime.now(UTC).year
 
 
 def _require_nflreadpy() -> Any:
@@ -384,12 +394,11 @@ def _normalize_participation(frame: pd.DataFrame) -> pd.DataFrame:
     frame["week"] = pd.to_numeric(parsed["week"], errors="coerce").astype("Int64")
     season_values = frame["season"].astype("int64")
     week_values = frame["week"].astype("int64")
-    if not season_values.between(
-        _PARTICIPATION_MIN_SEASON, _PARTICIPATION_MAX_SEASON
-    ).all():
+    max_season = _participation_max_season()
+    if not season_values.between(_PARTICIPATION_MIN_SEASON, max_season).all():
         raise RawSourceUnavailableError(
             "participation source contains season outside supported calendar "
-            f"range {_PARTICIPATION_MIN_SEASON}-{_PARTICIPATION_MAX_SEASON}"
+            f"range {_PARTICIPATION_MIN_SEASON}-{max_season}"
         )
     if not week_values.between(1, 22).all():
         raise RawSourceUnavailableError(
