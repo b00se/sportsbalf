@@ -50,6 +50,10 @@ class RawSourceUnavailableError(RuntimeError):
     """Raised when a strict archive load cannot preserve a complete raw source."""
 
 
+class UnsupportedCapabilityError(RawSourceUnavailableError):
+    """Raised when a provider has no reliable implementation for a dataset."""
+
+
 @dataclass(frozen=True, slots=True)
 class CapabilityRecord:
     """Capability and fallback facts for one provider dataset."""
@@ -188,6 +192,14 @@ class NFLDataProvider(Protocol):
 
     def load_ngs_passing(self, years: Sequence[int]) -> LoadResult:
         """Return Next Gen Stats passing data for the requested seasons."""
+        ...
+
+    def load_participation(self, years: Sequence[int]) -> LoadResult:
+        """Return weekly player participation and route data."""
+        ...
+
+    def load_participation_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Return strict, unreconciled participation source rows."""
         ...
 
 

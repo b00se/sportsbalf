@@ -16,6 +16,7 @@ from .base import (
     ProviderCapabilities,
     ProviderProvenance,
     RawSourceUnavailableError,
+    UnsupportedCapabilityError,
     reconcile_seasons,
 )
 
@@ -180,6 +181,25 @@ class NflDataPyProvider(NFLDataProvider):
             for year in requested
         )
         return reconcile_seasons(pd.DataFrame(), requested, failures)
+
+    def load_participation(self, years: Sequence[int]) -> LoadResult:
+        """Fail closed because legacy nfl_data_py has no route participation API."""
+        requested = [int(year) for year in years]
+        failures = tuple(
+            FailureMetadata(
+                "unavailable", "unsupported participation capability",
+                "UnsupportedCapability", year,
+            )
+            for year in requested
+        )
+        return reconcile_seasons(pd.DataFrame(), requested, failures)
+
+    def load_participation_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Reject strict route archives without a reliable legacy source."""
+        raise UnsupportedCapabilityError(
+            "nfl_data_py has no reliable participation loader; "
+            "strict archive load refused"
+        )
 
 
 def _load_weekly_raw_strict(loader: Any, years: Sequence[int]) -> pd.DataFrame:

@@ -104,6 +104,7 @@ def test_capability_audit_covers_all_required_sources():
         "player_stats",
         "pbp",
         "ngs",
+        "participation",
     }
     assert all(
         record.seasons and record.cadence and record.license

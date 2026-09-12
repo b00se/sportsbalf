@@ -13,6 +13,7 @@ from .base import (
     ProviderName,
     ProviderProvenance,
     RawSourceUnavailableError,
+    UnsupportedCapabilityError,
     get_provider,
 )
 from .nfl_data_py_provider import NflDataPyProvider
@@ -31,5 +32,6 @@ __all__ = [
     "ProviderCapabilities",
     "ProviderProvenance",
     "RawSourceUnavailableError",
+    "UnsupportedCapabilityError",
     "get_provider",
 ]
