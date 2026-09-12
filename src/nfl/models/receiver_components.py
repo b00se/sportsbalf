@@ -137,8 +137,6 @@ def _normalise(frame: pd.DataFrame, *, require_stats: bool) -> pd.DataFrame:
             raise ValueError(f"{column} must contain finite values")
         if column not in _SIGNED_YARD_COMPONENTS and (values.dropna() < 0).any():
             raise ValueError(f"{column} must contain finite nonnegative values")
-    if require_stats and (result["receiving_tds"] > result["receptions"]).any():
-        raise ValueError("receiving_tds cannot exceed receptions")
     if require_stats and (result["rare_rush_tds"] > result["rare_rush_attempts"]).any():
         raise ValueError("rare_rush_tds cannot exceed rare_rush_attempts")
     if "availability_probability" in result:

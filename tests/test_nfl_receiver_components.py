@@ -177,6 +177,19 @@ def test_adapter_shaped_history_accepts_signed_receiving_and_rare_rush_yards():
     assert len(result) == 1
 
 
+def test_adapter_shaped_touchdown_only_receiving_history_is_accepted():
+    history = _history().iloc[:1].copy()
+    history.loc[
+        history.index[0],
+        ["routes", "targets", "receptions", "receiving_yards", "receiving_tds"],
+    ] = [12, 0, 0, 0, 1]
+    target = pd.DataFrame(
+        [{"receiver_id": "w1", "position": "WR", "season": 2025, "week": 2}]
+    )
+    result = project_receiver_components(history, target)
+    assert len(result) == 1
+
+
 def test_negative_opportunity_still_fails_closed():
     history = _history().copy()
     history.loc[history.index[0], "targets"] = -1
@@ -204,9 +217,9 @@ def test_malformed_required_stats_and_supplied_caps_fail_closed():
         project_receiver_components(_history(), bad_caps)
 
 
-def test_touchdown_components_are_capped_by_opportunities():
+def test_touchdown_components_validate_counts_but_allow_touchdown_only_history():
     history = _history().copy()
-    history.loc[0, "receiving_tds"] = 99
+    history.loc[0, "receiving_tds"] = -1
     with pytest.raises(ValueError, match="receiving_tds"):
         project_receiver_components(history)
     history = _history().copy()
