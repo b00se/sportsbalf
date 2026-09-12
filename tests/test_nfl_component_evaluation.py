@@ -1,4 +1,5 @@
 import pandas as pd
+import src.nfl.models.component_evaluation as component_evaluation
 from src.nfl.models.component_evaluation import evaluate_archived_components
 
 
@@ -109,3 +110,31 @@ def test_source_shaped_signed_yardage_is_accepted_but_counts_stay_nonnegative():
         assert "nonnegative" in str(error)
     else:
         raise AssertionError("negative event counts must be rejected")
+
+
+def test_five_season_scale_adapts_archive_once(monkeypatch):
+    frames = []
+    for season in range(2018, 2023):
+        base = _rows().query("season == 2021").assign(season=season)
+        frames.extend(
+            base.assign(player_id=base["player_id"] + f"_{copy}") for copy in range(8)
+        )
+    scaled = pd.concat(frames, ignore_index=True)
+    calls = 0
+    original = component_evaluation.adapt_archived_weekly_components
+
+    def counted(frame):
+        nonlocal calls
+        calls += 1
+        return original(frame)
+
+    monkeypatch.setattr(
+        component_evaluation,
+        "adapt_archived_weekly_components",
+        counted,
+    )
+    result = evaluate_archived_components(scaled, mode="weekly")
+
+    assert calls == 1
+    assert result.status == "eligible_for_candidate_comparison"
+    assert result.predictions[["season", "week"]].drop_duplicates().shape[0] == 14

@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from src.nfl.models.archived_component_adapter import (
+    ArchivedComponentFrames,
     adapt_archived_weekly_components,
 )
 from src.nfl.models.fantasy_scoring import derive_fantasy_points
@@ -134,13 +135,21 @@ def _folds(
     return result
 
 
-def _project_fold(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
-    adapted = adapt_archived_weekly_components(train)
+def _project_fold(
+    adapted: ArchivedComponentFrames,
+    test: pd.DataFrame,
+    fold: tuple[int, int] | tuple[int],
+) -> pd.DataFrame:
+    boundary = fold[0] * 100 + (fold[1] if len(fold) == 2 else 0)
     outputs: list[pd.DataFrame] = []
     for position, projector_frame, id_column in (
         ("QB", adapted.qb, "qb_id"),
         ("RB", adapted.rb, "rb_id"),
     ):
+        history = projector_frame.loc[
+            (projector_frame["season"] * 100 + projector_frame["week"])
+            < (boundary if len(fold) == 2 else fold[0] * 100)
+        ]
         target = test.loc[
             test["position"].eq(position), ["player_id", "season", "week"]
         ].copy()
@@ -148,12 +157,12 @@ def _project_fold(train: pd.DataFrame, test: pd.DataFrame) -> pd.DataFrame:
             continue
         target = target.rename(columns={"player_id": id_column})
         if position == "QB":
-            projected = project_qb_components(projector_frame, target)
+            projected = project_qb_components(history, target)
             projected = projected.rename(
                 columns={"qb_id": "player_id", "rushing_attempts": "rush_attempts"}
             )
         else:
-            projected = project_rb_components(projector_frame, target)
+            projected = project_rb_components(history, target)
             projected = projected.rename(columns={"rb_id": "player_id"})
         projected["position"] = position
         outputs.append(projected)
@@ -264,13 +273,17 @@ def evaluate_archived_components(
     outer folds is inconclusive and is never promotable.
     """
     work = _validate_calendar(frame)
+    # Adapt the immutable archive once.  This is a pure schema/value
+    # normalization; each projector still receives only the strict prefix
+    # selected below, never the fold's target-week rows.
+    adapted = adapt_archived_weekly_components(work)
     scored = derive_fantasy_points(work, "half_ppr")
     predictions: list[pd.DataFrame] = []
     for fold, train_mask, test_mask in _folds(work, mode):
         train, test = work.loc[train_mask], work.loc[test_mask]
         if train.empty or test.empty:
             continue
-        projected = _project_fold(train, test)
+        projected = _project_fold(adapted, test, fold)
         if projected.empty:
             continue
         actual_columns = [
