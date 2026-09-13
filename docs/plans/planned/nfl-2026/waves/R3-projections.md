@@ -1,6 +1,6 @@
 # Wave R3 — Bottom-Up Projections
 
-Status: Complete with no promotion; R4 blocked.
+Status: Complete with no promotion; weekly regressor research recorded; R4 blocked.
 
 ## Packets
 
