@@ -3,6 +3,7 @@
 import time
 
 import pandas as pd
+import pytest
 from src.nfl.models.component_evaluation import evaluate_archived_components
 from src.nfl.models.qb_components import project_qb_components
 from src.nfl.models.rb_components import project_rb_components
@@ -303,6 +304,7 @@ def _scale_frame() -> pd.DataFrame:
     return frame
 
 
+@pytest.mark.slow
 def test_archived_component_projection_completes_at_r3_scale() -> None:
     """Run projection and scoring work on the measured 11,468-row workload."""
     frame = _scale_frame()

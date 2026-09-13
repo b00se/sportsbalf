@@ -137,6 +137,11 @@ Use this default sequence unless the user asks for a different flow:
 ## Testing
 - Runner: `.venv/bin/pytest`
 - Keep tests deterministic and fast; avoid network/file downloads.
+- Mark realistic-scale and multi-model workload checks with `@pytest.mark.slow`.
+  They remain in the full pre-merge suite; use `pytest -n 4 -m "not slow"`
+  only for routine local feedback, and `pytest -n 4` for the full gate.
+- Diagnose suite regressions with `pytest --durations=25`; optimize fixtures or
+  parallel scheduling rather than weakening coverage.
 - Use/extend `tests/testdata/` for small fixture files. Do not change large input/output directories.
 - TDD default for behavior changes:
   - Write or update a failing test first (RED) before editing production code.

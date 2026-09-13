@@ -34,6 +34,22 @@ uv run --offline deptry .
 uv run --offline semgrep scan --config config/semgrep.yml --metrics=off
 ```
 
+For routine feedback on a multi-core machine, run the non-workload tests in
+parallel:
+
+```bash
+uv run --offline pytest -n 4 -m "not slow"
+```
+
+The required pre-merge gate remains the full suite, including `slow` tests:
+
+```bash
+uv run --offline pytest -n 4
+```
+
+Use `uv run --offline pytest --durations=25` when a timing regression is
+suspected; do not remove or skip workload tests to improve the timing number.
+
 ### 2) Run Pipelines
 
 Authoritative entrypoint:
