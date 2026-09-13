@@ -29,6 +29,7 @@ uv run --offline ruff check .
 uv run --offline ruff format --check .
 uv run --offline pyright
 uv run --offline pytest
+uv run --offline vulture
 ```
 
 ### 2) Run Pipelines
@@ -77,6 +78,7 @@ Print a saved live summary in app-entry format:
 ```bash
 .venv/bin/ruff check .
 .venv/bin/pytest -q
+.venv/bin/python -m vulture
 ```
 
 ### 4) Fantasy MLB Phase 1.5 Helpers

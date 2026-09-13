@@ -23,6 +23,7 @@ dev = [
   "pyright>=1.1.390,<2",
   "pytest>=8.3,<9",
   "ruff>=0.6.8,<1",
+  "vulture>=2.14,<3",
 ]
 
 [tool.ruff]
@@ -46,6 +47,13 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+
+[tool.vulture]
+paths = ["src", "pipeline", "cli"]
+min_confidence = 100
+# `surface` is a protocol parameter name.  It is part of the public adapter
+# signature and Vulture cannot observe structural implementations.
+ignore_names = ["surface"]
 
 [tool.pyright]
 include = ["src", "pipeline", "cli", "scripts"]
