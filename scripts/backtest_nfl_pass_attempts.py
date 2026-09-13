@@ -1,5 +1,5 @@
 """Run walk-forward backtest for NFL pass-attempt model."""
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.core.config import load_pipeline_config  # noqa: E402
-from src.nfl.models import NFL_FEATURES, WalkForwardConfig, run_walk_forward_backtest  # noqa: E402
+from src.core.config import load_pipeline_config
+from src.nfl.models import NFL_FEATURES, WalkForwardConfig, run_walk_forward_backtest
 
 
 def _summary(folds: pd.DataFrame) -> dict[str, Any]:

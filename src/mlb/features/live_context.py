@@ -541,7 +541,7 @@ class LiveContextService:
         )
         schedule_payload: dict[str, Any] | None = None
         try:
-            with urlopen(  # noqa: S310
+            with urlopen(
                 f"https://statsapi.mlb.com/api/v1/schedule?{query}"
             ) as resp:
                 loaded = json.loads(resp.read().decode("utf-8"))

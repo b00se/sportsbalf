@@ -5,7 +5,6 @@ description = "Sports prop betting analytics pipelines"
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "joblib>=1.5.1,<1.6",
-  "matplotlib>=3.9.4,<3.10",
   "nflreadpy==0.1.3",
   "numpy>=1.26.4,<1.27",
   "pandas>=2.2.3,<2.3",
@@ -14,15 +13,18 @@ dependencies = [
   "pyyaml>=6.0.1,<6.1",
   "requests>=2.32.3,<2.33",
   "scikit-learn>=1.6.1,<1.7",
-  "seaborn>=0.13.2,<0.14",
   "xgboost>=2.1.4,<2.2",
 ]
 
 [dependency-groups]
 dev = [
+  "deptry>=0.23,<1",
+  "matplotlib>=3.9.4,<3.10",
   "pyright>=1.1.390,<2",
   "pytest>=8.3,<9",
   "ruff>=0.6.8,<1",
+  "semgrep>=1.0,<2",
+  "seaborn>=0.13.2,<0.14",
   "vulture>=2.14,<3",
 ]
 
@@ -40,7 +42,7 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "F", "I", "UP", "RUF100", "S310"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -54,6 +56,12 @@ min_confidence = 100
 # `surface` is a protocol parameter name.  It is part of the public adapter
 # signature and Vulture cannot observe structural implementations.
 ignore_names = ["surface"]
+
+[tool.deptry]
+ignore_notebooks = true
+# The adapter remains importable for legacy archives but fails closed unless a
+# caller installs its incompatible legacy provider explicitly.
+per_rule_ignores = { DEP001 = ["nfl_data_py"] }
 
 [tool.pyright]
 include = ["src", "pipeline", "cli", "scripts"]

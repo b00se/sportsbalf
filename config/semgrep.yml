@@ -1,0 +1,24 @@
+rules:
+  - id: tests-no-network-clients
+    languages: [python]
+    severity: ERROR
+    message: Tests must remain offline; inject or mock provider responses instead.
+    paths:
+      include:
+        - /tests/**
+    patterns:
+      - pattern-either:
+          - pattern: requests.$METHOD(...)
+          - pattern: requests.Session().$METHOD(...)
+          - pattern: httpx.$METHOD(...)
+          - pattern: httpx.Client().$METHOD(...)
+          - pattern: urllib.request.urlopen(...)
+          - pattern: urlopen(...)
+  - id: nfl-no-forward-pandas-shift
+    languages: [python]
+    severity: ERROR
+    message: NFL features must use prior observations; a negative shift leaks future rows.
+    paths:
+      include:
+        - /src/nfl/**
+    pattern-regex: '\.shift\(\s*(?:periods\s*=\s*)?-\s*(?:\d+|[A-Za-z_])'

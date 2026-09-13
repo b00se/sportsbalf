@@ -10,7 +10,7 @@ from typing import Literal, Protocol, runtime_checkable
 import pandas as pd
 
 ProviderName = Literal["nfl_data_py", "nflreadpy"]
-DEFAULT_PROVIDER_NAME: ProviderName = "nfl_data_py"
+DEFAULT_PROVIDER_NAME: ProviderName = "nflreadpy"
 FreshnessStatus = Literal["complete", "partial", "empty"]
 CANONICAL_DATASETS = (
     "schedules",

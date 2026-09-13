@@ -4,7 +4,7 @@ pipeline:
 
 nfl:
   pass_attempts:
-    provider: nfl_data_py
+    provider: nflreadpy
     dataset_path: data/qb_attempts_dataset.parquet
     model_path: models/xgb_qb_attempts.joblib
     rebuild_dataset: false
