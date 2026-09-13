@@ -74,8 +74,11 @@ Purpose: Guide Codex when extending modeling features and sport/stat pipelines w
   - Default: use offline fixtures and `/tmp` outputs.
   - If user explicitly requests real ingestion/e2e, it is allowed to write transient artifacts under `data/` in the active checkout.
 - Safety: Never delete or reset generated `data/` artifacts automatically; leave cleanup to explicit user request.
-- After dependency changes, re-run `.venv/bin/pytest -q` and `.venv/bin/ruff check .`
-  before reporting completion.
+- After dependency changes, re-run `.venv/bin/pytest -q`, `.venv/bin/ruff check .`,
+  `.venv/bin/python -m vulture`, `.venv/bin/deptry .`, and
+  `.venv/bin/semgrep scan --config config/semgrep.yml --metrics=off` before
+  reporting completion. Semgrep rules are local contract checks; do not bypass
+  a finding with an inline suppression without documenting the exception.
 
 ## Preferred Git Workflow (Simple)
 Use this default sequence unless the user asks for a different flow:
@@ -134,6 +137,11 @@ Use this default sequence unless the user asks for a different flow:
 ## Testing
 - Runner: `.venv/bin/pytest`
 - Keep tests deterministic and fast; avoid network/file downloads.
+- Mark realistic-scale and multi-model workload checks with `@pytest.mark.slow`.
+  They remain in the full pre-merge suite; use `pytest -n 4 -m "not slow"`
+  only for routine local feedback, and `pytest -n 4` for the full gate.
+- Diagnose suite regressions with `pytest --durations=25`; optimize fixtures or
+  parallel scheduling rather than weakening coverage.
 - Use/extend `tests/testdata/` for small fixture files. Do not change large input/output directories.
 - TDD default for behavior changes:
   - Write or update a failing test first (RED) before editing production code.
@@ -147,6 +155,9 @@ Use this default sequence unless the user asks for a different flow:
 - Run pipeline (online allowed): `.venv/bin/python -m pipeline.main --sport <sport> --stat <stat> --config <path> [--retrain]`
 - Format: `.venv/bin/black .`
 - Lint: `.venv/bin/ruff check .`
+- Dead-code audit: `.venv/bin/python -m vulture`
+- Dependency audit: `.venv/bin/deptry .`
+- Contract audit: `.venv/bin/semgrep scan --config config/semgrep.yml --metrics=off`
 
 ## When Adding Dependencies
 - Prefer widely used, well-supported libs. Justify additions with clear modeling or performance benefits.

@@ -62,7 +62,9 @@ def add_phase15_rolling_features(
         for base_column in ROLL_BASE_COLUMNS:
             column_name = f"roll_{window}_{base_column}"
             engineered[column_name] = grouped[base_column].transform(
-                lambda series: series.shift(1).rolling(window, min_periods=1).mean()
+                lambda series, window=window: (
+                    series.shift(1).rolling(window, min_periods=1).mean()
+                )
             )
             engineered[column_name] = pd.to_numeric(
                 engineered[column_name], errors="coerce"
@@ -102,7 +104,9 @@ def add_phase15_rolling_features(
         engineered[f"games_played_last_{window}"] = grouped[
             "plate_appearances"
         ].transform(
-            lambda series: series.shift(1).rolling(window, min_periods=1).count()
+            lambda series, window=window: (
+                series.shift(1).rolling(window, min_periods=1).count()
+            )
         )
         engineered[f"games_played_last_{window}"] = pd.to_numeric(
             engineered[f"games_played_last_{window}"], errors="coerce"

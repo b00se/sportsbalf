@@ -207,4 +207,3 @@ def load_unified_fantasy_config(config_path: str) -> UnifiedFantasyConfig:
         mapping=mapping,
         raw=raw,
     )
-    (normalize_mode,)

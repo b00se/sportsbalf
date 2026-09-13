@@ -96,8 +96,7 @@ class ProjectionSource:
         host = raw_host.casefold().removeprefix("www.")
         parts = host.split(".")
         if len(parts) < 2 or any(
-            not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", part)
-            for part in parts
+            not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", part) for part in parts
         ):
             return ""
         suffix = (
@@ -473,11 +472,10 @@ def score_rolling_origin_snapshot(
     }
     if not rows or not required.issubset(rows[0]):
         raise SourceAuditError("evaluation snapshot is missing required columns")
-    if cutoff_utc is not None:
-        if cutoff_utc.tzinfo is None or cutoff_utc.utcoffset() != UTC.utcoffset(
-            cutoff_utc
-        ):
-            raise SourceAuditError("cutoff_utc must be timezone-aware UTC")
+    if cutoff_utc is not None and (
+        cutoff_utc.tzinfo is None or cutoff_utc.utcoffset() != UTC.utcoffset(cutoff_utc)
+    ):
+        raise SourceAuditError("cutoff_utc must be timezone-aware UTC")
 
     def numeric(row: dict[str, str], key: str) -> float:
         try:

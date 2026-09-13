@@ -79,23 +79,25 @@ def _line_distribution_stats(
 ) -> list[dict[str, float | int]]:
     """Return empirical under/over rates for each unique live line level."""
 
-    distribution: list[dict[str, float | int]] = []
     clean_actual = pd.to_numeric(actual, errors="coerce").dropna()
     if clean_actual.empty:
-        return distribution
+        return []
 
-    for line_value in sorted(
-        pd.to_numeric(lines, errors="coerce").dropna().astype(float).unique().tolist()
-    ):
-        distribution.append(
-            {
-                "line": float(line_value),
-                "empirical_under_rate": float((clean_actual < line_value).mean()),
-                "empirical_over_rate": float((clean_actual > line_value).mean()),
-                "sample_size": int(clean_actual.shape[0]),
-            }
+    return [
+        {
+            "line": float(line_value),
+            "empirical_under_rate": float((clean_actual < line_value).mean()),
+            "empirical_over_rate": float((clean_actual > line_value).mean()),
+            "sample_size": int(clean_actual.shape[0]),
+        }
+        for line_value in sorted(
+            pd.to_numeric(lines, errors="coerce")
+            .dropna()
+            .astype(float)
+            .unique()
+            .tolist()
         )
-    return distribution
+    ]
 
 
 def _stat_report(

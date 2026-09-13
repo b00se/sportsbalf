@@ -107,9 +107,10 @@ def _calendar(frame: pd.DataFrame, name: str) -> pd.DataFrame:
 
 def _integer_values(series: pd.Series, *, name: str) -> pd.Series:
     """Return integer-valued data while rejecting booleans and fractions."""
-    if pd.api.types.is_bool_dtype(series) or series.map(
-        lambda value: isinstance(value, (bool, np.bool_))
-    ).any():
+    if (
+        pd.api.types.is_bool_dtype(series)
+        or series.map(lambda value: isinstance(value, (bool, np.bool_))).any()
+    ):
         raise ReceiverRouteSchemaError(f"{name} must be an integer, not boolean")
     values = pd.to_numeric(series, errors="coerce")
     if values.isna().any() or (~np.isfinite(values)).any() or (values % 1 != 0).any():
@@ -123,10 +124,9 @@ def _validate_play_keys(
     result = frame.copy()
     result[game_column] = _key_series(result, game_column, name)
     result["play_id"] = _integer_values(result["play_id"], name=f"{name} play_id")
-    if (
-        (result["play_id"] < _PLAY_ID_LIMITS[0]).any()
-        or (result["play_id"] > _PLAY_ID_LIMITS[1]).any()
-    ):
+    if (result["play_id"] < _PLAY_ID_LIMITS[0]).any() or (
+        result["play_id"] > _PLAY_ID_LIMITS[1]
+    ).any():
         raise ReceiverRouteSchemaError(
             f"{name} play_id must be between {_PLAY_ID_LIMITS[0]} and "
             f"{_PLAY_ID_LIMITS[1]}"
@@ -226,11 +226,10 @@ def _roster_positions(roster: pd.DataFrame, keys: pd.DataFrame) -> pd.Series:
             "roster contains duplicate season/week/team/player keys"
         )
     lookup = roster_frame.set_index(["season", "week", "team", id_column])["position"]
-    values = []
-    for row in keys.itertuples(index=False):
-        values.append(
-            lookup.get((row.season, row.week, row.posteam, row.receiver_player_id))
-        )
+    values = [
+        lookup.get((row.season, row.week, row.posteam, row.receiver_player_id))
+        for row in keys.itertuples(index=False)
+    ]
     return pd.Series(values, index=keys.index, dtype="string")
 
 
@@ -288,9 +287,7 @@ def materialize_identified_receiver_routes(
         indicator=True,
         validate="one_to_one",
     )
-    unmatched_participation_route_rows = int(
-        matched["_merge"].eq("left_only").sum()
-    )
+    unmatched_participation_route_rows = int(matched["_merge"].eq("left_only").sum())
     joined = pbp_frame.merge(
         part,
         left_on=["game_id", "play_id"],
@@ -405,8 +402,7 @@ def materialize_identified_receiver_route_history(
     if season_type.isna().any() or season_type.eq("").any():
         raise ReceiverRouteSchemaError("pbp season_type must be a nonempty string")
     cutoff = (pbp_validated["season"] < season_value) | (
-        (pbp_validated["season"] == season_value)
-        & (pbp_validated["week"] < week_value)
+        (pbp_validated["season"] == season_value) & (pbp_validated["week"] < week_value)
     )
     prior_pbp = pbp_validated.loc[cutoff].copy()
     prior_games = set(prior_pbp["game_id"])

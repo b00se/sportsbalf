@@ -43,49 +43,48 @@ def _run_mlb_outs(tmp_path: Path) -> pd.DataFrame:
 
 def _run_nfl(tmp_path: Path, monkeypatch) -> pd.DataFrame:
     tmp_path.mkdir(parents=True, exist_ok=True)
-    rows = []
-    for week in (1, 2, 3):
-        rows.append(
-            {
-                "season": 2023,
-                "week": week,
-                "game_id": f"2023_{week:02d}_AAA",
-                "qb_name": f"QB {week}",
-                "qb_id": f"QB{week}",
-                "team": "AAA",
-                "opponent": "BBB",
-                "home": week % 2 == 0,
-                "spread": -2 + week,
-                "total": 45.0 + week,
-                "pass_attempts": 30 + week,
-                "ud_line": 31.5,
-                "prev_attempts": 28 + week,
-                "rolling3_attempts": 29 + week,
-                "season_avg_attempts": 30 + week,
-                "career_avg_attempts": 31 + week,
-                "season_attempts_to_date": 25 + week,
-                "season_games_played": week - 1,
-                "season_avg_attempts_to_date": 27 + week,
-                "plays_per_game": 62 + week,
-                "pass_rate": 0.56,
-                "neutral_pass_rate": 0.54,
-                "pass_rate_over_expected": 0.02,
-                "plays_faced": 61 + week,
-                "opponent_pass_rate_allowed": 0.55,
-                "opponent_neutral_pass_rate": 0.52,
-                "qb_dropbacks": 34 + week,
-                "avg_cpoe": 0.5,
-                "epa_per_dropback": 0.1,
-                "air_yards_per_attempt": 6.5,
-                "qb_rush_attempts": 4,
-                "ngs_avg_time_to_throw": 2.5,
-                "ngs_avg_air_yards": 7.5,
-                "ngs_cpoe": 0.01,
-                "rest_days": 7,
-                "short_week": False,
-                "is_divisional": False,
-            }
-        )
+    rows = [
+        {
+            "season": 2023,
+            "week": week,
+            "game_id": f"2023_{week:02d}_AAA",
+            "qb_name": f"QB {week}",
+            "qb_id": f"QB{week}",
+            "team": "AAA",
+            "opponent": "BBB",
+            "home": week % 2 == 0,
+            "spread": -2 + week,
+            "total": 45.0 + week,
+            "pass_attempts": 30 + week,
+            "ud_line": 31.5,
+            "prev_attempts": 28 + week,
+            "rolling3_attempts": 29 + week,
+            "season_avg_attempts": 30 + week,
+            "career_avg_attempts": 31 + week,
+            "season_attempts_to_date": 25 + week,
+            "season_games_played": week - 1,
+            "season_avg_attempts_to_date": 27 + week,
+            "plays_per_game": 62 + week,
+            "pass_rate": 0.56,
+            "neutral_pass_rate": 0.54,
+            "pass_rate_over_expected": 0.02,
+            "plays_faced": 61 + week,
+            "opponent_pass_rate_allowed": 0.55,
+            "opponent_neutral_pass_rate": 0.52,
+            "qb_dropbacks": 34 + week,
+            "avg_cpoe": 0.5,
+            "epa_per_dropback": 0.1,
+            "air_yards_per_attempt": 6.5,
+            "qb_rush_attempts": 4,
+            "ngs_avg_time_to_throw": 2.5,
+            "ngs_avg_air_yards": 7.5,
+            "ngs_cpoe": 0.01,
+            "rest_days": 7,
+            "short_week": False,
+            "is_divisional": False,
+        }
+        for week in (1, 2, 3)
+    ]
     dataset = pd.DataFrame(rows)
     dataset_path = tmp_path / "qb_dataset.parquet"
     dataset.to_parquet(dataset_path, index=False)

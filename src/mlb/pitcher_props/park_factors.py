@@ -43,10 +43,14 @@ def add_rolling_park_factor(
         enriched[park_col] = 1.0
         return enriched
 
-    sort_cols = ["game_date"]
-    for candidate in ["game_pk", "pitcher_id", "pitcher"]:
-        if candidate in enriched.columns:
-            sort_cols.append(candidate)
+    sort_cols = [
+        "game_date",
+        *(
+            candidate
+            for candidate in ["game_pk", "pitcher_id", "pitcher"]
+            if candidate in enriched.columns
+        ),
+    ]
     enriched = enriched.sort_values(sort_cols, kind="stable").reset_index(drop=True)
 
     target = pd.to_numeric(enriched[target_col], errors="coerce").fillna(0.0)

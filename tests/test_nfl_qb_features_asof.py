@@ -40,7 +40,7 @@ def test_future_row_perturbation_does_not_change_any_earlier_feature() -> None:
     changed.loc[changed["week"].eq(4), "rush_attempt"] = 0
     perturbed = compute_team_and_opponent_features(changed)
 
-    for before, after in zip(baseline, perturbed):
+    for before, after in zip(baseline, perturbed, strict=True):
         pd.testing.assert_frame_equal(
             before.loc[before["week"] < 4].reset_index(drop=True),
             after.loc[after["week"] < 4].reset_index(drop=True),
@@ -52,7 +52,7 @@ def test_materialization_is_invariant_to_source_order() -> None:
     source = _pbp()
     expected = compute_team_and_opponent_features(source)
     shuffled = compute_team_and_opponent_features(source.sample(frac=1, random_state=7))
-    for before, after in zip(expected, shuffled):
+    for before, after in zip(expected, shuffled, strict=True):
         pd.testing.assert_frame_equal(
             before.reset_index(drop=True),
             after.reset_index(drop=True),
@@ -60,8 +60,9 @@ def test_materialization_is_invariant_to_source_order() -> None:
         )
 
 
-def test_target_features_use_completed_prior_week_and_retain_archive_reference(
-    ) -> None:
+def test_target_features_use_completed_prior_week_and_retain_archive_reference() -> (
+    None
+):
     source = _pbp()
     source.attrs["archive_reference"] = "fixture:nflverse:2024"
     team, opponent = compute_team_and_opponent_features(source)
@@ -73,9 +74,12 @@ def test_target_features_use_completed_prior_week_and_retain_archive_reference(
     assert week_two["pass_rate_over_expected"] == pytest.approx(1 / 6)
     week_three = team.loc[(team["team"] == "A") & (team["week"] == 3)].iloc[0]
     assert week_three["pass_rate_over_expected"] == pytest.approx(-1 / 3)
-    assert opponent.loc[
-        (opponent["opponent"] == "B") & (opponent["week"] == 2), "plays_faced"
-    ].iloc[0] == 2
+    assert (
+        opponent.loc[
+            (opponent["opponent"] == "B") & (opponent["week"] == 2), "plays_faced"
+        ].iloc[0]
+        == 2
+    )
     assert team.attrs["archive_reference"] == "fixture:nflverse:2024"
     assert opponent.attrs["archive_reference"] == "fixture:nflverse:2024"
 

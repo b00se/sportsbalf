@@ -6,10 +6,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from src.nfl.data.providers.base import (
+    DEFAULT_PROVIDER_NAME,
     FailureMetadata,
     FreshnessMetadata,
     ProviderCapabilities,
     RawSourceUnavailableError,
+    get_provider,
 )
 from src.nfl.data.providers.nfl_data_py_provider import NflDataPyProvider
 from src.nfl.data.providers.readpy import NFLReadPyProvider
@@ -587,3 +589,7 @@ def test_partial_fallback_emits_one_warning(monkeypatch):
     with pytest.warns(RuntimeWarning) as records:
         NFLReadPyProvider().load_weekly([2024, 2025])
     assert len(records) == 1
+def test_default_provider_is_installed_nflreadpy() -> None:
+    """Default provider must be the supported, declared nflreadpy package."""
+    assert DEFAULT_PROVIDER_NAME == "nflreadpy"
+    assert isinstance(get_provider(), NFLReadPyProvider)

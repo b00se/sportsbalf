@@ -28,6 +28,7 @@ def _data(seasons=4):
     return pd.DataFrame(rows)
 
 
+@pytest.mark.slow
 def test_candidates_are_complete_and_deterministic():
     data = _data()
     left = evaluate_weekly_regressor_bakeoff(data)
@@ -37,6 +38,7 @@ def test_candidates_are_complete_and_deterministic():
     pd.testing.assert_frame_equal(left.ranking, right.ranking)
 
 
+@pytest.mark.slow
 def test_strict_asof_is_mutation_invariant():
     data = _data()
     mutated = data.copy()
@@ -61,6 +63,7 @@ def test_insufficient_folds_is_inconclusive():
     ) == {"inconclusive"}
 
 
+@pytest.mark.slow
 def test_sparse_position_uses_its_own_fold_gate():
     data = _data().loc[lambda frame: frame["position"] != "TE"].copy()
     data = pd.concat(

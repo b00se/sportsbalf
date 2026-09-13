@@ -15,23 +15,22 @@ from src.nhl.models.predict import (
 
 
 def _training_frame() -> pd.DataFrame:
-    rows: list[dict[str, float | int | str]] = []
-    for idx in range(12):
-        rows.append(
-            {
-                "player_id": "8478402",
-                "sog_avg_last_5": 2.5 + (idx * 0.1),
-                "sog_avg_last_10": 2.7 + (idx * 0.1),
-                "sog_avg_season_to_date": 2.6 + (idx * 0.1),
-                "toi_avg_last_5": 17.0 + (idx * 0.2),
-                "toi_avg_last_10": 17.5 + (idx * 0.2),
-                "games_played_to_date": 10 + idx,
-                "days_since_last_game": 1 + (idx % 3),
-                "team_sog_for_avg_last_5": 2.8 + (idx * 0.05),
-                "opponent_sog_allowed_avg_last_5": 2.9 + (idx * 0.04),
-                "shots_on_goal": 2 + (idx % 4),
-            }
-        )
+    rows: list[dict[str, float | int | str]] = [
+        {
+            "player_id": "8478402",
+            "sog_avg_last_5": 2.5 + (idx * 0.1),
+            "sog_avg_last_10": 2.7 + (idx * 0.1),
+            "sog_avg_season_to_date": 2.6 + (idx * 0.1),
+            "toi_avg_last_5": 17.0 + (idx * 0.2),
+            "toi_avg_last_10": 17.5 + (idx * 0.2),
+            "games_played_to_date": 10 + idx,
+            "days_since_last_game": 1 + (idx % 3),
+            "team_sog_for_avg_last_5": 2.8 + (idx * 0.05),
+            "opponent_sog_allowed_avg_last_5": 2.9 + (idx * 0.04),
+            "shots_on_goal": 2 + (idx % 4),
+        }
+        for idx in range(12)
+    ]
     return pd.DataFrame(rows)
 
 

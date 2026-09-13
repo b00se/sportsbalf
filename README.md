@@ -29,7 +29,26 @@ uv run --offline ruff check .
 uv run --offline ruff format --check .
 uv run --offline pyright
 uv run --offline pytest
+uv run --offline vulture
+uv run --offline deptry .
+uv run --offline semgrep scan --config config/semgrep.yml --metrics=off
 ```
+
+For routine feedback on a multi-core machine, run the non-workload tests in
+parallel:
+
+```bash
+uv run --offline pytest -n 4 -m "not slow"
+```
+
+The required pre-merge gate remains the full suite, including `slow` tests:
+
+```bash
+uv run --offline pytest -n 4
+```
+
+Use `uv run --offline pytest --durations=25` when a timing regression is
+suspected; do not remove or skip workload tests to improve the timing number.
 
 ### 2) Run Pipelines
 
@@ -77,6 +96,9 @@ Print a saved live summary in app-entry format:
 ```bash
 .venv/bin/ruff check .
 .venv/bin/pytest -q
+.venv/bin/python -m vulture
+.venv/bin/deptry .
+.venv/bin/semgrep scan --config config/semgrep.yml --metrics=off
 ```
 
 ### 4) Fantasy MLB Phase 1.5 Helpers

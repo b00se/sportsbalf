@@ -18,22 +18,22 @@ from src.mlb.pitcher_props.pipeline import (
 def _synthetic_pitcher_prop_frame(target_col: str) -> pd.DataFrame:
     rows: list[dict[str, float | int | str]] = []
     for season in (2022, 2023, 2024, 2025):
-        for idx in range(1, 7):
-            rows.append(
-                {
-                    "game_date": f"{season}-05-{idx:02d}",
-                    "rolling_K_avg_3": 4.5 + idx * 0.2,
-                    "rolling_K_avg_5": 4.8 + idx * 0.2,
-                    "rolling_pitch_count_5": 82.0 + idx,
-                    "rolling_K_rate": 0.18 + idx * 0.004,
-                    "rest_days": 4 + (idx % 3),
-                    "rolling_on_base_events_allowed_5": 0.25 + idx * 0.01,
-                    "rolling_hard_contact_allowed_5": 0.33 + idx * 0.005,
-                    "opponent_out_rate": 14.0 + idx * 0.2,
-                    "park_factor_outs": 0.95 + idx * 0.01,
-                    target_col: 12 + (idx % 5),
-                }
-            )
+        rows.extend(
+            {
+                "game_date": f"{season}-05-{idx:02d}",
+                "rolling_K_avg_3": 4.5 + idx * 0.2,
+                "rolling_K_avg_5": 4.8 + idx * 0.2,
+                "rolling_pitch_count_5": 82.0 + idx,
+                "rolling_K_rate": 0.18 + idx * 0.004,
+                "rest_days": 4 + (idx % 3),
+                "rolling_on_base_events_allowed_5": 0.25 + idx * 0.01,
+                "rolling_hard_contact_allowed_5": 0.33 + idx * 0.005,
+                "opponent_out_rate": 14.0 + idx * 0.2,
+                "park_factor_outs": 0.95 + idx * 0.01,
+                target_col: 12 + (idx % 5),
+            }
+            for idx in range(1, 7)
+        )
     return pd.DataFrame(rows)
 
 
