@@ -33,6 +33,25 @@ class ProviderCapabilities:
     supports_current_season: bool
     source_license: str
     audit: tuple[CapabilityRecord, ...] = ()
+    provenance: ProviderProvenance | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderProvenance:
+    """Source and adapter identity needed for reproducible archive runs."""
+
+    source_url: str
+    source_version: str
+    package_name: str
+    package_version: str
+
+
+class RawSourceUnavailableError(RuntimeError):
+    """Raised when a strict archive load cannot preserve a complete raw source."""
+
+
+class UnsupportedCapabilityError(RawSourceUnavailableError):
+    """Raised when a provider has no reliable implementation for a dataset."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +173,15 @@ class NFLDataProvider(Protocol):
         """Return weekly player statistics for the requested seasons."""
         ...
 
+    def load_weekly_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Return the pre-reconciliation weekly source rows.
+
+        The frame must preserve duplicate rows and source columns. Strict archive
+        callers rely on this method to validate player-week identity before any
+        season reconciliation or deduplication occurs.
+        """
+        ...
+
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
         """Return season schedules for the requested seasons."""
         ...
@@ -164,6 +192,14 @@ class NFLDataProvider(Protocol):
 
     def load_ngs_passing(self, years: Sequence[int]) -> LoadResult:
         """Return Next Gen Stats passing data for the requested seasons."""
+        ...
+
+    def load_participation(self, years: Sequence[int]) -> LoadResult:
+        """Return weekly player participation and route data."""
+        ...
+
+    def load_participation_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Return strict, unreconciled participation source rows."""
         ...
 
 

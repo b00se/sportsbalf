@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.metadata
+import math
 import warnings
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any
 from urllib.error import HTTPError
 
@@ -15,17 +18,21 @@ from .base import (
     LoadResult,
     NFLDataProvider,
     ProviderCapabilities,
+    ProviderProvenance,
+    RawSourceUnavailableError,
+    UnsupportedCapabilityError,
     reconcile_seasons,
 )
 
 # These are the datasets for which this adapter has a concrete loader and
 # normalization contract.  Do not advertise provider surfaces we cannot load.
-SUPPORTED_DATASETS = ("schedules", "player_stats", "pbp", "ngs")
+SUPPORTED_DATASETS = ("schedules", "player_stats", "pbp", "ngs", "participation")
 DATASET_LOADERS = {
     "schedules": "load_schedules",
     "player_stats": "load_weekly",
     "pbp": "load_pbp",
     "ngs": "load_ngs_passing",
+    "participation": "load_participation",
 }
 
 try:  # pragma: no cover - optional dependency
@@ -121,6 +128,28 @@ _NGS_ALIASES: dict[str, tuple[str, ...]] = {
         "cpoe",
     ),
 }
+
+_PARTICIPATION_REQUIRED = (
+    "nflverse_game_id",
+    "play_id",
+)
+_PARTICIPATION_PLAYER_FIELDS = (
+    "players_on_play",
+    "offense_players",
+    "defense_players",
+)
+_PARTICIPATION_MIN_SEASON = 2016
+
+
+def _participation_max_season() -> int:
+    """Return the latest season currently considered source-available.
+
+    The participation archive is published through the current season.  Do
+    not admit a future season merely because its game ID is syntactically
+    valid.  Keeping this as a call-time function also makes the availability
+    boundary deterministic and injectable for calendar-boundary tests.
+    """
+    return datetime.now(UTC).year
 
 
 def _require_nflreadpy() -> Any:
@@ -268,6 +297,56 @@ def _fetch_with_fallback(
     return result
 
 
+def _fetch_weekly_raw_strict(
+    fetch_fn: Callable[[list[int]], Any], years: Sequence[int]
+) -> pd.DataFrame:
+    """Fetch weekly rows without reconciliation or duplicate removal.
+
+    Archive backtests must inspect source identity before the shared loader's
+    compatibility deduplication. A partial or unscoped response is therefore a
+    hard failure, rather than a best-effort empty/partial frame.
+    """
+    requested = list(dict.fromkeys(int(year) for year in years))
+    if not requested:
+        return pd.DataFrame()
+    try:
+        frame = _to_pandas(fetch_fn(requested))
+    except Exception as exc:
+        raise RawSourceUnavailableError(
+            f"weekly raw source unavailable for seasons {requested}: {exc}"
+        ) from exc
+    if "season" not in frame.columns:
+        raise RawSourceUnavailableError(
+            "weekly raw source lacks season provenance; strict archive load refused"
+        )
+    frame = _retain_requested_seasons(frame, requested)
+    available = set(
+        pd.to_numeric(frame["season"], errors="coerce").dropna().astype(int)
+    )
+    missing = [year for year in requested if year not in available]
+    if missing:
+        extra: list[pd.DataFrame] = [frame]
+        for year in missing:
+            try:
+                year_frame = _to_pandas(fetch_fn([year]))
+            except Exception as exc:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source unavailable for season {year}: {exc}"
+                ) from exc
+            if "season" not in year_frame.columns:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source lacks season provenance for season {year}"
+                )
+            year_frame = _retain_requested_seasons(year_frame, [year])
+            if year_frame.empty:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source returned no rows for season {year}"
+                )
+            extra.append(year_frame)
+        frame = pd.concat(extra, ignore_index=True)
+    return _normalize_weekly(frame)
+
+
 def _normalize_weekly(frame: pd.DataFrame) -> pd.DataFrame:
     _coalesce_columns(frame, _WEEKLY_ALIASES)
     for column in ("season", "week"):
@@ -302,6 +381,102 @@ def _normalize_ngs(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+def _normalize_participation(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalize play identity while retaining the play-level source schema."""
+    _validate_participation_schema(frame)
+    game_ids = frame["nflverse_game_id"].astype("string")
+    parsed = game_ids.str.extract(r"^(?P<season>\d{4})_(?P<week>\d{1,2})_")
+    if parsed.isna().any(axis=None):
+        raise RawSourceUnavailableError(
+            "participation source contains malformed nflverse_game_id values"
+        )
+    frame["season"] = pd.to_numeric(parsed["season"], errors="coerce").astype("Int64")
+    frame["week"] = pd.to_numeric(parsed["week"], errors="coerce").astype("Int64")
+    season_values = frame["season"].astype("int64")
+    week_values = frame["week"].astype("int64")
+    max_season = _participation_max_season()
+    if not season_values.between(_PARTICIPATION_MIN_SEASON, max_season).all():
+        raise RawSourceUnavailableError(
+            "participation source contains season outside supported calendar "
+            f"range {_PARTICIPATION_MIN_SEASON}-{max_season}"
+        )
+    if not week_values.between(1, 22).all():
+        raise RawSourceUnavailableError(
+            "participation source contains week outside supported range 1-22"
+        )
+    # `game_id` is an explicit alias for the source game identity, not a new
+    # inferred game key.  No player-week or numeric route aggregates are made.
+    frame["game_id"] = game_ids
+    play_values = pd.to_numeric(frame["play_id"], errors="coerce")
+    invalid_bool = frame["play_id"].map(lambda value: isinstance(value, bool))
+    invalid_play = play_values.isna() | invalid_bool
+    finite = play_values.map(
+        lambda value: math.isfinite(float(value)) if pd.notna(value) else False
+    )
+    invalid_play |= ~finite | ~play_values.mod(1).eq(0)
+    if invalid_play.any():
+        raise RawSourceUnavailableError(
+            "participation source contains missing, non-finite, or fractional play_id"
+        )
+    frame["play_id"] = play_values.astype("int64")
+    return frame
+
+
+def _validate_participation_schema(frame: pd.DataFrame) -> None:
+    """Refuse data that cannot preserve play-level participation identity."""
+    missing = [column for column in _PARTICIPATION_REQUIRED if column not in frame]
+    if "route" not in frame:
+        missing.append("route")
+    elif pd.api.types.is_numeric_dtype(frame["route"]):
+        missing.append("categorical route (numeric route values are unsupported)")
+    if not any(column in frame for column in _PARTICIPATION_PLAYER_FIELDS):
+        missing.append("one of players_on_play/offense_players/defense_players")
+    if missing:
+        raise RawSourceUnavailableError(
+            "participation source lacks required play-level fields: "
+            + ", ".join(missing)
+        )
+
+
+def _fetch_participation_raw_strict(
+    fetch_fn: Callable[[list[int]], Any], years: Sequence[int]
+) -> pd.DataFrame:
+    """Fetch complete participation rows before reconciliation or deduplication."""
+    requested = list(dict.fromkeys(int(year) for year in years))
+    if not requested:
+        return pd.DataFrame()
+    try:
+        frame = _to_pandas(fetch_fn(requested))
+    except Exception as exc:
+        raise RawSourceUnavailableError(
+            f"participation raw source unavailable for seasons {requested}: {exc}"
+        ) from exc
+    frame = _normalize_participation(frame)
+    frame = _retain_requested_seasons(frame, requested)
+    available = set(
+        pd.to_numeric(frame["season"], errors="coerce").dropna().astype(int)
+    )
+    missing = [year for year in requested if year not in available]
+    if missing:
+        extra: list[pd.DataFrame] = [frame]
+        for year in missing:
+            try:
+                year_frame = _to_pandas(fetch_fn([year]))
+            except Exception as exc:
+                raise RawSourceUnavailableError(
+                    f"participation raw source unavailable for season {year}: {exc}"
+                ) from exc
+            year_frame = _normalize_participation(year_frame)
+            year_frame = _retain_requested_seasons(year_frame, [year])
+            if year_frame.empty:
+                raise RawSourceUnavailableError(
+                    f"participation raw source returned no rows for season {year}"
+                )
+            extra.append(year_frame)
+        frame = pd.concat(extra, ignore_index=True)
+    return frame.reset_index(drop=True)
+
+
 class NFLReadPyProvider(NFLDataProvider):
     """Implementation that delegates to nflreadpy."""
 
@@ -321,13 +496,30 @@ class NFLReadPyProvider(NFLDataProvider):
             audit=tuple(
                 CapabilityRecord(
                     dataset,
-                    "1999-present",
-                    "weekly or per-season",
+                    "2016-present" if dataset == "participation" else "1999-present",
+                    "play-level"
+                    if dataset == "participation"
+                    else "weekly or per-season",
                     "nflverse data license",
                     "skip unavailable season",
                 )
                 for dataset in SUPPORTED_DATASETS
             ),
+            provenance=self.provenance,
+        )
+
+    @property
+    def provenance(self) -> ProviderProvenance:
+        """Return nflverse source and installed adapter provenance."""
+        try:
+            version = importlib.metadata.version("nflreadpy")
+        except importlib.metadata.PackageNotFoundError:
+            version = "unknown"
+        return ProviderProvenance(
+            source_url="https://github.com/nflverse/nflverse-data",
+            source_version="nflverse-data",
+            package_name="nflreadpy",
+            package_version=version,
         )
 
     @staticmethod
@@ -354,6 +546,16 @@ class NFLReadPyProvider(NFLDataProvider):
         if result.data.empty:
             return result
         return result.with_data(_normalize_weekly(result.data))
+
+    def load_weekly_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Return un-reconciled weekly rows for strict archive validation."""
+        module = _require_nflreadpy()
+        return _fetch_weekly_raw_strict(
+            lambda season_list: module.load_player_stats(
+                list(season_list), summary_level="week"
+            ),
+            years,
+        )
 
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
         try:
@@ -398,3 +600,42 @@ class NFLReadPyProvider(NFLDataProvider):
         if result.data.empty:
             return result
         return result.with_data(_normalize_ngs(result.data))
+
+    def load_participation(self, years: Sequence[int]) -> LoadResult:
+        """Load strict play-level participation records from nflverse."""
+        try:
+            module = _require_nflreadpy()
+        except Exception as exc:
+            return self._failure(exc, years)
+        loader = getattr(module, "load_participation", None)
+        if not callable(loader):
+            requested = [int(year) for year in years]
+            failures = tuple(
+                FailureMetadata(
+                    "unavailable", "unsupported participation capability",
+                    "UnsupportedCapability", year,
+                )
+                for year in requested
+            )
+            return reconcile_seasons(pd.DataFrame(), requested, failures)
+        try:
+            raw = _fetch_participation_raw_strict(loader, years)
+        except RawSourceUnavailableError as exc:
+            requested = [int(year) for year in years]
+            failures = tuple(
+                FailureMetadata("unavailable", str(exc), type(exc).__name__, year)
+                for year in requested
+            )
+            return reconcile_seasons(pd.DataFrame(), requested, failures)
+        return reconcile_seasons(raw, years)
+
+    def load_participation_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Return complete participation rows preserving duplicate source rows."""
+        module = _require_nflreadpy()
+        loader = getattr(module, "load_participation", None)
+        if not callable(loader):
+            raise UnsupportedCapabilityError(
+                "nflreadpy does not expose load_participation; "
+                "strict archive load refused"
+            )
+        return _fetch_participation_raw_strict(loader, years)

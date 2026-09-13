@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 from collections.abc import Sequence
 from typing import Any
 
@@ -13,6 +14,9 @@ from .base import (
     LoadResult,
     NFLDataProvider,
     ProviderCapabilities,
+    ProviderProvenance,
+    RawSourceUnavailableError,
+    UnsupportedCapabilityError,
     reconcile_seasons,
 )
 
@@ -106,6 +110,21 @@ class NflDataPyProvider(NFLDataProvider):
                 )
                 for dataset in SUPPORTED_DATASETS
             ),
+            self.provenance,
+        )
+
+    @property
+    def provenance(self) -> ProviderProvenance:
+        """Return nflverse source and installed adapter provenance."""
+        try:
+            version = importlib.metadata.version("nfl_data_py")
+        except importlib.metadata.PackageNotFoundError:
+            version = "unknown"
+        return ProviderProvenance(
+            source_url="https://github.com/nflverse/nflverse-data",
+            source_version="nflverse-data",
+            package_name="nfl_data_py",
+            package_version=version,
         )
 
     def load_weekly(self, years: Sequence[int]) -> LoadResult:
@@ -114,6 +133,13 @@ class NflDataPyProvider(NFLDataProvider):
         except Exception as exc:
             return _error_result(exc, years)
         return _safe_load(lambda values: module.import_weekly_data(values), years)
+
+    def load_weekly_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Return un-reconciled weekly rows for strict archive validation."""
+        module = _require_module()
+        return _load_weekly_raw_strict(
+            lambda values: module.import_weekly_data(values), years
+        )
 
     def load_schedules(self, years: Sequence[int]) -> LoadResult:
         try:
@@ -155,3 +181,67 @@ class NflDataPyProvider(NFLDataProvider):
             for year in requested
         )
         return reconcile_seasons(pd.DataFrame(), requested, failures)
+
+    def load_participation(self, years: Sequence[int]) -> LoadResult:
+        """Fail closed because legacy nfl_data_py has no route participation API."""
+        requested = [int(year) for year in years]
+        failures = tuple(
+            FailureMetadata(
+                "unavailable", "unsupported participation capability",
+                "UnsupportedCapability", year,
+            )
+            for year in requested
+        )
+        return reconcile_seasons(pd.DataFrame(), requested, failures)
+
+    def load_participation_raw(self, years: Sequence[int]) -> pd.DataFrame:
+        """Reject strict route archives without a reliable legacy source."""
+        raise UnsupportedCapabilityError(
+            "nfl_data_py has no reliable participation loader; "
+            "strict archive load refused"
+        )
+
+
+def _load_weekly_raw_strict(loader: Any, years: Sequence[int]) -> pd.DataFrame:
+    """Load legacy weekly rows without reconciliation or duplicate removal."""
+    requested = list(dict.fromkeys(int(year) for year in years))
+    if not requested:
+        return pd.DataFrame()
+    try:
+        frame = _to_frame(loader(requested))
+    except Exception as exc:
+        raise RawSourceUnavailableError(
+            f"weekly raw source unavailable for seasons {requested}: {exc}"
+        ) from exc
+    if "season" not in frame.columns:
+        raise RawSourceUnavailableError(
+            "weekly raw source lacks season provenance; strict archive load refused"
+        )
+    seasons = pd.to_numeric(frame["season"], errors="coerce")
+    frame = frame.loc[seasons.isin(requested)].copy()
+    available = set(
+        pd.to_numeric(frame["season"], errors="coerce").dropna().astype(int)
+    )
+    missing = [year for year in requested if year not in available]
+    if missing:
+        extra: list[pd.DataFrame] = [frame]
+        for year in missing:
+            try:
+                year_frame = _to_frame(loader([year]))
+            except Exception as exc:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source unavailable for season {year}: {exc}"
+                ) from exc
+            if "season" not in year_frame.columns:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source lacks season provenance for season {year}"
+                )
+            year_seasons = pd.to_numeric(year_frame["season"], errors="coerce")
+            year_frame = year_frame.loc[year_seasons.eq(year)].copy()
+            if year_frame.empty:
+                raise RawSourceUnavailableError(
+                    f"weekly raw source returned no rows for season {year}"
+                )
+            extra.append(year_frame)
+        frame = pd.concat(extra, ignore_index=True)
+    return frame.reset_index(drop=True)

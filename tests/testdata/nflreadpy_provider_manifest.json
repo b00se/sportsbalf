@@ -2,7 +2,7 @@
   "fixture": "nflreadpy_weekly.csv",
   "sha256": "fa2a451cbd17e58d8f6b467b67bb15be66fab5ba5c41fc0f8546590f11694afc",
   "columns": ["season", "week", "player_id", "pass_attempts"],
-  "datasets": ["schedules", "player_stats", "pbp", "ngs"],
+  "datasets": ["schedules", "player_stats", "pbp", "ngs", "participation"],
   "fixtures": {
     "player_stats": {
       "fixture": "nflreadpy_weekly.csv",
@@ -23,6 +23,11 @@
       "fixture": "nflreadpy_ngs.csv",
       "sha256": "03e16ac6513d46a6f673751ab5deba4daed5452c264443b637bfbad8e63bd061",
       "columns": ["season", "week", "player_gsis_id", "avg_time_to_throw"]
+    },
+    "participation": {
+      "fixture": "nflreadpy_participation.csv",
+      "sha256": "a743c79f54fb3f4540ef4028d4613bdb9e179062f39afbd4701540a356b4cd53",
+      "columns": ["nflverse_game_id", "play_id", "players_on_play", "offense_players", "route"]
     }
   },
   "alias_fixtures": {

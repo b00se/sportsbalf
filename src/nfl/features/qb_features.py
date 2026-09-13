@@ -47,6 +47,43 @@ def _to_numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="coerce")
 
 
+def _validate_pbp_keys(frame: pd.DataFrame) -> None:
+    """Fail closed when play-by-play lacks usable canonical game keys."""
+    required = ["season", "week", "game_id", "posteam", "defteam"]
+    missing = [column for column in required if column not in frame.columns]
+    if missing:
+        raise KeyError(f"pbp data missing required columns: {missing}")
+
+    season = _to_numeric(frame["season"])
+    week = _to_numeric(frame["week"])
+    if season.isna().any() or week.isna().any():
+        raise ValueError("pbp season and week must be numeric and non-null")
+    if (week < 1).any() or (week > 22).any():
+        raise ValueError("pbp week must be between 1 and 22")
+
+    for column in ("game_id", "posteam", "defteam"):
+        values = frame[column].astype("string").str.strip()
+        if values.isna().any() or values.eq("").any():
+            raise ValueError(f"pbp {column} must be non-empty")
+
+    # PBP's canonical identity is independent of offense/defense team. This
+    # catches the same play being duplicated under conflicting team values
+    # while allowing the many distinct plays in a game.
+    key = frame[["season", "week", "game_id"]].copy()
+    key["season"] = season.astype("Int64")
+    key["week"] = week.astype("Int64")
+    if "play_id" in frame.columns:
+        play_key = key.assign(play_id=frame["play_id"])
+        if play_key.duplicated().any():
+            raise ValueError("pbp contains duplicate canonical play keys")
+
+
+def _copy_archive_attrs(source: pd.DataFrame, *outputs: pd.DataFrame) -> None:
+    """Retain archive provenance attached to an input frame on materialized outputs."""
+    for output in outputs:
+        output.attrs.update(source.attrs)
+
+
 def compute_player_passing_features(weekly: pd.DataFrame) -> pd.DataFrame:
     """Return season and career context for QB passing volume."""
     base_columns = ["season", "week", "player_id", "attempts"]
@@ -233,6 +270,7 @@ def compute_team_and_opponent_features(
             pd.DataFrame(columns=columns_opp),
         )
 
+    _validate_pbp_keys(pbp)
     frame = pbp.copy()
     frame["pass_attempt"] = _to_numeric(frame.get("pass_attempt")).fillna(0)
     frame["rush_attempt"] = _to_numeric(frame.get("rush_attempt")).fillna(0)
@@ -265,25 +303,30 @@ def compute_team_and_opponent_features(
         "neutral_plays"
     ].replace(0, np.nan)
 
-    league = (
-        frame.groupby("season")
+    # Build the league neutral rate from completed weeks only.  Computing a
+    # season-wide rate here leaks later games into every earlier target row.
+    league_by_week = (
+        frame.groupby(["season", "week"])
         .agg(
             league_neutral_pass_attempts=("neutral_pass", "sum"),
             league_neutral_plays=("neutral_play", "sum"),
         )
         .reset_index()
     )
-    league["league_neutral_pass_rate"] = league[
+    league_by_week.sort_values(["season", "week"], inplace=True)
+    prior_attempts = league_by_week.groupby("season")[
         "league_neutral_pass_attempts"
-    ] / league["league_neutral_plays"].replace(0, np.nan)
-
-    team_group = team_group.merge(
-        league[["season", "league_neutral_pass_rate"]], on="season", how="left"
+    ].cumsum() - league_by_week["league_neutral_pass_attempts"]
+    prior_plays = (
+        league_by_week.groupby("season")["league_neutral_plays"].cumsum()
+        - league_by_week["league_neutral_plays"]
     )
-    team_group["pass_rate_over_expected"] = (
-        team_group["neutral_pass_rate"] - team_group["league_neutral_pass_rate"]
+    league_by_week["league_neutral_pass_rate"] = prior_attempts / prior_plays.replace(
+        0, np.nan
     )
+    league = league_by_week[["season", "week", "league_neutral_pass_rate"]]
 
+    team_group = team_group.merge(league, on=["season", "week"], how="left")
     team_group.rename(columns={"posteam": "team"}, inplace=True)
     team_group["game_id"] = team_group["game_id"].astype(str)
     team_group.sort_values(["team", "season", "week", "game_id"], inplace=True)
@@ -291,9 +334,11 @@ def compute_team_and_opponent_features(
         "plays_per_game",
         "pass_rate",
         "neutral_pass_rate",
-        "pass_rate_over_expected",
     ]:
         team_group[column] = team_group.groupby("team", dropna=False)[column].shift(1)
+    team_group["pass_rate_over_expected"] = (
+        team_group["neutral_pass_rate"] - team_group["league_neutral_pass_rate"]
+    )
     team_features = team_group[
         [
             "season",
@@ -350,6 +395,7 @@ def compute_team_and_opponent_features(
         ]
     ]
 
+    _copy_archive_attrs(pbp, team_features, opponent_features)
     return team_features, opponent_features
 
 
