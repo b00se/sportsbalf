@@ -1,1 +1,4 @@
 tests/testdata/fantasy/nfl/projections/*.csv text eol=lf
+tests/testdata/nfl_availability_fixture.json text eol=lf
+tests/testdata/nfl_identity_graph_fixture.json text eol=lf
+tests/testdata/nflreadpy_*.csv text eol=lf
