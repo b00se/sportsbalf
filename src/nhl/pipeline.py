@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -264,10 +265,8 @@ def _resolve_sigma_series(
 
     max_sigma = section.get("max_sigma")
     if max_sigma is not None:
-        try:
+        with suppress(TypeError, ValueError):
             sigma_series = sigma_series.clip(upper=float(max_sigma))
-        except (TypeError, ValueError):
-            pass
 
     return sigma_series
 

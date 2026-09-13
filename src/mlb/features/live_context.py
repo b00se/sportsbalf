@@ -422,6 +422,7 @@ class LiveContextService:
                         ),
                         unique_opponents,
                     ),
+                    strict=True,
                 )
             )
 
@@ -541,9 +542,7 @@ class LiveContextService:
         )
         schedule_payload: dict[str, Any] | None = None
         try:
-            with urlopen(
-                f"https://statsapi.mlb.com/api/v1/schedule?{query}"
-            ) as resp:
+            with urlopen(f"https://statsapi.mlb.com/api/v1/schedule?{query}") as resp:
                 loaded = json.loads(resp.read().decode("utf-8"))
                 if isinstance(loaded, dict):
                     schedule_payload = loaded

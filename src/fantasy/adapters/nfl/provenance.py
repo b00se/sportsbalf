@@ -134,9 +134,7 @@ def _validate_utc_timestamp(value: str) -> None:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise ValueError(
-            _UTC_TIMESTAMP_ERROR
-        ) from exc
+        raise ValueError(_UTC_TIMESTAMP_ERROR) from exc
     if parsed.tzinfo is None or parsed.utcoffset() != UTC.utcoffset(parsed):
         raise ValueError(_UTC_TIMESTAMP_ERROR)
 
@@ -204,7 +202,6 @@ def build_snapshot_manifest(
 
     _validate_no_sensitive_keys(configuration, path="configuration")
     _validate_no_sensitive_keys(run_metadata, path="run_metadata")
-    input_records: list[dict[str, str]] = []
     input_names: set[str] = set()
     input_sources = list(inputs)
     for source in input_sources:
@@ -219,14 +216,14 @@ def build_snapshot_manifest(
                 "Snapshot inputs require non-empty names and UTC timestamps."
             )
         _validate_utc_timestamp(source.source_timestamp_utc)
-    for source in sorted(input_sources, key=lambda item: item.name):
-        input_records.append(
-            {
-                "name": source.name,
-                "sha256": _sha256(source.content),
-                "source_timestamp_utc": source.source_timestamp_utc,
-            }
-        )
+    input_records = [
+        {
+            "name": source.name,
+            "sha256": _sha256(source.content),
+            "source_timestamp_utc": source.source_timestamp_utc,
+        }
+        for source in sorted(input_sources, key=lambda item: item.name)
+    ]
     payload: dict[str, Any] = {
         "configuration": dict(configuration),
         "configuration_sha256": _sha256(_canonical_json_bytes(configuration)),

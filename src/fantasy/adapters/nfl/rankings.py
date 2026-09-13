@@ -50,32 +50,31 @@ class RankingsTable:
 
 
 def _reader(source: str | Path | IO[str]) -> tuple[list[str], list[dict[str, str]]]:
-    close = False
     if isinstance(source, (str, Path)):
-        handle = open(source, newline="", encoding="utf-8")
-        close = True
-    else:
-        handle = source
-    try:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames is None:
-            raise RankingsSchemaError("rankings CSV is missing its header row")
-        if tuple(reader.fieldnames) != RANKINGS_COLUMNS:
+        with open(source, newline="", encoding="utf-8") as handle:
+            return _read_rankings_handle(handle)
+    return _read_rankings_handle(source)
+
+
+def _read_rankings_handle(handle: IO[str]) -> tuple[list[str], list[dict[str, str]]]:
+    """Read a rankings CSV from an already-open stream."""
+
+    reader = csv.DictReader(handle)
+    if reader.fieldnames is None:
+        raise RankingsSchemaError("rankings CSV is missing its header row")
+    if tuple(reader.fieldnames) != RANKINGS_COLUMNS:
+        raise RankingsSchemaError(
+            "rankings CSV columns must exactly match "
+            f"{list(RANKINGS_COLUMNS)!r}; got {reader.fieldnames!r}"
+        )
+    rows: list[dict[str, str]] = []
+    for number, row in enumerate(reader, 2):
+        if None in row or any(value is None for value in row.values()):
             raise RankingsSchemaError(
-                "rankings CSV columns must exactly match "
-                f"{list(RANKINGS_COLUMNS)!r}; got {reader.fieldnames!r}"
+                f"rankings row {number} has the wrong column count"
             )
-        rows: list[dict[str, str]] = []
-        for number, row in enumerate(reader, 2):
-            if None in row or any(value is None for value in row.values()):
-                raise RankingsSchemaError(
-                    f"rankings row {number} has the wrong column count"
-                )
-            rows.append({column: row[column] for column in RANKINGS_COLUMNS})
-        return list(RANKINGS_COLUMNS), rows
-    finally:
-        if close:
-            handle.close()
+        rows.append({column: row[column] for column in RANKINGS_COLUMNS})
+    return list(RANKINGS_COLUMNS), rows
 
 
 def parse_rankings_csv(source: str | Path | IO[str]) -> RankingsTable:
@@ -259,8 +258,7 @@ def export_unattended_rankings_csv(
         if decision.season != season:
             raise RankingsSchemaError("availability gate: season mismatch")
         if not isinstance(decision.as_of_utc, datetime) or (
-            decision.as_of_utc.tzinfo is None
-            or decision.as_of_utc.utcoffset() is None
+            decision.as_of_utc.tzinfo is None or decision.as_of_utc.utcoffset() is None
         ):
             raise RankingsSchemaError(
                 "availability gate: decision as_of must be timezone-aware"
@@ -309,9 +307,7 @@ def _material_canonical_ids(
             elif normalized in {"0", "false", "no", "n"}:
                 is_material = False
             else:
-                raise RankingsSchemaError(
-                    f"invalid is_material flag: {flag!r}"
-                )
+                raise RankingsSchemaError(f"invalid is_material flag: {flag!r}")
         else:
             try:
                 rank = float(row.get("adp", ""))

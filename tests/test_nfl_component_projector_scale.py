@@ -276,27 +276,27 @@ def _scale_frame() -> pd.DataFrame:
         )
     # Add 23 rows to an existing fold, producing the exact archived workload
     # size used by the R3 completion measurement without changing fold count.
-    for extra in range(23):
-        rows.append(
-            {
-                "player_id": f"qb-extra-final-{extra}",
-                "position": "QB",
-                "season": 2016,
-                "week": 7,
-                "pass_attempts": 29,
-                "completions": 18,
-                "passing_yards": 210,
-                "passing_tds": 1,
-                "interceptions": 0,
-                "rushing_attempts": 2,
-                "rushing_yards": 7,
-                "rushing_tds": 0,
-                "targets": 0,
-                "receptions": 0,
-                "receiving_yards": 0,
-                "receiving_tds": 0,
-            }
-        )
+    rows.extend(
+        {
+            "player_id": f"qb-extra-final-{extra}",
+            "position": "QB",
+            "season": 2016,
+            "week": 7,
+            "pass_attempts": 29,
+            "completions": 18,
+            "passing_yards": 210,
+            "passing_tds": 1,
+            "interceptions": 0,
+            "rushing_attempts": 2,
+            "rushing_yards": 7,
+            "rushing_tds": 0,
+            "targets": 0,
+            "receptions": 0,
+            "receiving_yards": 0,
+            "receiving_tds": 0,
+        }
+        for extra in range(23)
+    )
     frame = pd.DataFrame(rows)
     assert len(frame) == 11_468
     assert frame[["season", "week"]].drop_duplicates().shape[0] == 109

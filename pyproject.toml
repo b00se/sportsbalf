@@ -42,7 +42,7 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "RUF100", "S310"]
+select = ["E", "F", "I", "UP", "RUF100", "S310", "B", "PERF", "SIM"]
 
 [tool.ruff.format]
 quote-style = "double"

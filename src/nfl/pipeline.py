@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -312,10 +313,8 @@ def run_pass_attempts_pipeline(
         sigma_series = sigma_series.clip(lower=min_sigma)
     max_sigma = section.get("max_sigma")
     if max_sigma is not None:
-        try:
+        with suppress(TypeError, ValueError):
             sigma_series = sigma_series.clip(upper=float(max_sigma))
-        except (TypeError, ValueError):
-            pass
 
     sim_config = MonteCarloConfig(
         simulations=int(section.get("monte_carlo_simulations", 10_000)),

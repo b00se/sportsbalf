@@ -76,9 +76,11 @@ def resolve_unique_name_match(
         raw_first, raw_last = raw_parts[0], raw_parts[-1]
         if raw_last != last:
             continue
-        if raw_first.startswith(first) or first.startswith(raw_first):
-            matches.append(value)
-        elif raw_first and first and raw_first[0] == first[0]:
+        if (
+            raw_first.startswith(first)
+            or first.startswith(raw_first)
+            or (raw_first and first and raw_first[0] == first[0])
+        ):
             matches.append(value)
 
     unique = {id(v): v for v in matches}

@@ -222,10 +222,15 @@ def _add_opponent_tendency(
         enriched[feature_col] = 0.0
         return enriched
 
-    sort_cols = ["game_date", "opponent_team"]
-    for candidate in ["game_pk", "pitcher_id", "pitcher"]:
-        if candidate in enriched.columns:
-            sort_cols.append(candidate)
+    sort_cols = [
+        "game_date",
+        "opponent_team",
+        *(
+            candidate
+            for candidate in ["game_pk", "pitcher_id", "pitcher"]
+            if candidate in enriched.columns
+        ),
+    ]
     enriched = enriched.sort_values(sort_cols, kind="stable").reset_index(drop=True)
 
     enriched["_target_value"] = pd.to_numeric(enriched[target_col], errors="coerce")
@@ -798,7 +803,7 @@ def _build_prediction_rows(
     park_lookup = park_factor_lookup(games, descriptor.park_factor_col)
     rows: list[pd.Series] = []
     for line in lines.itertuples(index=False):
-        name_key = _person_lookup_key(getattr(line, "player"))
+        name_key = _person_lookup_key(line.player)
         try:
             row = index.loc[name_key]
         except KeyError:
@@ -810,7 +815,7 @@ def _build_prediction_rows(
             row = row.iloc[0]
 
         record = row.copy()
-        record["player"] = getattr(line, "player")
+        record["player"] = line.player
         record[descriptor.line_col] = getattr(line, descriptor.line_col)
         record["over_decimal_price"] = getattr(line, "over_decimal_price", np.nan)
         record["under_decimal_price"] = getattr(line, "under_decimal_price", np.nan)

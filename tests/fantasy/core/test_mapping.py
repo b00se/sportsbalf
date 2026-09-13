@@ -52,9 +52,15 @@ def test_mapping_resolver_statuses() -> None:
         mapping_frame=mapping_frame,
     )
 
-    statuses = dict(zip(resolved["provider_player_id"], resolved["status"]))
+    statuses = dict(
+        zip(resolved["provider_player_id"], resolved["status"], strict=True)
+    )
     internal_ids = dict(
-        zip(resolved["provider_player_id"], resolved["internal_player_id"])
+        zip(
+            resolved["provider_player_id"],
+            resolved["internal_player_id"],
+            strict=True,
+        )
     )
 
     assert statuses["1"] == "mapped"

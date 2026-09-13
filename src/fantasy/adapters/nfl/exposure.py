@@ -11,11 +11,33 @@ from typing import IO
 # The provider export is intentionally treated as an opaque record: metadata columns
 # are retained so a schema addition cannot silently discard audit information.
 EXPOSURE_COLUMNS: tuple[str, ...] = (
-    "Draft Entry", "Draft ID", "Pool ID", "Draft Date", "Contest Name",
-    "Contest ID", "Entry Fee", "Prize Pool", "Draft Status", "Draft Position",
-    "Pick Number", "Round", "Player Name", "Player ID", "Position", "Team",
-    "Projection", "Fantasy Points", "Rank", "ADP", "Username", "User ID",
-    "Tournament Rank", "Tournament Score", "Payout", "Winner", "Notes",
+    "Draft Entry",
+    "Draft ID",
+    "Pool ID",
+    "Draft Date",
+    "Contest Name",
+    "Contest ID",
+    "Entry Fee",
+    "Prize Pool",
+    "Draft Status",
+    "Draft Position",
+    "Pick Number",
+    "Round",
+    "Player Name",
+    "Player ID",
+    "Position",
+    "Team",
+    "Projection",
+    "Fantasy Points",
+    "Rank",
+    "ADP",
+    "Username",
+    "User ID",
+    "Tournament Rank",
+    "Tournament Score",
+    "Payout",
+    "Winner",
+    "Notes",
 )
 _REQUIRED = {"Draft Entry", "Draft ID", "Pool ID", "Pick Number", "Player Name"}
 
@@ -54,39 +76,38 @@ class UserEntry:
 def parse_exposure_csv(source: str | Path | IO[str]) -> ExposureExport:
     """Parse the exact 27-column exposure contract."""
 
-    close = False
     if isinstance(source, (str, Path)):
-        handle = open(source, newline="", encoding="utf-8")
-        close = True
-    else:
-        handle = source
-    try:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames is None:
-            raise ExposureSchemaError("exposure CSV is missing its header row")
-        if tuple(reader.fieldnames) != EXPOSURE_COLUMNS:
+        with open(source, newline="", encoding="utf-8") as handle:
+            return _parse_exposure_handle(handle)
+    return _parse_exposure_handle(source)
+
+
+def _parse_exposure_handle(handle: IO[str]) -> ExposureExport:
+    """Parse an already-open exposure CSV stream."""
+
+    reader = csv.DictReader(handle)
+    if reader.fieldnames is None:
+        raise ExposureSchemaError("exposure CSV is missing its header row")
+    if tuple(reader.fieldnames) != EXPOSURE_COLUMNS:
+        raise ExposureSchemaError(
+            "exposure CSV must contain exactly 27 columns in provider order; "
+            f"got {reader.fieldnames!r}"
+        )
+    rows: list[dict[str, str | None]] = []
+    for number, row in enumerate(reader, 2):
+        if None in row or any(value is None for value in row.values()):
             raise ExposureSchemaError(
-                "exposure CSV must contain exactly 27 columns in provider order; "
-                f"got {reader.fieldnames!r}"
+                f"exposure row {number} has the wrong column count"
             )
-        rows: list[dict[str, str | None]] = []
-        for number, row in enumerate(reader, 2):
-            if None in row or any(value is None for value in row.values()):
-                raise ExposureSchemaError(
-                    f"exposure row {number} has the wrong column count"
-                )
-            rows.append(
-                {
-                    key: (value if value is not None and value.strip() else None)
-                    for key, value in row.items()
-                }
-            )
-        if not rows:
-            raise ExposureSchemaError("exposure CSV contains zero picks")
-        return ExposureExport(EXPOSURE_COLUMNS, tuple(rows))
-    finally:
-        if close:
-            handle.close()
+        rows.append(
+            {
+                key: (value if value is not None and value.strip() else None)
+                for key, value in row.items()
+            }
+        )
+    if not rows:
+        raise ExposureSchemaError("exposure CSV contains zero picks")
+    return ExposureExport(EXPOSURE_COLUMNS, tuple(rows))
 
 
 def reconstruct_user_entries(export: ExposureExport) -> dict[str, UserEntry]:

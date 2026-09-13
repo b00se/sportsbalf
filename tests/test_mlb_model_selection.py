@@ -21,21 +21,21 @@ from src.mlb.pipeline import _train_or_load_serving_model
 def _synthetic_training_frame() -> pd.DataFrame:
     rows: list[dict[str, float | int | str]] = []
     for season in (2022, 2023, 2024, 2025):
-        for idx in range(1, 7):
-            rows.append(
-                {
-                    "game_date": f"{season}-05-{idx:02d}",
-                    "rolling_K_avg_3": 5.0 + idx * 0.2,
-                    "rolling_K_avg_5": 5.1 + idx * 0.2,
-                    "rolling_pitch_count_5": 85.0 + idx,
-                    "rolling_K_rate": 0.22 + idx * 0.005,
-                    "opponent_k_pct": 0.20 + idx * 0.003,
-                    "opponent_k_rate": 0.21 + idx * 0.003,
-                    "park_factor_K": 0.95 + idx * 0.01,
-                    "rest_days": 4 + (idx % 3),
-                    "strikeouts": 3 + (idx % 5),
-                }
-            )
+        rows.extend(
+            {
+                "game_date": f"{season}-05-{idx:02d}",
+                "rolling_K_avg_3": 5.0 + idx * 0.2,
+                "rolling_K_avg_5": 5.1 + idx * 0.2,
+                "rolling_pitch_count_5": 85.0 + idx,
+                "rolling_K_rate": 0.22 + idx * 0.005,
+                "opponent_k_pct": 0.20 + idx * 0.003,
+                "opponent_k_rate": 0.21 + idx * 0.003,
+                "park_factor_K": 0.95 + idx * 0.01,
+                "rest_days": 4 + (idx % 3),
+                "strikeouts": 3 + (idx % 5),
+            }
+            for idx in range(1, 7)
+        )
     return pd.DataFrame(rows)
 
 
