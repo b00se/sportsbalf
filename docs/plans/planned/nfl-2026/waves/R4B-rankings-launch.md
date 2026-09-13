@@ -1,6 +1,6 @@
 # Wave R4B — Optimization, Export, and Launch
 
-Status: Planned; not started.
+Status: Ready for a fresh task. Do not begin from this closeout packet.
 
 ## Packets
 

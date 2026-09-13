@@ -1,6 +1,7 @@
 # Wave R4A — Simulation
 
-Status: Planned; not started.
+Status: Complete. R4B is ready for a fresh task; see
+[R4A closeout](../evidence/R4A-closeout.md).
 
 ## Packets
 

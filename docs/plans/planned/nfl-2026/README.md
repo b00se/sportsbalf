@@ -1,7 +1,7 @@
 # NFL 2026 Execution Index
 
 Status: R0 complete; R1 accepted by operator override; R2 complete and merged;
-R3 complete and merged; R4A ready for a fresh task.
+R3 complete and merged; R4A complete; R4B ready for a fresh task.
 
 ## Objective
 
@@ -37,8 +37,8 @@ Ship a verified Underdog NFL Daily rankings workflow, then build a pregame 6box 
 | R1 | Provider and contest contracts | [R1](waves/R1-contracts.md) |
 | R2 | Data, identity, availability, features | [R2](waves/R2-data-identity.md) |
 | R3 | Bottom-up component projections | Complete and merged; see [R3 closeout](evidence/R3.23-wave-closeout.md) and [operator handoff](evidence/R3.25-operator-handoff.md) |
-| R4A | Joint and draft simulation | [R4A](waves/R4A-simulation.md) |
-| R4B | Rankings optimization and launch | [R4B](waves/R4B-rankings-launch.md) |
+| R4A | Joint and draft simulation | Complete; see [R4A closeout](evidence/R4A-closeout.md) |
+| R4B | Rankings optimization and launch | Ready for a fresh task; see [R4B](waves/R4B-rankings-launch.md) |
 | R5 | Forward learning | [R5](waves/R5-forward-learning.md) |
 
 ## Global stop rules
@@ -68,5 +68,5 @@ it is historical evidence, not an implementation starting point.
 R3 is complete and merged to `main` through PR #24. Its evidence records an
 honest no-promotion result: the direct fantasy-point baseline is the current
 R4 input, while component and weekly-regressor candidates remain research-only.
-The operator accepted this handoff on 2026-09-13. R4A may begin only in a
-fresh task; do not begin it from this closeout packet.
+The operator accepted this handoff on 2026-09-13. R4A is complete; begin R4B
+only in a fresh task.
